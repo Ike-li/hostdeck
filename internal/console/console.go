@@ -4,6 +4,8 @@ package console
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"slices"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/card"
+	"github.com/Ike-li/hostdeck/internal/catalog"
 	"github.com/Ike-li/hostdeck/internal/detail"
 	"github.com/Ike-li/hostdeck/internal/local"
 	"github.com/Ike-li/hostdeck/internal/onetime"
@@ -30,8 +33,8 @@ type Config struct {
 	Plugins   []plugin.Plugin
 	Broken    []plugin.Broken // shown as error cards
 	PluginDir string
-	// ExamplesDir is where the example plugins are, if hostdeck found them.
-	ExamplesDir string
+	// BuiltIn holds the plugins the plugins page offers, one folder each.
+	BuiltIn fs.FS
 	// Served holds, by plugin ID, where each embedded service is served.
 	Served map[string]Served
 	Tokens *onetime.Tokens
@@ -52,6 +55,8 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/clear/{id}", cfg.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", cfg.serveDetail)
 	mux.HandleFunc("POST /api/action/{id}", cfg.serveAction)
+	mux.HandleFunc("GET /api/catalog", cfg.serveCatalog)
+	mux.HandleFunc("POST /api/catalog/{id}", cfg.serveAdd)
 	return local.Only(sameOriginAPI(noFraming(mux)))
 }
 
@@ -154,10 +159,9 @@ func (cfg Config) serveCards(cache *card.Cache) http.HandlerFunc {
 			cards = append(cards, card.View{ID: b.ID, Name: plugin.Text{All: b.ID}, Error: &card.Error{Code: "bad_manifest", Detail: b.Err.Error()}})
 		}
 		writeJSON(w, struct {
-			PluginDir   string      `json:"pluginDir"`
-			ExamplesDir string      `json:"examplesDir,omitempty"`
-			Cards       []card.View `json:"cards"`
-		}{cfg.PluginDir, cfg.ExamplesDir, cards})
+			PluginDir string      `json:"pluginDir"`
+			Cards     []card.View `json:"cards"`
+		}{cfg.PluginDir, cards})
 	}
 }
 
@@ -231,6 +235,52 @@ func (cfg Config) serveAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, struct {
 			Message plugin.Text `json:"message,omitzero"`
 		}{message})
+	}
+}
+
+// serveCatalog lists the built-in plugins: whether the plugins folder has
+// one of that name, and whether this run of hostdeck loaded it.
+func (cfg Config) serveCatalog(w http.ResponseWriter, r *http.Request) {
+	entries, err := catalog.List(cfg.BuiltIn, cfg.PluginDir)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "catalog_failed", Detail: err.Error()})
+		return
+	}
+	type listed struct {
+		catalog.Entry
+		Loaded bool `json:"loaded"`
+	}
+	plugins := make([]listed, len(entries))
+	for i, e := range entries {
+		_, loaded := cfg.plugin(e.ID)
+		loaded = loaded || slices.ContainsFunc(cfg.Broken, func(b plugin.Broken) bool { return b.ID == e.ID })
+		plugins[i] = listed{e, loaded}
+	}
+	writeJSON(w, struct {
+		PluginDir string   `json:"pluginDir"`
+		Plugins   []listed `json:"plugins"`
+	}{cfg.PluginDir, plugins})
+}
+
+// serveAdd copies a built-in plugin into the plugins folder, for the console
+// page only: what is added there runs its commands once hostdeck restarts.
+func (cfg Config) serveAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	path, err := catalog.Add(cfg.BuiltIn, cfg.PluginDir, r.PathValue("id"))
+	switch {
+	case errors.Is(err, catalog.ErrUnknown):
+		writeError(w, http.StatusNotFound, &card.Error{Code: "not_built_in"})
+	case errors.Is(err, catalog.ErrAdded):
+		writeError(w, http.StatusConflict, &card.Error{Code: "already_added"})
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "add_failed", Detail: err.Error()})
+	default:
+		writeJSON(w, struct {
+			Path string `json:"path"`
+		}{path})
 	}
 }
 

@@ -275,3 +275,17 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 		}
 	}
 }
+
+func TestAPluginMayDescribeItself(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "demo", "schema: 1\nname: Demo\ndescription: {en: Shows a demo., zh-CN: 演示用。}\npage: {link: 'http://127.0.0.1:3000/'}\n")
+
+	got, err := loadAll(root)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := got[0].Description; d.ByLang["en"] != "Shows a demo." || d.ByLang["zh-CN"] != "演示用。" {
+		t.Errorf("description %+v", d)
+	}
+}

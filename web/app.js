@@ -4,6 +4,7 @@ const STATUS_EVERY = 15_000;
 const IDLE_RELEASE = 10 * 60_000; // a page switched away from this long is unloaded, and loads again on its next visit
 const ARMED_FOR = 4000; // how long a button that needs a second click waits for it
 const PENDING_AGAIN = 2000; // how soon a card still being read is asked for again
+const CATALOG = '.plugins'; // the plugins page's address, #/.plugins: no plugin ID starts with a dot
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,6 +20,8 @@ let dict = {};
 let plugins = []; // the sidebar entries
 let status = {}; // plugin id -> up | down
 let current = null; // the open sidebar entry, or null on the overview
+let catalogOpen = false; // whether the plugins page is shown
+let catalog = null; // the last answer of /api/catalog
 let overview = null; // the last answer of /api/cards
 let cardsTimer = null; // the next /api/cards while a card is pending
 let failure = null; // why the backend could not be read
@@ -84,8 +87,8 @@ async function setLang(next, remember) {
   render();
 }
 
-// The address names the open entry: #/<id>. Anything else, a malformed
-// address included, is the overview.
+// The address names the open entry: #/<id>, or #/.plugins for the plugins
+// page. Anything else, a malformed address included, is the overview.
 function route() {
   let id = '';
   try {
@@ -93,6 +96,7 @@ function route() {
   } catch {
     // a malformed escape: show the overview
   }
+  catalogOpen = id === CATALOG;
   current = plugins.find((p) => p.id === id && p.type !== 'link') || null;
   disarmClear();
   clearFailure = null;
@@ -100,7 +104,8 @@ function route() {
     if (current && frameId === current.id) hiddenSince.delete(frameId);
     else if (!hiddenSince.has(frameId)) hiddenSince.set(frameId, Date.now());
   }
-  if (!current) loadCards();
+  if (catalogOpen) loadCatalog();
+  if (!current && !catalogOpen) loadCards();
   else clearTimeout(cardsTimer);
   render();
 }
@@ -114,9 +119,11 @@ function render() {
   if (failure) $('banner').textContent = t('error.backend', { detail: failure });
 
   renderNav();
-  $('overview').hidden = !!current;
+  $('overview').hidden = !!current || catalogOpen;
+  $('catalog').hidden = !catalogOpen;
   $('service').hidden = !current;
   if (current) renderService(current);
+  else if (catalogOpen) renderCatalog(false);
   else renderOverview();
 }
 
@@ -124,15 +131,21 @@ function render() {
 // status refresh would drop a click that lands while it is replaced.
 function renderNav() {
   const nav = $('nav');
-  if (nav.children.length !== plugins.length + 1) {
-    const overviewItem = el('a', 'nav-item');
-    overviewItem.href = '#/';
-    overviewItem.append(el('span', 'nav-name'));
-    nav.replaceChildren(overviewItem, ...plugins.map(navItem));
+  if (nav.children.length !== plugins.length + 2) {
+    const pageItem = (href) => {
+      const a = el('a', 'nav-item');
+      a.href = href;
+      a.append(el('span', 'nav-name'));
+      return a;
+    };
+    nav.replaceChildren(pageItem('#/'), ...plugins.map(navItem), pageItem(`#/${CATALOG}`));
   }
   const [overviewItem, ...items] = nav.children;
+  const catalogItem = items.pop();
   overviewItem.querySelector('.nav-name').textContent = t('nav.overview');
-  overviewItem.classList.toggle('active', !current);
+  overviewItem.classList.toggle('active', !current && !catalogOpen);
+  catalogItem.querySelector('.nav-name').textContent = t('nav.catalog');
+  catalogItem.classList.toggle('active', catalogOpen);
   items.forEach((a, i) => {
     const p = plugins[i];
     a.querySelector('.nav-name').textContent = pick(p.name);
@@ -172,10 +185,7 @@ function renderOverview() {
   document.title = 'hostdeck';
   const cards = overview ? overview.cards : [];
   $('empty').hidden = !overview || cards.length > 0;
-  if (overview) {
-    const { pluginDir: dir, examplesDir: examples } = overview;
-    $('empty').textContent = examples ? t('overview.empty.examples', { dir, examples }) : t('overview.empty', { dir });
-  }
+  if (overview) $('empty').textContent = t('overview.empty', { dir: overview.pluginDir });
   $('cards').replaceChildren(...cards.map(cardElement));
 }
 
@@ -303,17 +313,16 @@ function detailItem(p, item, view) {
   return section;
 }
 
-// An action needs two clicks: the first only arms the button for a few
-// seconds. A double-click is one gesture, so its second click does not confirm.
-function actionButton(p, item, action, view) {
-  const label = pick(action.label);
-  const btn = el('button', 'btn action', label);
-  btn.type = 'button';
+// twoClicks makes btn run confirmed only on a second click: the first arms it
+// for a few seconds and shows armedText. A double-click is one gesture, so its
+// second click does not confirm.
+function twoClicks(btn, armedText, confirmed) {
+  const label = btn.textContent;
   let armed = null;
-  btn.addEventListener('click', async (e) => {
+  btn.addEventListener('click', (e) => {
     if (e.detail > 1 || btn.disabled) return;
     if (!armed) {
-      btn.textContent = t('action.confirm', { label });
+      btn.textContent = armedText;
       btn.classList.add('armed');
       armed = setTimeout(() => {
         armed = null;
@@ -325,6 +334,15 @@ function actionButton(p, item, action, view) {
     clearTimeout(armed);
     armed = null;
     btn.classList.remove('armed');
+    confirmed();
+  });
+}
+
+function actionButton(p, item, action, view) {
+  const label = pick(action.label);
+  const btn = el('button', 'btn action', label);
+  btn.type = 'button';
+  twoClicks(btn, t('action.confirm', { label }), async () => {
     btn.disabled = true;
     btn.textContent = t('action.running');
     let note;
@@ -344,6 +362,60 @@ function actionButton(p, item, action, view) {
     setTimeout(() => loadDetail(p, view), 1500);
   });
   return btn;
+}
+
+// The plugins page lists the plugins built into hostdeck. Like a detail page,
+// it is rebuilt only when it is loaded or the language changes, so that a
+// periodic render does not reset an add button waiting for its second click.
+async function loadCatalog() {
+  try {
+    catalog = await getJSON('/api/catalog');
+    failure = null;
+  } catch (e) {
+    failure = e.message;
+  }
+  renderCatalog(true);
+}
+
+function renderCatalog(loaded) {
+  if (!catalog || (!loaded && catalog.lang === lang)) return;
+  catalog.lang = lang;
+  document.title = `${t('catalog.title')} · hostdeck`;
+  $('catalog-intro').textContent = t('catalog.intro', { dir: catalog.pluginDir });
+  $('catalog-list').replaceChildren(...catalog.plugins.map(catalogItem));
+}
+
+function catalogItem(p) {
+  const item = el('article', 'card catalog-item');
+  item.dataset.id = p.id;
+  const head = el('header', 'card-head');
+  head.append(el('span', 'icon', pick(p.name).slice(0, 1)), el('h2', 'card-name', pick(p.name)));
+  item.append(head, el('p', 'catalog-description', pick(p.description)));
+  if (p.loaded || p.added) {
+    item.append(el('p', 'catalog-state', t(p.loaded ? 'catalog.state.loaded' : 'catalog.state.added')));
+    return item;
+  }
+  const btn = el('button', 'btn add', t('catalog.add'));
+  btn.type = 'button';
+  twoClicks(btn, t('catalog.add.confirm'), async () => {
+    btn.disabled = true;
+    btn.textContent = t('catalog.adding');
+    let note;
+    try {
+      const resp = await fetch(`/api/catalog/${encodeURIComponent(p.id)}`, { method: 'POST' });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw body.error || { code: '', detail: `HTTP ${resp.status}` };
+      note = t('catalog.added', { path: body.path });
+    } catch (err) {
+      note = explain(err);
+    }
+    const n = $('catalog-note');
+    n.textContent = note;
+    n.hidden = false;
+    loadCatalog();
+  });
+  item.append(btn);
+  return item;
 }
 
 function showNote(view, text) {

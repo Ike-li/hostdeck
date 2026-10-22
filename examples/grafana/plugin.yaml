@@ -2,6 +2,9 @@
 # Change the port if Grafana does not listen on 3000.
 schema: 1
 name: Grafana
+description:
+  en: Grafana in the sidebar, and a card saying whether its database answers. Expects Grafana on port 3000; if yours is elsewhere, change both addresses in plugin.yaml.
+  zh-CN: 把 Grafana 放进侧栏，再用一张卡片显示它的数据库是否正常。默认 Grafana 在 3000 端口，不是的话要改 plugin.yaml 里的两个地址。
 page:
   proxy: http://127.0.0.1:3000/
 card:

@@ -19,9 +19,9 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 
 - **Access from other devices** (LAN, phone), login, HTTPS. hostdeck listens on 127.0.0.1 only, and its security model depends on that.
 - **Linux** before v1, a Docker image, multiple users.
-- **A plugin marketplace**, or installing plugins from the network.
+- **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page only adds the plugins built into hostdeck.
 - **Hundreds of built-in integrations.** Common services are covered by example plugins.
-- **Editing configuration in the web UI** before v1.
+- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin.
 - **Electron.**
 
 ## Roadmap
@@ -40,6 +40,7 @@ Each milestone is released on its own.
 - External-program plugins: any executable that prints the card as JSON
 - Detail pages that list items, with actions that need a second click to confirm
 - Example plugins for a few common services
+- A plugins page that adds the plugins built into hostdeck, without the network
 - CI on macOS and Windows, and release archives for both
 
 ### M1 This machine
@@ -77,7 +78,7 @@ go run .
 
 Then open http://127.0.0.1:4678/.
 
-Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. Plugins are read when hostdeck starts, so restart it after adding or changing one. With no plugins yet, the overview suggests an example to copy.
+Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. Plugins are read when hostdeck starts, so restart it after adding or changing one. The **Plugins** page in the sidebar adds the ones that come with hostdeck.
 
 A plugin is a folder holding a `plugin.yaml`. Two small ones:
 

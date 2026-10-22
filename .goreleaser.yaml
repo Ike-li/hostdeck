@@ -16,8 +16,8 @@ archives:
       - goos: windows
         formats: [zip]
     wrap_in_directory: true
-    # The examples sit next to the program, where hostdeck looks for them to
-    # suggest one on an empty overview.
+    # The program carries the examples for its plugins page; these copies are
+    # there to read and adapt.
     files:
       - README.md
       - README.zh-CN.md

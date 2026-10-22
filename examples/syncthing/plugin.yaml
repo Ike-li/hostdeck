@@ -6,6 +6,9 @@
 # error card. To keep only the page, remove the card section.
 schema: 1
 name: Syncthing
+description:
+  en: Syncthing in the sidebar, and a card counting what this machine still has to sync. Start hostdeck with Syncthing's API key, from Actions > Settings, in SYNCTHING_API_KEY.
+  zh-CN: 把 Syncthing 放进侧栏，再用一张卡片显示这台机器还有多少待同步。启动 hostdeck 时要在 SYNCTHING_API_KEY 里带上 Syncthing 的 API key，在它的「操作 > 设置」里能找到。
 page:
   proxy: http://127.0.0.1:8384/
 card:

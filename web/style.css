@@ -258,6 +258,18 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.catalog-description {
+  margin: 10px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.catalog-state {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ok);
+}
+
 .service {
   display: flex;
   flex-direction: column;
@@ -333,7 +345,8 @@ h1 {
   background: var(--bg);
 }
 
-.detail-note {
+.detail-note,
+.catalog-note {
   margin: 0 0 12px;
   padding: 8px 12px;
   border-radius: 8px;

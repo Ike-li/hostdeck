@@ -3,8 +3,7 @@
   "nav.overview": "总览",
   "lang.label": "语言",
   "overview.title": "总览",
-  "overview.empty": "还没有卡片。把插件文件夹放进 {dir}，然后重启 hostdeck。",
-  "overview.empty.examples": "还没有卡片。把插件文件夹放进 {dir}，然后重启 hostdeck。可以先从 {examples} 里复制一个：disk 不用改就能用，其他几个要先看看 plugin.yaml 里的地址对不对。",
+  "overview.empty": "还没有卡片。到「插件」页添加一个，或者把插件文件夹放进 {dir}，然后重启 hostdeck。",
   "error.backend": "连不上 hostdeck 后端：{detail}",
   "error.fetch_failed": "取不到数值：{detail}",
   "service.reload": "刷新",
@@ -34,5 +33,16 @@
   "error.not_offered": "插件现在不再对这个条目提供这个操作，列表会重新读取。",
   "loading": "读取中…",
   "error.threshold": "阈值和数值对不上：{detail}",
-  "error.bad_manifest": "这个插件的 plugin.yaml 有问题：{detail}"
+  "error.bad_manifest": "这个插件的 plugin.yaml 有问题：{detail}",
+  "nav.catalog": "插件",
+  "catalog.title": "插件",
+  "catalog.intro": "hostdeck 自带的插件。添加会把它的文件夹复制到 {dir}，重启 hostdeck 后生效。不会从网上下载任何东西。",
+  "catalog.add": "添加",
+  "catalog.add.confirm": "再点一次添加",
+  "catalog.adding": "正在添加…",
+  "catalog.added": "已添加到 {path}。重启 hostdeck 后生效。",
+  "catalog.state.added": "已添加，重启 hostdeck 后生效",
+  "catalog.state.loaded": "使用中",
+  "error.already_added": "插件文件夹里已经有同名的文件夹了。",
+  "error.add_failed": "没能添加：{detail}"
 }

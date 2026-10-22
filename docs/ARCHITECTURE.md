@@ -40,8 +40,7 @@ Startup, in `main.go`:
 2. Load every `plugins/<id>/plugin.yaml`. A plugin that does not load is set aside with its error and shown later as an error card; the others load.
 3. Listen on `--addr` (127.0.0.1 only, 4678 by default).
 4. Give each plugin with `page.proxy` a forwarding port, from the console's port + 1 up, remembered in `ports.json` so that it never moves and the browser keeps that service's cookies and storage.
-5. Look for the `examples` folder next to the program, then in the working directory, so an empty overview can suggest one.
-6. Serve.
+5. Serve.
 
 Plugins are read only at start: after adding or changing one, restart hostdeck.
 
@@ -59,6 +58,8 @@ Plugins are read only at start: after adding or changing one, restart hostdeck.
 | `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |
 | `internal/local` | Lets through only requests addressed to `127.0.0.1`; `localhost` is redirected there. |
 | `internal/onetime` | One-time tokens for clearing a service's cache. |
+| `internal/catalog` | Lists the plugins built into hostdeck and copies one into the plugins folder, for the plugins page. |
+| `examples` | The built-in plugins: disk, Grafana, Syncthing and Ollama, embedded in the program. |
 | `web` | The console page: `index.html`, `app.js` (plain ES modules, no build step), `style.css`, and `i18n/*.json`. Embedded in the program. |
 
 ## Plugins
@@ -73,6 +74,8 @@ A plugin is a folder; its folder name is its ID. `plugin.yaml` declares any of:
 - **`detail`**: a sidebar entry whose page lists items. Its program prints `{"items": [{"id", "name", "status", "value", "fields": [{"name", "value"}], "log", "actions": [{"id", "label"}]}]}`.
 - **`actions`**: the program run for an action on an item, as `<command> <action id> <item id>`. It may print `{"message": …}` or `{"error": …}`.
 
+`description` says what the plugin does and what to change before using it; the plugins page shows it.
+
 Text shown to people is a string, or `{en: …, zh-CN: …}`. Programs run in the plugin's folder; on Windows, scripts should be UTF-8 with a BOM and write UTF-8.
 
 ## What happens when…
@@ -82,6 +85,8 @@ Text shown to people is a string, or `{en: …, zh-CN: …}`. Programs run in th
 **An embedded page opens.** The page puts an iframe on `http://127.0.0.1:<forwarding port>/`. The proxy passes each request on with its Host unchanged (some services check that Origin and Host agree) and rewrites only the framing headers of the answer: `X-Frame-Options` is removed, and `frame-ancestors` becomes `'self'` plus the console. The rest of the service's Content-Security-Policy is kept. Each service has its own origin, so services do not share storage. `page.proxy` is meant for services on this machine: the service sees the browser's Host, `127.0.0.1:<forwarding port>`, so one that is told apart from others on a shared server by its name would not be found, and the browser keeps every embedded service's cookies under `127.0.0.1`.
 
 **Clear cache.** The first click arms the button; the second runs it. The page asks `POST /api/clear/<id>` for a one-time token, unloads the service's frame, opens `/.well-known/hostdeck/clear-site-data?token=…` on the service's port in a hidden frame, and goes back. The proxy answers that address itself with `Clear-Site-Data: "cache", "storage"` and a page that tells the console, by `postMessage`, that it cleared; a refused token also loads a page, so without that message the console reports a failure. Cookies are kept, because browsers keep cookies per host, not per port.
+
+**A built-in plugin is added.** The plugins page lists the plugins embedded in the program, with whether the plugins folder has one of that name and whether this run loaded it. Adding needs a second click and the console's Origin. Only a top-level folder of the built-in plugins can be named, and a folder that is already there is never replaced. The copy is written under a name that starts with a dot, which loading skips, and then renamed, so a failure leaves nothing half written. The page then says to restart hostdeck. Nothing is downloaded.
 
 **An action runs.** The first click arms the button, and a double click counts as one click. `POST /api/action/<id>` must come from the console's own Origin. The detail program is run again, and the action runs only if it is still offered for that item. Once started, the action runs to its end or its 30 s limit even if the page is closed or reloaded, so that a restart is not stopped halfway.
 
@@ -94,6 +99,7 @@ Everything rests on hostdeck being reachable from this machine only.
 - `/api/` refuses requests from other sites by their `Sec-Fetch-Site` header; a request typed into the address bar may only read. Actions also require the console's Origin. Other ports on 127.0.0.1 count as the same site, which is why the Origin check is needed too.
 - The console cannot be framed (`frame-ancestors 'none'`), and it frames only `http://127.0.0.1:*`. An embedded service may be framed only by itself and the console.
 - Clearing a service's data needs a token from the console, so another local page cannot wipe it with a link.
+- Adding a plugin from the plugins page needs the console's Origin and can only copy a plugin built into the program, so the worst a page could do through it is add one of those.
 - `${env:NAME}` values are sent to the service but replaced by `***` in errors, also when quoted or URL-escaped. A token is never written into `plugin.yaml`.
 - A plugin program cannot outlive its deadline: its whole process tree is ended.
 
@@ -106,7 +112,7 @@ Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `d
 ## Tests and CI
 
 - Each package has unit tests that use local HTTP servers and the test binary as a fake plugin program.
-- `e2e/` builds the program and drives Chrome or Edge through chromedp: languages, embedding a service that refuses frames, clearing its cache, cards, actions and the empty overview. Without a browser these tests are skipped, unless `HOSTDECK_E2E=1`.
+- `e2e/` builds the program and drives Chrome or Edge through chromedp: languages, embedding a service that refuses frames, clearing its cache, cards, actions, and adding a plugin from the plugins page. Without a browser these tests are skipped, unless `HOSTDECK_E2E=1`.
 - `examples/` tests run the disk example on the machine at hand, and answer the Grafana, Syncthing and Ollama examples with responses copied from their documentation.
 - CI runs gofmt, vet and all tests on macOS and Windows, then the browser tests again in Edge. Another job builds the release archives with GoReleaser as a snapshot and checks that each holds the program and the examples. Nothing is published.
 

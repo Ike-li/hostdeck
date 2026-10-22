@@ -1,12 +1,12 @@
-// Package examples holds plugins that work as they are. The disk example runs
-// on the machine at hand; the services are answered with responses copied
-// from their documentation, or from their source where the documentation
-// shows none.
+// The disk example runs on the machine at hand; the services are answered with
+// responses copied from their documentation, or from their source where the
+// documentation shows none.
 package examples
 
 import (
 	"context"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/card"
+	"github.com/Ike-li/hostdeck/internal/catalog"
 	"github.com/Ike-li/hostdeck/internal/detail"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 )
@@ -241,4 +242,29 @@ func TestTheOllamaExampleCountsTheModelsInMemory(t *testing.T) {
 	if v.Error != nil || v.Value != "0" {
 		t.Errorf("no model: %+v, want 0 and no error", v)
 	}
+}
+
+// The plugins page lists what is built in, so every example says what it does
+// in both languages, and nothing but the examples themselves is built in.
+func TestEveryBuiltInExampleDescribesItself(t *testing.T) {
+	entries, err := catalog.List(Files, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, e := range entries {
+		ids = append(ids, e.ID)
+		if e.Name.IsZero() || e.Description.ByLang["en"] == "" || e.Description.ByLang["zh-CN"] == "" {
+			t.Errorf("%s: name %+v, description %+v; want a name and a description in en and zh-CN", e.ID, e.Name, e.Description)
+		}
+	}
+	if want := []string{"disk", "grafana", "ollama", "syncthing"}; !slices.Equal(ids, want) {
+		t.Errorf("built in: %v, want %v", ids, want)
+	}
+	fs.WalkDir(Files, ".", func(path string, d fs.DirEntry, err error) error {
+		if strings.HasSuffix(path, ".go") {
+			t.Errorf("%s is built in", path)
+		}
+		return err
+	})
 }

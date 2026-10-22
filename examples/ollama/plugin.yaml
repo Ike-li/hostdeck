@@ -2,6 +2,9 @@
 # page of its own, so this plugin has no sidebar entry.
 schema: 1
 name: Ollama
+description:
+  en: A card counting the models Ollama has loaded into memory. Expects Ollama on its default port, 11434.
+  zh-CN: 一张卡片，显示 Ollama 当前加载到内存里的模型数。默认 Ollama 在 11434 端口。
 card:
   http:
     url: http://127.0.0.1:11434/api/ps

@@ -3,8 +3,7 @@
   "nav.overview": "Overview",
   "lang.label": "Language",
   "overview.title": "Overview",
-  "overview.empty": "No cards yet. Put plugin folders in {dir}, then restart hostdeck.",
-  "overview.empty.examples": "No cards yet. Put plugin folders in {dir}, then restart hostdeck. To start, copy one from {examples}: disk works as it is; for the others, check the address in their plugin.yaml first.",
+  "overview.empty": "No cards yet. Add one on the Plugins page, or put plugin folders in {dir}; then restart hostdeck.",
   "error.backend": "Cannot reach the hostdeck backend: {detail}",
   "error.fetch_failed": "Could not get the value: {detail}",
   "service.reload": "Reload",
@@ -34,5 +33,16 @@
   "error.not_offered": "The plugin no longer offers this action on this item. The list is read again.",
   "loading": "Loading…",
   "error.threshold": "A threshold does not fit the value: {detail}",
-  "error.bad_manifest": "This plugin's plugin.yaml has a problem: {detail}"
+  "error.bad_manifest": "This plugin's plugin.yaml has a problem: {detail}",
+  "nav.catalog": "Plugins",
+  "catalog.title": "Plugins",
+  "catalog.intro": "Plugins that come with hostdeck. Adding one copies its folder into {dir}; restart hostdeck to use it. Nothing is downloaded.",
+  "catalog.add": "Add",
+  "catalog.add.confirm": "Click again to add",
+  "catalog.adding": "Adding…",
+  "catalog.added": "Added to {path}. Restart hostdeck to use it.",
+  "catalog.state.added": "Added; restart hostdeck to use it",
+  "catalog.state.loaded": "In use",
+  "error.already_added": "There is already a plugin folder of that name.",
+  "error.add_failed": "Could not add: {detail}"
 }

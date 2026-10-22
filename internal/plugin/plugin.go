@@ -27,14 +27,16 @@ var languages = []string{"en", "zh-CN"}
 
 // Plugin is one folder under the plugin root; the folder name is its ID.
 type Plugin struct {
-	ID      string   `yaml:"-"`
-	Dir     string   `yaml:"-"` // the plugin's folder, where its commands run
-	Name    Text     `yaml:"name"`
-	Icon    string   `yaml:"icon"`
-	Page    *Page    `yaml:"page"`
-	Detail  *Detail  `yaml:"detail"`
-	Actions *Actions `yaml:"actions"`
-	Card    *Card    `yaml:"card"`
+	ID   string `yaml:"-"`
+	Dir  string `yaml:"-"` // the plugin's folder, where its commands run
+	Name Text   `yaml:"name"`
+	// Description says what the plugin does, for the plugins page.
+	Description Text     `yaml:"description"`
+	Icon        string   `yaml:"icon"`
+	Page        *Page    `yaml:"page"`
+	Detail      *Detail  `yaml:"detail"`
+	Actions     *Actions `yaml:"actions"`
+	Card        *Card    `yaml:"card"`
 }
 
 // Detail is a sidebar entry that the console draws itself, from the items its

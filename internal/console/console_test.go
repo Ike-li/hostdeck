@@ -6,9 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/onetime"
@@ -286,5 +289,79 @@ func TestPluginsThatDidNotLoadShowAsErrorCards(t *testing.T) {
 	]}`)
 	if got := decodeJSON(t, resp); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func postFrom(h http.Handler, url string, header map[string]string) *http.Response {
+	req := httptest.NewRequest(http.MethodPost, url, nil)
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w.Result()
+}
+
+func TestBuiltInPluginsAreAddedFromTheConsolePageOnly(t *testing.T) {
+	pluginDir := t.TempDir()
+	builtIn := fstest.MapFS{
+		"disk/plugin.yaml": {Data: []byte("schema: 1\nname: Disk\ndescription: Free space.\ncard: {exec: {command: [sh, card.sh]}}\n")},
+		"used/plugin.yaml": {Data: []byte("schema: 1\nname: Used\n")},
+	}
+	h := Handler(Config{
+		Origin:    "http://127.0.0.1:4678",
+		PluginDir: pluginDir,
+		BuiltIn:   builtIn,
+		Plugins:   []plugin.Plugin{{ID: "used", Name: plugin.Text{All: "Used"}}},
+	})
+	console := map[string]string{"Origin": "http://127.0.0.1:4678", "Sec-Fetch-Site": "same-origin"}
+
+	for name, header := range map[string]map[string]string{
+		"an embedded service's page":  {"Origin": "http://127.0.0.1:4679", "Sec-Fetch-Site": "same-site"},
+		"a program without an Origin": nil,
+	} {
+		if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/disk", header); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "disk")); err == nil {
+		t.Fatal("a refused request added the plugin")
+	}
+
+	resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/disk", console)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"path"`) {
+		t.Fatalf("adding disk: %d %s", resp.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "disk", "plugin.yaml")); err != nil {
+		t.Errorf("disk was not added: %v", err)
+	}
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/disk", console); resp.StatusCode != http.StatusConflict {
+		t.Errorf("adding disk again: status %d, want 409", resp.StatusCode)
+	}
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/nope", console); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("adding an unknown plugin: status %d, want 404", resp.StatusCode)
+	}
+
+	body, _ = io.ReadAll(get(h, "http://127.0.0.1:4678/api/catalog", nil).Body)
+	var got struct {
+		Plugins []struct {
+			ID     string `json:"id"`
+			Added  bool   `json:"added"`
+			Loaded bool   `json:"loaded"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("%v: %s", err, body)
+	}
+	type state struct{ added, loaded bool }
+	want := map[string]state{"disk": {true, false}, "used": {false, true}}
+	for _, p := range got.Plugins {
+		if (state{p.Added, p.Loaded}) != want[p.ID] {
+			t.Errorf("%s: added %v, loaded %v; want %+v", p.ID, p.Added, p.Loaded, want[p.ID])
+		}
+	}
+	if len(got.Plugins) != 2 {
+		t.Errorf("listed %s", body)
 	}
 }

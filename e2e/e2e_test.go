@@ -63,15 +63,7 @@ var consoleURL = regexp.MustCompile(`^hostdeck: (http://127\.0\.0\.1:\d+)`)
 // the console's URL. What hostdeck logged is shown if the test fails.
 func startConsole(t *testing.T, dir string) string {
 	t.Helper()
-	return startConsoleIn(t, dir, "")
-}
-
-// startConsoleIn is startConsole with hostdeck's working directory set to
-// workDir, as when it is started with go run from there.
-func startConsoleIn(t *testing.T, dir, workDir string) string {
-	t.Helper()
 	cmd := exec.Command(binary, "--addr", "127.0.0.1:0", "--dir", dir)
-	cmd.Dir = workDir
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -723,26 +715,6 @@ card:
 	}
 }
 
-// Started from the source folder, hostdeck finds the examples there and says
-// which one to copy where, and that it reads plugins only when it starts.
-func TestAnEmptyOverviewSaysWhichExampleToCopy(t *testing.T) {
-	root, err := filepath.Abs("..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	url := startConsoleIn(t, dir, root)
-	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
-
-	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS("#empty")))
-	got := text(t, ctx, "#empty")
-	for _, want := range []string{filepath.Join(dir, "plugins"), filepath.Join(root, "examples"), "disk", "重启"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("empty overview %q does not mention %q", got, want)
-		}
-	}
-}
-
 // A clearing the service's port refuses, here because the token was tampered
 // with, says that it failed instead of looking done.
 func TestARefusedClearingSaysItFailed(t *testing.T) {
@@ -777,4 +749,49 @@ func TestARefusedClearingSaysItFailed(t *testing.T) {
 		t.Fatalf("no failure shown after a refused clearing: %v; note %q", err, text(t, ctx, "#clear-note"))
 	}
 	t.Logf("note: %s", note)
+}
+
+// A first run has no plugins: the overview points to the plugins page, which
+// adds a built-in plugin on a second click and says to restart.
+func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
+	dir := t.TempDir()
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS("#empty")))
+	if got := text(t, ctx, "#empty"); !strings.Contains(got, "「插件」") {
+		t.Errorf("empty overview %q does not point to the plugins page", got)
+	}
+
+	const disk = `.catalog-item[data-id="disk"]`
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)), chromedp.WaitVisible(chromedp.CSS(disk+" .add")))
+	if got := text(t, ctx, disk+" .catalog-description"); !strings.Contains(got, "不用改就能用") {
+		t.Errorf("disk is described as %q", got)
+	}
+
+	added := filepath.Join(dir, "plugins", "disk", "plugin.yaml")
+	doubleClick(t, ctx, disk+" .add")
+	time.Sleep(1500 * time.Millisecond)
+	if _, err := os.Stat(added); err == nil {
+		t.Fatal("a double-click added the plugin")
+	}
+
+	// The double-click's first click armed the button; wait until it gives up.
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector(%q).textContent === '添加'`, disk+" .add"))); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(disk+" .add")))
+	if got := text(t, ctx, disk+" .add"); got != "再点一次添加" {
+		t.Errorf("after one click the button says %q", got)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(disk+" .add")), chromedp.WaitVisible(chromedp.CSS(disk+" .catalog-state")))
+	if _, err := os.Stat(added); err != nil {
+		t.Fatalf("not added: %v", err)
+	}
+	if got := text(t, ctx, "#catalog-note"); !strings.Contains(got, filepath.Join(dir, "plugins", "disk")) || !strings.Contains(got, "重启") {
+		t.Errorf("note %q, want where it was added and to restart", got)
+	}
+	if got := text(t, ctx, disk+" .catalog-state"); !strings.Contains(got, "重启") {
+		t.Errorf("disk now shows %q, want it added and waiting for a restart", got)
+	}
 }
