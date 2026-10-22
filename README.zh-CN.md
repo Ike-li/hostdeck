@@ -65,6 +65,43 @@
 - Starlark 插件，给几行 YAML 写不下的卡片用
 - 只有清单里声明了，插件才能访问网络、执行命令
 
+## 从源码运行
+
+hostdeck 还没有发布。想先试试现在已有的功能，需要 Go 1.26 或更新的版本：
+
+```sh
+git clone https://github.com/Ike-li/hostdeck
+cd hostdeck
+go run .
+```
+
+然后在浏览器里打开 http://127.0.0.1:4678/ 。
+
+插件放在 hostdeck 文件夹下的 `plugins/` 里：macOS 上是 `~/.config/hostdeck`，Windows 上是 `%LOCALAPPDATA%\hostdeck`。用 `--dir` 或 `HOSTDECK_DIR` 可以换一个文件夹，用 `--addr` 可以换成 127.0.0.1 上的另一个端口。
+
+一个插件就是一个放着 `plugin.yaml` 的文件夹。两个小例子：
+
+```yaml
+# plugins/grafana/plugin.yaml：把 Grafana 放进侧栏，内嵌显示
+schema: 1
+name: Grafana
+page:
+  proxy: http://127.0.0.1:3000/
+```
+
+```yaml
+# plugins/health/plugin.yaml：一张卡片，显示某个 JSON 接口里的一个值
+schema: 1
+name: 我的服务
+card:
+  http:
+    url: http://127.0.0.1:8080/health
+  value: status
+  label: {en: Status, zh-CN: 状态}
+```
+
+发布第一个版本之前，清单格式还可能变。
+
 ## 平台
 
 macOS 和 Windows。Windows 在有人实际用过之前标为**实验性**，目前只有 CI 覆盖。

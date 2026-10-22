@@ -65,6 +65,43 @@ Each milestone is released on its own.
 - Starlark plugins, for cards that need more than a few lines of YAML
 - Network and command access only when the plugin's manifest declares it
 
+## Run from source
+
+hostdeck has no release yet. To try what is there, with Go 1.26 or later:
+
+```sh
+git clone https://github.com/Ike-li/hostdeck
+cd hostdeck
+go run .
+```
+
+Then open http://127.0.0.1:4678/.
+
+Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1.
+
+A plugin is a folder holding a `plugin.yaml`. Two small ones:
+
+```yaml
+# plugins/grafana/plugin.yaml: Grafana in the sidebar, embedded
+schema: 1
+name: Grafana
+page:
+  proxy: http://127.0.0.1:3000/
+```
+
+```yaml
+# plugins/health/plugin.yaml: a card showing one value of a JSON endpoint
+schema: 1
+name: My service
+card:
+  http:
+    url: http://127.0.0.1:8080/health
+  value: status
+  label: {en: Status, zh-CN: 状态}
+```
+
+The manifest format may still change before the first release.
+
 ## Platforms
 
 macOS and Windows. Windows is **experimental** until it has been tried by hand; for now only CI covers it.
