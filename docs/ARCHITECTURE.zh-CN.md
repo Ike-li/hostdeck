@@ -8,7 +8,7 @@ hostdeck 是一个 Go 程序。它在 127.0.0.1 上提供网页控制台，启�
 
 ```mermaid
 flowchart LR
-  subgraph 浏览器
+  subgraph browser["浏览器"]
     page["控制台页面<br/>127.0.0.1:4678"]
     frame["iframe<br/>127.0.0.1:4679"]
   end
