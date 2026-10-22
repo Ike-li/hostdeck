@@ -932,10 +932,10 @@ card:
 	manifestPath := filepath.Join(pluginDir, "meter", "plugin.yaml")
 	unchanged := func() {
 		t.Helper()
-		if got := string(mustRead(t, mustOpen(t, manifestPath))); got != manifest {
+		if got := readFile(t, manifestPath); got != manifest {
 			t.Errorf("plugin.yaml changed:\n%s", got)
 		}
-		if got := string(mustRead(t, mustOpen(t, portsFile))); got != ports {
+		if got := readFile(t, portsFile); got != ports {
 			t.Errorf("ports.json changed: %s", got)
 		}
 	}
@@ -967,7 +967,7 @@ card:
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("editing: %d %s", resp.StatusCode, body)
 	}
-	got := string(mustRead(t, mustOpen(t, manifestPath)))
+	got := readFile(t, manifestPath)
 	for _, want := range []string{"# kept on purpose", "# leave this command", "echo", "http://127.0.0.1:9/now", "Gauge"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("plugin.yaml missing %q:\n%s", want, got)
@@ -978,7 +978,7 @@ card:
 			t.Errorf("plugin.yaml still has %q:\n%s", gone, got)
 		}
 	}
-	if portsGot := string(mustRead(t, mustOpen(t, portsFile))); portsGot != ports {
+	if portsGot := readFile(t, portsFile); portsGot != ports {
 		t.Errorf("ports.json is %s, want it unchanged", portsGot)
 	}
 	listed := string(mustRead(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body))
@@ -991,7 +991,7 @@ card:
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("editing the name only: %d %s", resp.StatusCode, body)
 	}
-	got = string(mustRead(t, mustOpen(t, manifestPath)))
+	got = readFile(t, manifestPath)
 	if !strings.Contains(got, "Dial") || !strings.Contains(got, "http://127.0.0.1:9/now") || (!strings.Contains(got, "icon: G") && !strings.Contains(got, `icon: "G"`)) {
 		t.Errorf("a name-only edit touched more than the name:\n%s", got)
 	}
@@ -1019,7 +1019,7 @@ func TestEditingAPageToALinkRemovesTheEmbedAddress(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest || gjson.GetBytes(body, "error.code").String() != "not_web" {
 		t.Fatalf("an ftp link: %d %s, want 400 not_web", resp.StatusCode, body)
 	}
-	if got := string(mustRead(t, mustOpen(t, manifestPath))); got != manifest {
+	if got := readFile(t, manifestPath); got != manifest {
 		t.Fatalf("a refused link changed plugin.yaml:\n%s", got)
 	}
 
@@ -1028,7 +1028,7 @@ func TestEditingAPageToALinkRemovesTheEmbedAddress(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("setting a link: %d %s", resp.StatusCode, body)
 	}
-	got := string(mustRead(t, mustOpen(t, manifestPath)))
+	got := readFile(t, manifestPath)
 	if !strings.Contains(got, "https://example.com/meters") || strings.Contains(got, "proxy") {
 		t.Fatalf("after the link, plugin.yaml is:\n%s", got)
 	}
@@ -1042,7 +1042,7 @@ func TestEditingAPageToALinkRemovesTheEmbedAddress(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("embedding again: %d %s", resp.StatusCode, body)
 	}
-	got = string(mustRead(t, mustOpen(t, manifestPath)))
+	got = readFile(t, manifestPath)
 	if !strings.Contains(got, "http://127.0.0.1:9/now") || strings.Contains(got, "link") || strings.Contains(got, "example.com") {
 		t.Fatalf("after embedding again, plugin.yaml is:\n%s", got)
 	}
@@ -1117,7 +1117,7 @@ card:
 	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Plugins: loaded.Plugins, Reload: reload})
 	file := func(id string) string {
 		t.Helper()
-		return string(mustRead(t, mustOpen(t, filepath.Join(pluginDir, id, "plugin.yaml"))))
+		return readFile(t, filepath.Join(pluginDir, id, "plugin.yaml"))
 	}
 
 	resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"cardUrl": "ftp://127.0.0.1/metrics"}`, fromConsole)
@@ -1159,12 +1159,13 @@ card:
 	}
 }
 
-func mustOpen(t *testing.T, path string) *os.File {
+// readFile reads path and closes it. A handle kept open until the test ends
+// makes Windows refuse to rename a new copy over the file.
+func readFile(t *testing.T, path string) string {
 	t.Helper()
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { f.Close() })
-	return f
+	return string(data)
 }
