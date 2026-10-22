@@ -100,6 +100,37 @@ card:
   label: {en: Status, zh-CN: 状态}
 ```
 
+卡片还可以变黄变红、用几行列出更多数值，并带上一个不写在文件里的令牌：
+
+```yaml
+# plugins/queue/plugin.yaml
+schema: 1
+name: 任务队列
+card:
+  interval: 30s          # 一次读数保留多久；不写就是 1m
+  http:
+    url: http://127.0.0.1:8080/stats
+    headers:
+      Authorization: Bearer ${env:QUEUE_TOKEN}
+  value: queue.waiting   # JSON 返回里的路径，用 gjson 的写法
+  label: 排队中
+  warn: {above: 50}
+  error: {above: 200}
+  rows:
+    - name: 今天失败
+      value: failed.today
+      error: {above: 0}
+    - name: 工作进程
+      value: workers.state
+      warn: {not: running}
+```
+
+- `warn` 和 `error` 各写 `above`、`below`、`equals`、`not` 中的一个。两个都满足时，卡片是红的。
+- `url` 和 `headers` 里可以写 `${env:NAME}`。它的值会发给服务，卡片上的报错里只显示成 `***`。启动 hostdeck 时这个环境变量必须已经设置。
+- 某个插件的 `plugin.yaml` 写错了，它会显示成一张写明哪里错了的错误卡片，其他插件照常加载。
+
+路径的写法见 [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md)。[`examples/`](examples) 里有可以直接复制的完整插件，其中一个的卡片和详情页由脚本生成。
+
 发布第一个版本之前，清单格式还可能变。
 
 ## 平台

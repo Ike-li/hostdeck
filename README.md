@@ -100,6 +100,37 @@ card:
   label: {en: Status, zh-CN: 状态}
 ```
 
+A card can also turn yellow or red, list more values in rows, and send a token kept outside the file:
+
+```yaml
+# plugins/queue/plugin.yaml
+schema: 1
+name: Job queue
+card:
+  interval: 30s          # how long a reading is kept; 1m when left out
+  http:
+    url: http://127.0.0.1:8080/stats
+    headers:
+      Authorization: Bearer ${env:QUEUE_TOKEN}
+  value: queue.waiting   # a path into the JSON response, in gjson syntax
+  label: waiting
+  warn: {above: 50}
+  error: {above: 200}
+  rows:
+    - name: Failed today
+      value: failed.today
+      error: {above: 0}
+    - name: Workers
+      value: workers.state
+      warn: {not: running}
+```
+
+- `warn` and `error` each take one of `above`, `below`, `equals` or `not`. When both match, the card is red.
+- `${env:NAME}` works in `url` and `headers`. The value is sent to the service, and shows as `***` in any error on the card. hostdeck must be started with the variable set.
+- A plugin whose `plugin.yaml` has a mistake shows up as an error card that says what is wrong; the other plugins still load.
+
+Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`examples/`](examples) has complete plugins to copy, including one whose card and detail page come from a script.
+
 The manifest format may still change before the first release.
 
 ## Platforms
