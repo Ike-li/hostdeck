@@ -1,0 +1,23 @@
+# Syncthing in the sidebar, and a card counting what this machine still has
+# to sync across all its folders.
+#
+# The card needs Syncthing's API key, shown under Actions > Settings. Start
+# hostdeck with it in SYNCTHING_API_KEY; until then this plugin shows as an
+# error card. To keep only the page, remove the card section.
+schema: 1
+name: Syncthing
+page:
+  proxy: http://127.0.0.1:8384/
+card:
+  http:
+    url: http://127.0.0.1:8384/rest/db/completion
+    headers:
+      X-API-Key: ${env:SYNCTHING_API_KEY}
+  value: needItems
+  label: {en: items left to sync, zh-CN: 项待同步}
+  warn: {above: 0}
+  rows:
+    - name: {en: Deletions left, zh-CN: 待删除}
+      value: needDeletes
+    - name: {en: Items in all folders, zh-CN: 全部条目}
+      value: globalItems
