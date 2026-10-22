@@ -46,11 +46,39 @@ body {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  min-height: 0;
   padding: 16px 12px;
   background: var(--panel);
   border-right: 1px solid var(--line);
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.side-menu {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 2px;
+  min-height: 0;
+}
+
+.menu {
+  display: none;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .brand {
@@ -64,7 +92,10 @@ body {
 nav {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .nav-item {
@@ -103,6 +134,8 @@ nav {
 }
 
 .nav-item.active .icon { background: var(--panel); }
+.nav-slot,
+.nav-item.active .nav-slot { background: transparent; }
 
 .dot {
   flex: none;
@@ -116,7 +149,7 @@ nav {
 .dot[data-status="down"] { background: var(--error); }
 
 .lang {
-  margin-top: auto;
+  margin-top: 12px;
   display: flex;
   gap: 4px;
 }
@@ -483,13 +516,46 @@ h1 {
 .detail-log pre { margin: 6px 0 0; padding: 8px; overflow-x: auto; background: var(--bg); border-radius: 6px; }
 
 @media (max-width: 640px) {
-  .app {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
-  .sidebar {
-    border-right: 0;
+  .app { display: block; }
+
+  .menu { display: inline-block; }
+
+  .side-head {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    height: 48px;
+    padding: 0 12px;
+    background: var(--panel);
     border-bottom: 1px solid var(--line);
   }
+
+  .sidebar {
+    height: auto;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  /* The list covers the page instead of pushing it down, until the bar opens it. */
+  .side-menu {
+    position: fixed;
+    top: 48px;
+    left: 0;
+    bottom: 0;
+    z-index: 2;
+    width: min(280px, 88vw);
+    padding: 12px;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    transform: translateX(-105%);
+  }
+
+  .app.nav-open .side-menu { transform: none; }
+
+  main { padding-top: 48px; }
   .overview { padding: 16px; }
 }

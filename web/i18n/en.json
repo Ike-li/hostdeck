@@ -1,6 +1,7 @@
 {
   "nav.label": "Sections",
   "nav.overview": "Overview",
+  "nav.menu": "Menu",
   "lang.label": "Language",
   "overview.title": "Overview",
   "overview.empty": "No cards yet. Add one on the Plugins page, or put plugin folders in {dir}; then restart hostdeck.",

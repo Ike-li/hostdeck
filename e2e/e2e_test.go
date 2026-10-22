@@ -1184,3 +1184,127 @@ card:
 		t.Errorf("widen button on a touch screen is %s with opacity %s, want absolute and 1", pos, opacity)
 	}
 }
+
+// Below 640px the page starts under a short bar and the menu opens over it.
+// However many plugins there are, Plugins and the language control stay at the
+// ends of the sidebar, and Overview lines up with a plugin's name.
+func TestANarrowWindowStartsUnderABarAndTheMenuEndsStayPut(t *testing.T) {
+	dir := t.TempDir()
+	for i := 1; i <= 24; i++ {
+		id := fmt.Sprintf("p%02d", i)
+		writePlugin(t, dir, id, fmt.Sprintf("schema: 1\nname: %s\npage: {link: 'https://%s.example/'}\n", id, id))
+	}
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	type box struct {
+		Top     float64 `json:"top"`
+		Bottom  float64 `json:"bottom"`
+		Left    float64 `json:"left"`
+		Right   float64 `json:"right"`
+		Display string  `json:"display"`
+		Missing bool    `json:"missing"`
+	}
+	type layout struct {
+		VH          float64 `json:"vh"`
+		H1          box     `json:"h1"`
+		Menu        box     `json:"menu"`
+		Overview    box     `json:"overview"`
+		Plugin      box     `json:"plugin"`
+		Catalog     box     `json:"catalog"`
+		CatalogName box     `json:"catalogName"`
+		Lang        box     `json:"lang"`
+		Nav         box     `json:"nav"`
+		NavScroll   float64 `json:"navScroll"`
+	}
+	measure := func() layout {
+		t.Helper()
+		raw, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+			const box = (sel) => {
+				const e = document.querySelector(sel);
+				if (!e) return {missing: true};
+				const r = e.getBoundingClientRect();
+				return {top: r.top, bottom: r.bottom, left: r.left, right: r.right, display: getComputedStyle(e).display};
+			};
+			const nav = document.querySelector('#nav');
+			return JSON.stringify({
+				vh: innerHeight,
+				h1: box('h1'),
+				menu: box('#menu'),
+				overview: box('.nav-item[href="#/"] .nav-name'),
+				plugin: box('.nav-item[data-id] .nav-name'),
+				catalog: box('.nav-item[href="#/.plugins"]'),
+				catalogName: box('.nav-item[href="#/.plugins"] .nav-name'),
+				lang: box('.lang'),
+				nav: box('#nav'),
+				navScroll: nav ? nav.scrollHeight - nav.clientHeight : -1
+			});
+		})()`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got layout
+		if err := json.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	seen := func(b box) bool {
+		return !b.Missing && b.Display != "none" && b.Bottom > 0 && b.Top < 4000 && b.Right > b.Left
+	}
+	inView := func(b box, vh float64) bool {
+		return seen(b) && b.Top >= -1 && b.Bottom <= vh+1
+	}
+
+	do(t, ctx,
+		chromedp.EmulateViewport(1280, 640),
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="p01"]`)),
+	)
+	wide := measure()
+	if wide.Menu.Missing || wide.Menu.Display != "none" {
+		t.Errorf("wide menu: missing %v display %s, want a button that is not shown", wide.Menu.Missing, wide.Menu.Display)
+	}
+	if wide.Overview.Missing || wide.Plugin.Missing || abs(wide.Overview.Left-wide.Plugin.Left) > 1 || abs(wide.CatalogName.Left-wide.Plugin.Left) > 1 {
+		t.Errorf("names at 1280: overview %v plugin %v plugins-page %v, want the same left edge", wide.Overview, wide.Plugin, wide.CatalogName)
+	}
+	if !inView(wide.Catalog, wide.VH) || !inView(wide.Lang, wide.VH) || wide.NavScroll < 20 {
+		t.Errorf("sidebar ends at 1280: plugins-page %v lang %v middle scroll %.0f vh %.0f, want both ends in view and the middle scrolling", wide.Catalog, wide.Lang, wide.NavScroll, wide.VH)
+	}
+
+	do(t, ctx, chromedp.EmulateViewport(520, 700))
+	closed := measure()
+	if closed.H1.Missing || closed.H1.Top < 40 || closed.H1.Top > 96 {
+		t.Errorf("overview heading at 520: %+v, want it just under a bar about 48px tall", closed.H1)
+	}
+	if !inView(closed.Menu, closed.VH) || closed.Menu.Bottom > 48 {
+		t.Errorf("menu button at 520: %+v, want it inside the top bar", closed.Menu)
+	}
+	if closed.Nav.Right > 1 {
+		t.Errorf("closed menu still shows the list: right %.0f", closed.Nav.Right)
+	}
+	if closed.Menu.Missing {
+		t.Fatal("no menu button to open")
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS("#menu")))
+	open := measure()
+	if open.Nav.Right <= 1 || open.H1.Top < 40 || open.H1.Top > 96 {
+		t.Errorf("open menu at 520: list %+v heading %+v, want the list over the page and the heading still under the bar", open.Nav, open.H1)
+	}
+	if !inView(open.Catalog, open.VH) || !inView(open.Lang, open.VH) || open.NavScroll < 20 {
+		t.Errorf("open menu ends: plugins-page %v lang %v middle scroll %.0f, want both ends in view and the middle scrolling", open.Catalog, open.Lang, open.NavScroll)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)), chromedp.WaitVisible(chromedp.CSS("#catalog h1")))
+	if after := measure(); after.Nav.Right > 1 {
+		t.Errorf("the menu stays open over the plugins page: list right %.0f", after.Nav.Right)
+	}
+}
+
+func abs(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}

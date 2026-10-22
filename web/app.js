@@ -138,21 +138,15 @@ function renderNav() {
   const entries = JSON.stringify(plugins.map((p) => [p.id, p.type, p.url]));
   if (nav.dataset.entries !== entries) {
     nav.dataset.entries = entries;
-    const pageItem = (href) => {
-      const a = el('a', 'nav-item');
-      a.href = href;
-      a.append(el('span', 'nav-name'));
-      return a;
-    };
-    nav.replaceChildren(pageItem('#/'), ...plugins.map(navItem), pageItem(`#/${CATALOG}`));
+    nav.replaceChildren(...plugins.map(navItem));
   }
-  const [overviewItem, ...items] = nav.children;
-  const catalogItem = items.pop();
+  const overviewItem = $('nav-overview');
+  const catalogItem = $('nav-catalog');
   overviewItem.querySelector('.nav-name').textContent = t('nav.overview');
   overviewItem.classList.toggle('active', !current && !catalogOpen);
   catalogItem.querySelector('.nav-name').textContent = t('nav.catalog');
   catalogItem.classList.toggle('active', catalogOpen);
-  items.forEach((a, i) => {
+  [...nav.children].forEach((a, i) => {
     const p = plugins[i];
     a.querySelector('.nav-name').textContent = pick(p.name);
     a.querySelector('.icon').textContent = iconOf(p);
@@ -739,6 +733,15 @@ async function init() {
   $('page-form').addEventListener('submit', onPageSubmit);
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('drop', onDrop);
+  $('menu').addEventListener('click', () => {
+    const open = document.querySelector('.app').classList.toggle('nav-open');
+    $('menu').setAttribute('aria-expanded', String(open));
+  });
+  document.querySelector('.side-menu').addEventListener('click', (e) => {
+    if (!e.target.closest('a')) return;
+    document.querySelector('.app').classList.remove('nav-open');
+    $('menu').setAttribute('aria-expanded', 'false');
+  });
   sortable($('nav'), '.nav-item[data-id]', (order) => {
     plugins.sort(byOrder(order));
     saveLayout({ sidebar: order });

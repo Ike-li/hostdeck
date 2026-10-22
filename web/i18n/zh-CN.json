@@ -1,6 +1,7 @@
 {
   "nav.label": "栏目",
   "nav.overview": "总览",
+  "nav.menu": "菜单",
   "lang.label": "语言",
   "overview.title": "总览",
   "overview.empty": "还没有卡片。到「插件」页添加一个，或者把插件文件夹放进 {dir}，然后重启 hostdeck。",
