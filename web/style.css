@@ -6,6 +6,7 @@
   --line: #e3e6ea;
   --accent: #2f6fde;
   --ok: #2f9e5b;
+  --warn: #c98a1b;
   --error: #d64545;
   color-scheme: light;
 }
@@ -19,6 +20,7 @@
     --line: #2d3138;
     --accent: #6c9cf0;
     --ok: #4cc27f;
+    --warn: #e0a83a;
     --error: #ef6b6b;
     color-scheme: dark;
   }
@@ -175,6 +177,43 @@ h1 {
 }
 
 .card[data-status="error"] { border-color: var(--error); }
+.card[data-status="warn"] { border-color: var(--warn); }
+
+.pill {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--status, var(--muted)) 16%, transparent);
+  color: var(--status, var(--muted));
+}
+
+[data-status="ok"] { --status: var(--ok); }
+[data-status="warn"] { --status: var(--warn); }
+[data-status="error"] { --status: var(--error); }
+
+.rows {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.row-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status, var(--line));
+}
+
+.row-name { flex: 1; color: var(--muted); }
 
 .card-head {
   display: flex;

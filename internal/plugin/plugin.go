@@ -26,6 +26,7 @@ var languages = []string{"en", "zh-CN"}
 // Plugin is one folder under the plugin root; the folder name is its ID.
 type Plugin struct {
 	ID   string `yaml:"-"`
+	Dir  string `yaml:"-"` // the plugin's folder, where its commands run
 	Name Text   `yaml:"name"`
 	Icon string `yaml:"icon"`
 	Page *Page  `yaml:"page"`
@@ -39,12 +40,21 @@ type Page struct {
 	Link  string `yaml:"link"`
 }
 
-// Card is shown on the overview. Value is a gjson path into the JSON that
-// HTTP returns.
+// Card is shown on the overview. A card either asks a URL, and Value is a
+// gjson path into the JSON it returns, or runs a command that prints the
+// whole card.
 type Card struct {
 	HTTP  *HTTP  `yaml:"http"`
+	Exec  *Exec  `yaml:"exec"`
 	Value string `yaml:"value"`
 	Label Text   `yaml:"label"`
+}
+
+// Exec is a command and its arguments. Windows, when given, replaces Command
+// on Windows, which has no sh.
+type Exec struct {
+	Command []string `yaml:"command"`
+	Windows []string `yaml:"windows"`
 }
 
 type HTTP struct {
@@ -85,6 +95,15 @@ func (t Text) MarshalJSON() ([]byte, error) {
 	return json.Marshal(t.All)
 }
 
+// UnmarshalJSON reads what a plugin's command prints: a string, or an object
+// of languages.
+func (t *Text) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '{' {
+		return json.Unmarshal(data, &t.ByLang)
+	}
+	return json.Unmarshal(data, &t.All)
+}
+
 func (t Text) IsZero() bool {
 	return t.All == "" && len(t.ByLang) == 0
 }
@@ -117,6 +136,7 @@ func Load(root string) ([]Plugin, error) {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 		p.ID = e.Name()
+		p.Dir = filepath.Join(root, e.Name())
 		plugins = append(plugins, p)
 	}
 	return plugins, nil
@@ -154,12 +174,16 @@ func (m manifest) validate() error {
 	if m.Card == nil {
 		return nil
 	}
-	switch {
-	case m.Card.HTTP == nil:
-		return errors.New("card.http is required")
-	case m.Card.HTTP.URL == "":
+	switch c := m.Card; {
+	case (c.HTTP == nil) == (c.Exec == nil):
+		return errors.New("card needs exactly one of card.http or card.exec")
+	case c.Exec != nil && len(c.Exec.Command) == 0:
+		return errors.New("card.exec.command is required")
+	case c.Exec != nil && (c.Value != "" || !c.Label.IsZero()):
+		return errors.New("card.value and card.label go with card.http; a card.exec command prints its own")
+	case c.HTTP != nil && c.HTTP.URL == "":
 		return errors.New("card.http.url is required")
-	case m.Card.Value == "":
+	case c.HTTP != nil && c.Value == "":
 		return errors.New("card.value is required")
 	}
 	return nil

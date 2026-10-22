@@ -571,3 +571,24 @@ func TestClearingCacheEmptiesOneServiceAndKeepsCookies(t *testing.T) {
 		t.Errorf("another service lost its data: %+v", s)
 	}
 }
+
+func TestTheDiskExampleShowsItsStatusAndRows(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.CopyFS(filepath.Join(dir, "plugins", "disk"), os.DirFS(filepath.Join("..", "examples", "disk"))); err != nil {
+		t.Fatal(err)
+	}
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	const card = `.card[data-id="disk"]`
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(card+" .card-value")))
+	if value, label := text(t, ctx, card+" .card-value"), text(t, ctx, card+" .card-label"); !strings.HasSuffix(value, " GB") || !strings.HasPrefix(label, "可用，共") {
+		t.Errorf("card %q %q, want the free space in GB and a Chinese label", value, label)
+	}
+	if pill := text(t, ctx, card+" .pill"); !slices.Contains([]string{"正常", "注意", "异常"}, pill) {
+		t.Errorf("status says %q, want it in Chinese", pill)
+	}
+	if row := text(t, ctx, card+" .row-name"); row != "已用" {
+		t.Errorf("row %q, want 已用", row)
+	}
+}

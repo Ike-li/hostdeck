@@ -1,0 +1,6 @@
+schema: 1
+name: {en: Disk space, zh-CN: 磁盘空间}
+card:
+  exec:
+    command: [sh, card.sh]
+    windows: [powershell, -NoProfile, -NonInteractive, -ExecutionPolicy, Bypass, -File, card.ps1]
