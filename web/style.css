@@ -105,14 +105,14 @@ nav {
   border-radius: 6px;
 }
 
-/* Over the end of the row, and only while it can be used: the name keeps its width. */
+/* A column at the end of the row, shown only while they can be used. Three
+   buttons in one line cover the middle of a 200px sidebar, so a click there
+   would hide the plugin instead of opening it. Hanging them under the row
+   covers the next entry. */
 .nav-moves {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  transform: translateY(-50%);
   display: flex;
-  gap: 2px;
+  flex-direction: column;
+  gap: 1px;
   opacity: 0;
   background: var(--panel);
   border-radius: 4px;
@@ -120,9 +120,6 @@ nav {
 
 .nav-row:hover .nav-moves,
 .nav-row:focus-within .nav-moves { opacity: 1; }
-
-.nav-row:hover .nav-item,
-.nav-row:focus-within .nav-item { padding-right: 112px; }
 
 .nav-row .nav-item {
   flex: 1;
@@ -356,13 +353,9 @@ h1 {
 .card:hover .card-moves,
 .card:focus-within .card-moves { opacity: 1; }
 
-/* The buttons stay on the top edge. The title drops below them, so a narrow
-   card can keep its name and its status instead of being covered. */
-#cards .card:hover .card-head,
-#cards .card:focus-within .card-head { padding-top: 28px; }
-
-#cards .card:hover .pill,
-#cards .card:focus-within .pill { margin-right: 0; }
+/* The buttons stay on the top edge, in space that is always there. Adding it
+   only on hover moves the title, and a click aimed at the card lands short. */
+#cards .card-head { padding-top: 28px; }
 
 .move {
   padding: 0 4px;
@@ -413,9 +406,6 @@ h1 {
 @media (hover: none) {
   .card-width { opacity: 1; }
   .nav-moves, .card-moves { opacity: 1; }
-  .nav-row .nav-item { padding-right: 112px; }
-  #cards .card-head { padding-top: 28px; }
-  #cards .pill { margin-right: 0; }
 }
 
 .card-big {
