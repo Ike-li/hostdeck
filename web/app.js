@@ -114,6 +114,7 @@ function route() {
 function render() {
   for (const e of document.querySelectorAll('[data-i18n]')) e.textContent = t(e.dataset.i18n);
   for (const e of document.querySelectorAll('[data-i18n-label]')) e.setAttribute('aria-label', t(e.dataset.i18nLabel));
+  for (const e of document.querySelectorAll('[data-i18n-placeholder]')) e.placeholder = t(e.dataset.i18nPlaceholder);
   for (const b of document.querySelectorAll('[data-lang]')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
 
   $('banner').hidden = !failure;
@@ -507,6 +508,55 @@ function catalogButton(label, armedText, url, noteOf) {
   return btn;
 }
 
+// addPage embeds the web page at address and opens it. If it cannot, the
+// plugins page says why.
+async function addPage(address, name = '') {
+  try {
+    const resp = await fetch('/api/pages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address, name }),
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw body.error || { code: '', detail: `HTTP ${resp.status}` };
+    await loadPlugins();
+    location.hash = `#/${encodeURIComponent(body.id)}`;
+    refreshStatus();
+    return true;
+  } catch (err) {
+    const n = $('catalog-note');
+    n.textContent = explain(err);
+    n.hidden = false;
+    location.hash = `#/${CATALOG}`;
+    return false;
+  }
+}
+
+async function onPageSubmit(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  if (await addPage($('page-address').value.trim(), $('page-name').value)) form.reset();
+  btn.disabled = false;
+}
+
+// An address dragged from the browser onto the console is embedded. Dragging
+// the console's own entries into order is left alone.
+function onDragOver(e) {
+  if (!dragging && e.dataTransfer.types.includes('text/uri-list')) e.preventDefault();
+}
+
+function onDrop(e) {
+  if (dragging || !e.dataTransfer.types.includes('text/uri-list')) return;
+  e.preventDefault();
+  const address = e.dataTransfer
+    .getData('text/uri-list')
+    .split(/\r?\n/)
+    .find((line) => line && !line.startsWith('#'));
+  if (address) addPage(address.trim());
+}
+
 function installedItem(p) {
   const item = catalogCard(p);
   const folder = `.${p.id}`;
@@ -675,6 +725,9 @@ async function init() {
     b.addEventListener('click', () => setLang(b.dataset.lang, true));
   }
   $('service-clear').addEventListener('click', onClearClick);
+  $('page-form').addEventListener('submit', onPageSubmit);
+  document.addEventListener('dragover', onDragOver);
+  document.addEventListener('drop', onDrop);
   sortable($('nav'), '.nav-item[data-id]', (order) => {
     plugins.sort(byOrder(order));
     saveLayout({ sidebar: order });

@@ -214,3 +214,80 @@ func TestABuiltInPluginThatIsDisabledCountsAsAdded(t *testing.T) {
 		t.Errorf("disk: %+v, want it counted as added", entries[0])
 	}
 }
+
+func TestAWebPageIsAddedAsAPluginThatEmbedsIt(t *testing.T) {
+	pluginDir := t.TempDir()
+
+	for _, tc := range []struct{ address, name, id, proxy, shown string }{
+		{"http://127.0.0.1:8080/app/", "", "127-0-0-1-8080", "http://127.0.0.1:8080/app/", "127.0.0.1:8080"},
+		{"localhost:3000", "我的: 应用", "localhost-3000", "http://localhost:3000", "我的: 应用"},
+		{"https://192.168.1.20", "NAS", "192-168-1-20", "https://192.168.1.20", "NAS"},
+		{"http://[::1]:9000/", "", "1-9000", "http://[::1]:9000/", "[::1]:9000"},
+	} {
+		id, err := AddPage(pluginDir, tc.address, tc.name)
+		if err != nil || id != tc.id {
+			t.Errorf("%s: id %q, %v; want %q", tc.address, id, err, tc.id)
+			continue
+		}
+	}
+	plugins, broken, err := plugin.Load(pluginDir)
+	if err != nil || len(broken) != 0 {
+		t.Fatalf("loading what was added: %v %v", broken, err)
+	}
+	got := map[string]string{}
+	for _, p := range plugins {
+		got[p.ID] = p.Name.All + " -> " + p.Page.Proxy
+	}
+	want := map[string]string{
+		"127-0-0-1-8080": "127.0.0.1:8080 -> http://127.0.0.1:8080/app/",
+		"localhost-3000": "我的: 应用 -> http://localhost:3000",
+		"192-168-1-20":   "NAS -> https://192.168.1.20",
+		"1-9000":         "[::1]:9000 -> http://[::1]:9000/",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("loaded %v, want %v", got, want)
+	}
+}
+
+func TestTheSamePageAddedTwiceGetsAFolderOfItsOwn(t *testing.T) {
+	pluginDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(pluginDir, ".localhost-3000"), 0o755); err != nil {
+		t.Fatal(err) // a disabled one counts
+	}
+	var ids []string
+	for range 2 {
+		id, err := AddPage(pluginDir, "localhost:3000", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if want := []string{"localhost-3000-2", "localhost-3000-3"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("got %v, want %v", ids, want)
+	}
+}
+
+func TestOnlyPagesOnThisMachineOrTheLocalNetworkAreAdded(t *testing.T) {
+	pluginDir := t.TempDir()
+	for address, want := range map[string]error{
+		"http://93.184.215.14/":  ErrNotLocal,
+		"https://8.8.8.8:443":    ErrNotLocal,
+		"http://[2001:db8::1]/":  ErrNotLocal,
+		"ftp://127.0.0.1/":       ErrNotWeb,
+		"http://":                ErrNotWeb,
+		"":                       ErrNotWeb,
+		"javascript:alert(1)":    ErrNotWeb,
+		"http://10.0.0.5:8080/":  nil,
+		"http://172.16.3.4/":     nil,
+		"http://169.254.10.1/":   nil,
+		"http://[fd00::5]:8080/": nil,
+	} {
+		if _, err := AddPage(pluginDir, address, ""); !errors.Is(err, want) {
+			t.Errorf("%q: %v, want %v", address, err, want)
+		}
+	}
+	entries, _ := os.ReadDir(pluginDir)
+	if len(entries) != 4 {
+		t.Errorf("the plugins folder holds %d entries, want only the 4 local pages", len(entries))
+	}
+}

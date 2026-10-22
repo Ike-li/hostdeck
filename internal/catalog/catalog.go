@@ -5,13 +5,18 @@
 package catalog
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -19,9 +24,11 @@ import (
 )
 
 var (
-	ErrUnknown = errors.New("no such plugin")
-	ErrAdded   = errors.New("a plugin folder of that name is already there")
-	ErrTaken   = errors.New("the folder that name would be renamed to is already there")
+	ErrNotWeb   = errors.New("not an http or https address")
+	ErrNotLocal = errors.New("not on this machine or the local network")
+	ErrUnknown  = errors.New("no such plugin")
+	ErrAdded    = errors.New("a plugin folder of that name is already there")
+	ErrTaken    = errors.New("the folder that name would be renamed to is already there")
 )
 
 // Entry is a built-in plugin as the plugins page lists it.
@@ -61,8 +68,7 @@ func List(builtIn fs.FS, pluginDir string) ([]Entry, error) {
 }
 
 // Add copies the built-in plugin id into pluginDir and returns where. It never
-// replaces a folder that is there. The copy is made under a name Load skips
-// and then renamed, so a failure leaves no half-written plugin behind.
+// replaces a folder that is there.
 func Add(builtIn fs.FS, pluginDir, id string) (string, error) {
 	if !fs.ValidPath(id) || id == "." || strings.Contains(id, "/") {
 		return "", ErrUnknown
@@ -78,22 +84,99 @@ func Add(builtIn fs.FS, pluginDir, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	tmp, err := os.MkdirTemp(pluginDir, ".adding-")
-	if err != nil {
-		return "", err
-	}
-	err = os.Chmod(tmp, 0o755)
-	if err == nil {
-		err = os.CopyFS(tmp, sub)
-	}
-	if err == nil {
-		err = os.Rename(tmp, target)
-	}
-	if err != nil {
-		os.RemoveAll(tmp)
+	if err := place(pluginDir, id, func(dir string) error { return os.CopyFS(dir, sub) }); err != nil {
 		return "", err
 	}
 	return target, nil
+}
+
+// place makes the folder pluginDir/id with fill. The folder is filled under a
+// name Load skips and then renamed, so a failure leaves no half-written plugin
+// behind.
+func place(pluginDir, id string, fill func(dir string) error) error {
+	tmp, err := os.MkdirTemp(pluginDir, ".adding-")
+	if err != nil {
+		return err
+	}
+	err = os.Chmod(tmp, 0o755)
+	if err == nil {
+		err = fill(tmp)
+	}
+	if err == nil {
+		err = os.Rename(tmp, filepath.Join(pluginDir, id))
+	}
+	if err != nil {
+		os.RemoveAll(tmp)
+	}
+	return err
+}
+
+// AddPage adds a plugin that embeds the web page at address, which may leave
+// out http://, and returns its ID. The page must be on this machine or the
+// local network: the proxy sends it 127.0.0.1 as its host, which a site on the
+// internet would not answer to. Without a name, the page is named by its host.
+func AddPage(pluginDir, address, name string) (string, error) {
+	if !strings.Contains(address, "://") {
+		address = "http://" + address
+	}
+	u, err := url.Parse(address)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return "", ErrNotWeb
+	}
+	if !onLocalNetwork(u.Hostname()) {
+		return "", ErrNotLocal
+	}
+	if name = strings.TrimSpace(name); name == "" {
+		name = u.Host
+	}
+	manifest, err := yaml.Marshal(map[string]any{"schema": 1, "name": name, "page": map[string]string{"proxy": u.String()}})
+	if err != nil {
+		return "", err
+	}
+	base := pageID(u)
+	id := base
+	for n := 2; present(pluginDir, id); n++ {
+		id = fmt.Sprintf("%s-%d", base, n)
+	}
+	err = place(pluginDir, id, func(dir string) error {
+		return os.WriteFile(filepath.Join(dir, "plugin.yaml"), manifest, 0o644)
+	})
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// pageID names a page's folder after its host and port, in letters, digits
+// and dashes.
+func pageID(u *url.URL) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(u.Hostname() + "-" + u.Port()) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case !strings.HasSuffix(b.String(), "-") && b.Len() > 0:
+			b.WriteByte('-')
+		}
+	}
+	return strings.TrimSuffix(b.String(), "-")
+}
+
+// onLocalNetwork says whether every address host stands for is loopback,
+// private or link-local. A name that does not resolve in a few seconds is not.
+func onLocalNetwork(host string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil || len(addrs) == 0 {
+		return false
+	}
+	for _, a := range addrs {
+		if a = a.Unmap(); !a.IsLoopback() && !a.IsPrivate() && !a.IsLinkLocalUnicast() {
+			return false
+		}
+	}
+	return true
 }
 
 // about is what the plugins page shows of a manifest.

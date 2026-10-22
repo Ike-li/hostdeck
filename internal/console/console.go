@@ -104,6 +104,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/action/{id}", s.serveAction)
 	mux.HandleFunc("GET /api/catalog", s.serveCatalog)
 	mux.HandleFunc("POST /api/catalog/{id}", s.serveAdd)
+	mux.HandleFunc("POST /api/pages", s.serveAddPage)
 	mux.HandleFunc("POST /api/plugins/{id}/disable", s.serveRename(catalog.Disable))
 	mux.HandleFunc("POST /api/plugins/{id}/enable", s.serveRename(catalog.Enable))
 	mux.HandleFunc("POST /api/layout", s.serveLayout)
@@ -359,6 +360,39 @@ func (s *server) serveAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, struct {
 			Path string `json:"path"`
 		}{path})
+	}
+}
+
+// serveAddPage adds a plugin that embeds a web page on this machine or the
+// local network and puts it to use, for the console page only.
+func (s *server) serveAddPage(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	var req struct {
+		Address string `json:"address"`
+		Name    string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
+		return
+	}
+	s.changing.Lock()
+	defer s.changing.Unlock()
+	id, err := catalog.AddPage(s.cfg.PluginDir, req.Address, req.Name)
+	switch {
+	case errors.Is(err, catalog.ErrNotWeb):
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "not_web"})
+	case errors.Is(err, catalog.ErrNotLocal):
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "not_local"})
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "add_failed", Detail: err.Error()})
+	case !s.reload(w):
+	default:
+		writeJSON(w, struct {
+			ID string `json:"id"`
+		}{id})
 	}
 }
 

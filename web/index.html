@@ -29,6 +29,13 @@
       <h1 data-i18n="catalog.title"></h1>
       <p id="catalog-intro" class="empty"></p>
       <p id="catalog-note" class="catalog-note" hidden></p>
+      <h2 class="catalog-heading" data-i18n="catalog.page"></h2>
+      <form id="page-form" class="page-form">
+        <input id="page-address" type="text" inputmode="url" autocomplete="off" spellcheck="false" required data-i18n-placeholder="catalog.page.address">
+        <input id="page-name" type="text" autocomplete="off" data-i18n-placeholder="catalog.page.name">
+        <button class="btn" type="submit" data-i18n="catalog.add"></button>
+      </form>
+      <p class="page-hint" data-i18n="catalog.page.hint"></p>
       <h2 class="catalog-heading" data-i18n="catalog.installed"></h2>
       <div id="catalog-installed" class="cards"></div>
       <h2 id="catalog-available-heading" class="catalog-heading" data-i18n="catalog.available"></h2>

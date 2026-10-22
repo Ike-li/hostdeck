@@ -295,6 +295,31 @@ h1 {
 
 .catalog-state + .btn { margin-top: 10px; }
 
+.page-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.page-form input {
+  flex: 1 1 14em;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.page-form input#page-name { flex-basis: 8em; }
+
+.page-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .catalog-description {
   margin: 10px 0 12px;
   color: var(--muted);

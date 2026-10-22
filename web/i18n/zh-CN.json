@@ -61,5 +61,11 @@
   "catalog.enabled.note": "已启用 {name}。",
   "error.not_installed": "插件文件夹里已经没有这个插件了，列表会重新读取。",
   "error.name_taken": "要改成的文件夹名已经被占用了。请先把其中一个改名或删掉。",
-  "error.reload_failed": "改动已经完成，但重新读取插件文件夹失败：{detail}。重启 hostdeck 后生效。"
+  "error.reload_failed": "改动已经完成，但重新读取插件文件夹失败：{detail}。重启 hostdeck 后生效。",
+  "catalog.page": "内嵌网页",
+  "catalog.page.address": "网址，例如 127.0.0.1:8080",
+  "catalog.page.name": "名称（可选）",
+  "catalog.page.hint": "本机或局域网里的网页，添加后从侧栏打开。也可以直接把浏览器里的网址拖到 hostdeck 上。",
+  "error.not_web": "这不是网址。请填 127.0.0.1:8080 或 http://nas.local:5000 这样的地址。",
+  "error.not_local": "只能内嵌本机或局域网里的网页。"
 }

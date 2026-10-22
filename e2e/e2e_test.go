@@ -965,3 +965,52 @@ func TestCardsAreDraggedAndWidenedAndStaySo(t *testing.T) {
 	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="b"] .card-width`)))
 	savedLayout(t, dir, "wide", nil)
 }
+
+// A web page on this machine is embedded from the plugins page by its address,
+// or by dropping its address onto the console, and opens at once.
+func TestAWebPageIsEmbeddedByItsAddressOrByDroppingIt(t *testing.T) {
+	dir := t.TempDir()
+	svc := framingRefusingService(t)
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	submit := func(address, name string) {
+		t.Helper()
+		js := fmt.Sprintf(`document.querySelector('#page-address').value = %q; document.querySelector('#page-name').value = %q; document.querySelector('#page-form button').click()`, address, name)
+		if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](js)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opened := func(id string) {
+		t.Helper()
+		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`location.hash === %q`, "#/"+id))); err != nil {
+			t.Fatalf("waiting for #/%s: %v; at %q", id, err, text(t, ctx, "#catalog-note"))
+		}
+		if got, ok := tryFrameText(ctx, "#frames iframe:not([hidden])", "#svc", 15*time.Second); !ok || got != "Hello from the service" {
+			t.Errorf("%s shows %q, %v; want the service's page", id, got, ok)
+		}
+	}
+
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS("#page-address")))
+	submit("8.8.8.8", "")
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#catalog-note').textContent.includes('局域网')`)); err != nil {
+		t.Errorf("an address on the internet: %v; the note says %q", err, text(t, ctx, "#catalog-note"))
+	}
+
+	id := strings.NewReplacer(".", "-", ":", "-").Replace(strings.TrimPrefix(svc, "http://"))
+	submit(svc, "服务")
+	opened(id)
+	if got := text(t, ctx, fmt.Sprintf(`.nav-item[data-id=%q] .nav-name`, id)); got != "服务" {
+		t.Errorf("the sidebar names it %q, want 服务", got)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/"]`)), chromedp.WaitVisible(chromedp.CSS("#overview")))
+	_, err := chromedp.Run(ctx, chromedp.Evaluate[any](fmt.Sprintf(`(() => {
+		const dt = new DataTransfer();
+		dt.setData('text/uri-list', %q);
+		for (const type of ['dragenter', 'dragover', 'drop']) document.querySelector('#cards').dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, dataTransfer: dt}));
+	})()`, svc+"/")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened(id + "-2")
+}

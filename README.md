@@ -19,9 +19,9 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 
 - **Access from other devices** (LAN, phone), login, HTTPS. hostdeck listens on 127.0.0.1 only, and its security model depends on that.
 - **Linux** before v1, a Docker image, multiple users.
-- **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page only adds the plugins built into hostdeck.
+- **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page adds only the plugins built into hostdeck, and plugins that embed a web page on this machine or the local network from its address.
 - **Hundreds of built-in integrations.** Common services are covered by example plugins.
-- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, disabling or enabling a plugin, and arranging the sidebar and the cards.
+- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, disabling or enabling a plugin, and arranging the sidebar and the cards.
 - **Electron.**
 
 ## Roadmap
@@ -41,7 +41,7 @@ Each milestone is released on its own.
 - External-program plugins: any executable that prints the card as JSON
 - Detail pages that list items, with actions that need a second click to confirm
 - Example plugins for a few common services
-- A plugins page that adds the plugins built into hostdeck, without the network, and disables or enables installed ones
+- A plugins page that adds the plugins built into hostdeck, without the network, embeds a web page on this machine or the local network from its address or by dragging it in, and disables or enables installed ones
 - CI on macOS and Windows, and release archives for both
 
 ### M1 This machine
@@ -79,7 +79,7 @@ go run .
 
 Then open http://127.0.0.1:4678/.
 
-Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. The **Plugins** page in the sidebar adds the ones that come with hostdeck, and disables or enables installed ones, each change taking effect at once: a disabled plugin's folder is renamed to start with a dot, which hostdeck skips, and nothing in it changes. A plugin folder added or changed by hand is read when hostdeck restarts, or with the next change on that page.
+Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. The **Plugins** page in the sidebar adds the ones that come with hostdeck, and disables or enables installed ones, each change taking effect at once: a disabled plugin's folder is renamed to start with a dot, which hostdeck skips, and nothing in it changes. A plugin folder added or changed by hand is read when hostdeck restarts, or with the next change on that page. A web page on this machine or the local network is embedded from the same page by its address, or by dragging the address onto hostdeck; that writes a plugin folder whose `plugin.yaml` holds only `page.proxy`.
 
 A plugin is a folder holding a `plugin.yaml`. Two small ones:
 

@@ -61,5 +61,11 @@
   "catalog.enabled.note": "Enabled {name}.",
   "error.not_installed": "That plugin is no longer in the plugins folder. The list is read again.",
   "error.name_taken": "A folder with the name it would take is already there. Rename or remove one of them first.",
-  "error.reload_failed": "The change was made, but reading the plugins folder again failed: {detail}. Restart hostdeck to use it."
+  "error.reload_failed": "The change was made, but reading the plugins folder again failed: {detail}. Restart hostdeck to use it.",
+  "catalog.page": "Embed a web page",
+  "catalog.page.address": "Address, e.g. 127.0.0.1:8080",
+  "catalog.page.name": "Name (optional)",
+  "catalog.page.hint": "A web page on this machine or your local network, opened from the sidebar. You can also drag an address from the browser onto hostdeck.",
+  "error.not_web": "That is not a web address. Enter one like 127.0.0.1:8080 or http://nas.local:5000.",
+  "error.not_local": "Only pages on this machine or your local network can be embedded."
 }

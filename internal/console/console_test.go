@@ -671,3 +671,59 @@ func TestAFailedReloadKeepsWhatWasLoadedAndSaysWhy(t *testing.T) {
 		t.Errorf("the sidebar has %v, want what was loaded before", got)
 	}
 }
+
+func postJSON(h http.Handler, url, body string, header map[string]string) *http.Response {
+	req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w.Result()
+}
+
+func TestAWebPageIsEmbeddedFromItsAddressAtOnce(t *testing.T) {
+	pluginDir := t.TempDir()
+	reload := reloadFrom(pluginDir)
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Reload: reload})
+
+	for name, header := range fromOtherPage {
+		if resp := postJSON(h, "http://127.0.0.1:4678/api/pages", `{"address": "127.0.0.1:8080"}`, header); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	for body, code := range map[string]string{
+		`{"address": "http://93.184.215.14/"}`: "not_local",
+		`{"address": "ftp://127.0.0.1/"}`:      "not_web",
+		`not json`:                             "bad_request",
+	} {
+		resp := postJSON(h, "http://127.0.0.1:4678/api/pages", body, fromConsole)
+		got, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusBadRequest || gjson.GetBytes(got, "error.code").String() != code {
+			t.Errorf("%s: %d %s, want 400 %s", body, resp.StatusCode, got, code)
+		}
+	}
+	if entries, _ := os.ReadDir(pluginDir); len(entries) != 0 {
+		t.Fatalf("refused requests left %d entries in the plugins folder", len(entries))
+	}
+
+	resp := postJSON(h, "http://127.0.0.1:4678/api/pages", `{"address": "127.0.0.1:8080/app/", "name": "App"}`, fromConsole)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || gjson.GetBytes(body, "id").String() != "127-0-0-1-8080" {
+		t.Fatalf("adding: %d %s", resp.StatusCode, body)
+	}
+	got := string(mustRead(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body))
+	if gjson.Get(got, "#.id").String() != `["127-0-0-1-8080"]` || gjson.Get(got, "0.name").String() != "App" || gjson.Get(got, "0.type").String() != "proxy" {
+		t.Errorf("the sidebar has %s, want the page, named App, embedded", got)
+	}
+}
+
+func mustRead(t *testing.T, r io.Reader) []byte {
+	t.Helper()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
