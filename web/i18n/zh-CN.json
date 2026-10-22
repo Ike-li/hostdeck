@@ -4,6 +4,8 @@
   "nav.menu": "菜单",
   "lang.label": "语言",
   "overview.title": "总览",
+  "overview.refresh": "刷新",
+  "card.updated": "读取于 {time}",
   "overview.empty": "还没有卡片。到「插件」页添加一个，或者把插件文件夹放进 {dir}，然后重启 hostdeck。",
   "error.backend": "连不上 hostdeck 后端：{detail}",
   "error.fetch_failed": "取不到数值：{detail}",

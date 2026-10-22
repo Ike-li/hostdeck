@@ -1308,3 +1308,57 @@ func abs(v float64) float64 {
 	}
 	return v
 }
+
+// A card that failed is read again while the overview stays open, and it says
+// when it was read. Refresh asks a card again before its interval.
+func TestAFailedCardIsReadAgainWhileTheOverviewStaysOpen(t *testing.T) {
+	var up atomic.Bool
+	var hits atomic.Int32
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := hits.Add(1)
+		if !up.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprintf(w, `{"v":"%d"}`, n)
+	}))
+	t.Cleanup(svc.Close)
+	dir := t.TempDir()
+	writePlugin(t, dir, "health", fmt.Sprintf(`schema: 1
+name: {en: Health, zh-CN: 健康}
+card:
+  http: {url: %q}
+  value: v
+  interval: 1h
+`, svc.URL))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	do(t, ctx,
+		chromedp.EmulateViewport(1280, 800),
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="health"] .card-error`)),
+	)
+	up.Store(true)
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('.card[data-id="health"] .card-value')?.textContent === '2' || document.querySelector('.card[data-id="health"] .card-value')?.textContent > '1'`)); err != nil {
+		t.Fatal(err)
+	}
+	// The value above may be "2" from the failed attempt counting. Accept any
+	// non-empty value once the error is gone, then require it to hold.
+	value := text(t, ctx, `.card[data-id="health"] .card-value`)
+	if value == "" {
+		t.Fatal("the card recovered without a value")
+	}
+	updated := text(t, ctx, `.card[data-id="health"] .card-updated`)
+	if !strings.Contains(updated, "读取于") {
+		t.Errorf("updated line %q, want it to say when the card was read", updated)
+	}
+	held := hits.Load()
+	time.Sleep(2500 * time.Millisecond)
+	if hits.Load() != held || text(t, ctx, `.card[data-id="health"] .card-value`) != value {
+		t.Errorf("a card that succeeded was read again: value %s hits %d, was %s after %d", text(t, ctx, `.card[data-id="health"] .card-value`), hits.Load(), value, held)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS("#refresh")))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector('.card[data-id="health"] .card-value')?.textContent !== %q`, value))); err != nil {
+		t.Fatal(err)
+	}
+}

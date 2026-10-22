@@ -288,6 +288,24 @@ func TestACardIsAskedAgainOnlyAfterItsInterval(t *testing.T) {
 	}
 }
 
+// Refresh forgets a kept value, so the next read asks again before the interval.
+func TestARefreshReadsTheCardAgainBeforeItsInterval(t *testing.T) {
+	url, hits := counting(t, nil)
+	p := declarative(url, "v")
+	p.Card.Interval = plugin.Duration(time.Minute)
+	now := time.Now()
+	cache := NewCache(func() time.Time { return now })
+
+	first := cache.Get(context.Background(), p)
+	if first.Value != "1" || !first.Updated.Equal(now) {
+		t.Fatalf("first: value %q updated %s, want 1 read at %s", first.Value, first.Updated, now)
+	}
+	cache.Drop()
+	if v := cache.Get(context.Background(), p); v.Value != "2" || hits.Load() != 2 {
+		t.Errorf("after refresh: value %q after %d requests, want a new 2", v.Value, hits.Load())
+	}
+}
+
 // A service that was down shows its value as soon as it is up again.
 func TestAFailedCardIsNotKept(t *testing.T) {
 	var up atomic.Bool

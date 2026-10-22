@@ -33,6 +33,8 @@ type View struct {
 	// Pending says that a fetch is under way; what the card holds, if
 	// anything, is from the fetch before.
 	Pending bool `json:"pending,omitempty"`
+	// Updated is when this view was read. Zero while the first read is still going.
+	Updated time.Time `json:"updated,omitzero"`
 }
 
 type Row struct {
@@ -285,6 +287,16 @@ func NewCache(now func() time.Time) *Cache {
 	return &Cache{now: now, entries: map[string]*entry{}}
 }
 
+// Drop forgets every kept view, so the next Get asks again before the interval.
+// A fetch that is already running is left to finish.
+func (c *Cache) Drop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, e := range c.entries {
+		e.until = time.Time{}
+	}
+}
+
 // Get returns the plugin's card: the kept one while its interval lasts, else
 // a new one. If the fetch outlasts ctx, the card comes back pending, with its
 // last value if it has one, and the fetch goes on for the next request.
@@ -326,6 +338,7 @@ func (c *Cache) fetch(p plugin.Plugin, e *entry) {
 	ctx, cancel := context.WithTimeout(context.Background(), FetchTimeout)
 	defer cancel()
 	v := Fetch(ctx, p)
+	v.Updated = c.now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e.view, e.until = v, time.Time{}

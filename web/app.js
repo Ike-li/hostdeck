@@ -216,6 +216,7 @@ function cardElement(c) {
     card.dataset.status = 'error';
     card.append(el('p', 'card-error', explain(c.error)));
     if (c.error.file) card.append(errorFile(c.error.file));
+    stamp(card, c);
     return card;
   }
   if (c.status) {
@@ -227,6 +228,7 @@ function cardElement(c) {
   const big = el('div', 'card-big');
   big.append(el('span', 'card-value', c.value ?? ''), el('span', 'card-label', pick(c.label)));
   card.append(big);
+  stamp(card, c);
   if (c.rows?.length) {
     const rows = el('ul', 'rows');
     for (const r of c.rows) {
@@ -712,7 +714,16 @@ async function loadCards() {
     failure = e.message;
   }
   render();
-  if (!current && overview?.cards.some((c) => c.pending)) cardsTimer = setTimeout(loadCards, PENDING_AGAIN);
+  // A failed card is asked again for as long as the overview stays open.
+  // A card that succeeded stays cached until its interval, or until Refresh.
+  const waiting = overview?.cards.some((c) => c.pending || c.error);
+  if (!current && !catalogOpen && waiting) cardsTimer = setTimeout(loadCards, PENDING_AGAIN);
+}
+
+function stamp(card, c) {
+  if (!c.updated) return;
+  const time = new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(c.updated));
+  card.append(el('p', 'card-updated', t('card.updated', { time })));
 }
 
 async function refreshStatus() {
@@ -733,6 +744,16 @@ async function init() {
   $('page-form').addEventListener('submit', onPageSubmit);
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('drop', onDrop);
+  $('refresh').addEventListener('click', async () => {
+    try {
+      const resp = await fetch('/api/cards/refresh', { method: 'POST' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      await loadCards();
+    } catch (e) {
+      failure = e.message;
+      render();
+    }
+  });
   $('menu').addEventListener('click', () => {
     const open = document.querySelector('.app').classList.toggle('nav-open');
     $('menu').setAttribute('aria-expanded', String(open));

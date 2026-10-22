@@ -121,6 +121,12 @@ func TestCardsListTheOverviewAndThePluginFolder(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
+	card0 := got.(map[string]any)["cards"].([]any)[0].(map[string]any)
+	updated, _ := card0["updated"].(string)
+	if _, err := time.Parse(time.RFC3339Nano, updated); err != nil {
+		t.Errorf("updated %q, want the time the card was read", updated)
+	}
+	delete(card0, "updated")
 	var want any
 	json.Unmarshal([]byte(`{
 		"pluginDir": "/somewhere/plugins",
@@ -697,6 +703,46 @@ func TestAPluginEnabledAgainShowsAFreshCard(t *testing.T) {
 	postFrom(h, "http://127.0.0.1:4678/api/plugins/demo/enable", fromConsole)
 	if got := value(); !reflect.DeepEqual(got, []string{"2"}) {
 		t.Errorf("after enabling, the card says %v, want it asked again", got)
+	}
+}
+
+// Refresh forgets the kept card, and only the console page may ask for that.
+func TestARefreshAsksTheCardAgainBeforeItsInterval(t *testing.T) {
+	asked := 0
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		fmt.Fprintf(w, `{"asked": %d}`, asked)
+	}))
+	defer svc.Close()
+	pluginDir := t.TempDir()
+	writeManifest(t, pluginDir, "demo", fmt.Sprintf("schema: 1\nname: Demo\ncard:\n  http: {url: '%s'}\n  value: asked\n  interval: 1h\n", svc.URL))
+	reload := reloadFrom(pluginDir)
+	loaded, err := reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Plugins: loaded.Plugins, Reload: reload})
+	body := func() []byte {
+		t.Helper()
+		b, _ := io.ReadAll(get(h, "http://127.0.0.1:4678/api/cards", nil).Body)
+		return b
+	}
+
+	first := body()
+	if gjson.GetBytes(first, "cards.0.value").String() != "1" || gjson.GetBytes(first, "cards.0.updated").String() == "" {
+		t.Fatalf("first card: %s", first)
+	}
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/cards/refresh", nil); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("refresh from elsewhere: status %d, want 403", resp.StatusCode)
+	}
+	if got := gjson.GetBytes(body(), "cards.0.value").String(); got != "1" || asked != 1 {
+		t.Errorf("after a refused refresh: value %s after %d requests, want the kept 1", got, asked)
+	}
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/cards/refresh", fromConsole); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("refresh: status %d, want 204", resp.StatusCode)
+	}
+	if got := gjson.GetBytes(body(), "cards.0.value").String(); got != "2" {
+		t.Errorf("after refresh: value %s, want it asked again", got)
 	}
 }
 

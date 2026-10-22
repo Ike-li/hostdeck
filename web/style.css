@@ -188,6 +188,22 @@ main {
 
 .overview { padding: 24px 28px; }
 
+.overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.overview-head h1 { margin: 0; }
+
+.card-updated {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 h1 {
   margin: 0 0 16px;
   font-size: 22px;

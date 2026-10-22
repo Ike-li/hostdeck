@@ -102,6 +102,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/plugins", s.servePlugins)
 	mux.HandleFunc("GET /api/status", s.serveStatus)
 	mux.HandleFunc("GET /api/cards", s.serveCards)
+	mux.HandleFunc("POST /api/cards/refresh", s.serveRefresh)
 	mux.HandleFunc("POST /api/clear/{id}", s.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
 	mux.HandleFunc("POST /api/action/{id}", s.serveAction)
@@ -230,6 +231,19 @@ func (s *server) serveCards(w http.ResponseWriter, r *http.Request) {
 		PluginDir string   `json:"pluginDir"`
 		Cards     []placed `json:"cards"`
 	}{s.cfg.PluginDir, arranged})
+}
+
+// serveRefresh forgets the kept card values. The next read asks again.
+// It writes nothing.
+func (s *server) serveRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	if now := s.loaded(); now != nil {
+		now.cards.Drop()
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // serveClear hands out the address at which an embedded service's proxy has

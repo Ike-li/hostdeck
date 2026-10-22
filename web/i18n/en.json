@@ -4,6 +4,8 @@
   "nav.menu": "Menu",
   "lang.label": "Language",
   "overview.title": "Overview",
+  "overview.refresh": "Refresh",
+  "card.updated": "Read at {time}",
   "overview.empty": "No cards yet. Add one on the Plugins page, or put plugin folders in {dir}; then restart hostdeck.",
   "error.backend": "Cannot reach the hostdeck backend: {detail}",
   "error.fetch_failed": "Could not get the value: {detail}",
