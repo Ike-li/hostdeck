@@ -14,6 +14,6 @@
   "service.clear": "Clear cache",
   "service.clear.confirm": "Click again to clear",
   "service.clearing": "Clearing…",
-  "service.clear.explain": "Clears this service's cache and site data: HTTP cache, localStorage, IndexedDB, Cache Storage and service workers. Cookies and other services are left alone. A service that keeps its sign-in in localStorage will sign you out of it. Its service worker is removed, so web push notifications that depend on it need subscribing again.",
+  "service.clear.explain": "Clears this service's cache and site data: HTTP cache, localStorage, IndexedDB, Cache Storage and service workers. Cookies and other services are left alone. A service that keeps its sign-in in localStorage will sign you out of it. Its service worker is removed, so web push notifications that depend on it need subscribing again. Scripts and styles this tab has already loaded may still be used; if the service still looks out of date afterwards, reload the console page.",
   "error.clear_failed": "Could not clear: {detail}"
 }
