@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>hostdeck</title>
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="#/">hostdeck</a>
+    <nav data-i18n-label="nav.label">
+      <a class="nav-item active" href="#/" data-i18n="nav.overview"></a>
+    </nav>
+    <div class="lang" role="group" data-i18n-label="lang.label">
+      <button type="button" data-lang="en" lang="en">English</button>
+      <button type="button" data-lang="zh-CN" lang="zh-CN">简体中文</button>
+    </div>
+  </aside>
+  <main>
+    <h1 data-i18n="overview.title"></h1>
+    <p id="banner" class="banner" hidden></p>
+    <p id="empty" class="empty" hidden></p>
+    <div id="cards" class="cards"></div>
+  </main>
+</div>
+</body>
+</html>

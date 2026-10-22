@@ -1,0 +1,9 @@
+{
+  "nav.label": "Sections",
+  "nav.overview": "Overview",
+  "lang.label": "Language",
+  "overview.title": "Overview",
+  "overview.empty": "No cards yet. Put plugin folders in {dir}.",
+  "error.backend": "Cannot reach the hostdeck backend: {detail}",
+  "error.fetch_failed": "Could not get the value: {detail}"
+}

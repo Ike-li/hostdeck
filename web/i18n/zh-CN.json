@@ -1,0 +1,9 @@
+{
+  "nav.label": "栏目",
+  "nav.overview": "总览",
+  "lang.label": "语言",
+  "overview.title": "总览",
+  "overview.empty": "还没有卡片。把插件文件夹放进 {dir}。",
+  "error.backend": "连不上 hostdeck 后端：{detail}",
+  "error.fetch_failed": "取不到数值：{detail}"
+}
