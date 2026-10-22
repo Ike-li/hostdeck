@@ -42,10 +42,12 @@ type Row struct {
 }
 
 // Error says why a card has no value. The page words it from Code; Detail is
-// the underlying message, shown as is. A command's own error is in Text.
+// the part that sentence includes. File, when set, is the manifest path and
+// is shown apart from the sentence. A command's own error is in Text.
 type Error struct {
 	Code   string      `json:"code"`
 	Detail string      `json:"detail,omitempty"`
+	File   string      `json:"file,omitempty"`
 	Text   plugin.Text `json:"text,omitzero"`
 }
 

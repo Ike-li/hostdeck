@@ -221,6 +221,7 @@ function cardElement(c) {
   if (c.error) {
     card.dataset.status = 'error';
     card.append(el('p', 'card-error', explain(c.error)));
+    if (c.error.file) card.append(errorFile(c.error.file));
     return card;
   }
   if (c.status) {
@@ -557,17 +558,27 @@ function onDrop(e) {
   if (address) addPage(address.trim());
 }
 
+// errorFile is the manifest path, folded away from the sentence that says why.
+function errorFile(path) {
+  const d = el('details', 'error-file');
+  d.append(el('summary', null, t('error.file')), el('p', null, path));
+  return d;
+}
+
 function installedItem(p) {
   const item = catalogCard(p);
   const folder = `.${p.id}`;
-  const state = p.broken
-    ? t('catalog.state.broken')
-    : p.disabled
-      ? t(p.loaded ? 'catalog.state.disabling' : 'catalog.state.disabled', { folder })
-      : t(p.loaded ? 'catalog.state.loaded' : 'catalog.state.added');
+  const state = p.error
+    ? explain(p.error)
+    : p.broken
+      ? t('catalog.state.broken')
+      : p.disabled
+        ? t(p.loaded ? 'catalog.state.disabling' : 'catalog.state.disabled', { folder })
+        : t(p.loaded ? 'catalog.state.loaded' : 'catalog.state.added');
   const stateLine = el('p', 'catalog-state', state);
-  stateLine.dataset.state = p.broken ? 'broken' : p.disabled ? 'disabled' : 'enabled';
+  stateLine.dataset.state = p.error || p.broken ? 'broken' : p.disabled ? 'disabled' : 'enabled';
   item.append(stateLine);
+  if (p.error?.file) item.append(errorFile(p.error.file));
   const name = pick(p.name);
   const verb = p.disabled ? 'enable' : 'disable';
   item.append(

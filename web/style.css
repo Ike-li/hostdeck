@@ -293,7 +293,12 @@ h1 {
   font-weight: 600;
 }
 
-.catalog-state + .btn { margin-top: 10px; }
+.catalog-state + .btn,
+.error-file + .btn { margin-top: 10px; }
+
+.error-file { margin-top: 8px; font-size: 13px; }
+.error-file summary { color: var(--muted); cursor: pointer; }
+.error-file p { margin: 6px 0 0; overflow-wrap: anywhere; color: var(--muted); }
 
 .page-form {
   display: flex;

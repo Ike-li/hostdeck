@@ -1014,3 +1014,57 @@ func TestAWebPageIsEmbeddedByItsAddressOrByDroppingIt(t *testing.T) {
 	}
 	opened(id + "-2")
 }
+
+// A plugin that does not load is named from its manifest. A missing variable
+// is named on the overview and on the plugins page, and the file path is not
+// part of that sentence. A green dot means the address answered.
+func TestAFailedPluginSaysItsNameAndWhichVariableIsMissing(t *testing.T) {
+	if _, ok := os.LookupEnv("HOSTDECK_TEST_ABSENT"); ok {
+		t.Fatal("HOSTDECK_TEST_ABSENT is set; this test needs it unset")
+	}
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(up.Close)
+	dir := t.TempDir()
+	writePlugin(t, dir, "bad", "schema: 1\nname: {en: Broken, zh-CN: 坏了}\npage: {lnk: 'http://127.0.0.1:1/'}\n")
+	writePlugin(t, dir, "sync", `schema: 1
+name: Syncthing
+card:
+  http:
+    url: http://127.0.0.1:9/rest
+    headers: {X-API-Key: "${env:HOSTDECK_TEST_ABSENT}"}
+  value: n
+`)
+	writePlugin(t, dir, "up", fmt.Sprintf("schema: 1\nname: Up\npage: {proxy: %q}\n", up.URL+"/"))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="sync"] .card-error`)))
+	if got := text(t, ctx, `.card[data-id="bad"] .card-name`); got != "坏了" {
+		t.Errorf("broken card is named %q, want the name from its manifest", got)
+	}
+	sentence := text(t, ctx, `.card[data-id="sync"] .card-error`)
+	if !strings.Contains(sentence, "HOSTDECK_TEST_ABSENT") || strings.Contains(sentence, dir) {
+		t.Errorf("overview says %q, want the variable and not the folder", sentence)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="sync"] .error-file summary`)))
+	if got := text(t, ctx, `.card[data-id="sync"] .error-file p`); !strings.Contains(got, filepath.Join(dir, "plugins", "sync", "plugin.yaml")) {
+		t.Errorf("file disclosure %q, want the manifest path", got)
+	}
+
+	const sync = `#catalog-installed .catalog-item[data-id="sync"]`
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)), chromedp.WaitVisible(chromedp.CSS(sync+" .catalog-state")))
+	if got := text(t, ctx, sync+" .catalog-state"); !strings.Contains(got, "HOSTDECK_TEST_ABSENT") || strings.Contains(got, dir) {
+		t.Errorf("plugins page says %q, want the variable and not the folder", got)
+	}
+
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="up"] .dot[data-status="up"]`)))
+	title, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('.nav-item[data-id="up"] .dot').title`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if title != "这个地址有应答" {
+		t.Errorf("dot title %q, want it to say the address answered", title)
+	}
+}

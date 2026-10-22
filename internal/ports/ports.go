@@ -14,6 +14,17 @@ import (
 	"github.com/Ike-li/hostdeck/internal/atomicfile"
 )
 
+// InUse is a forwarding port that this plugin keeps and another program holds.
+// The port is not moved.
+type InUse struct {
+	Port int
+	ID   string
+}
+
+func (e *InUse) Error() string {
+	return fmt.Sprintf("port %d, which %s keeps, is in use by another program", e.Port, e.ID)
+}
+
 // Opened is a service's forwarding port. Err says why it could not be opened;
 // Port is then the port the service keeps.
 type Opened struct {
@@ -48,7 +59,7 @@ func Listen(file string, ids []string, from int) (map[string]Opened, error) {
 		if port, ok := kept[id]; ok {
 			ln, err := listen(port)
 			if err != nil {
-				ln, err = nil, fmt.Errorf("port %d, which %s keeps, is in use by another program", port, id)
+				ln, err = nil, &InUse{Port: port, ID: id}
 			}
 			opened[id] = Opened{Port: port, Listener: ln, Err: err}
 			continue

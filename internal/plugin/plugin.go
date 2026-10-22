@@ -192,7 +192,7 @@ func checkEnv(field, s string) error {
 			return fmt.Errorf("%s: %q must be written ${env:NAME}", field, ref[0])
 		}
 		if _, ok := os.LookupEnv(m[1]); !ok {
-			return fmt.Errorf("%s uses ${env:%s}, which is not set", field, m[1])
+			return &EnvMissing{Field: field, Name: m[1]}
 		}
 	}
 	return nil
@@ -251,10 +251,12 @@ type manifest struct {
 	Plugin `yaml:",inline"`
 }
 
-// Broken is a plugin folder that did not load. Err names the file and says why.
+// Broken is a plugin folder that did not load. Name is the manifest's name
+// when that much could be read. Err names the file and says why.
 type Broken struct {
-	ID  string
-	Err error
+	ID   string
+	Name Text
+	Err  error
 }
 
 // Load reads every folder under root, in name order; a folder whose name
@@ -272,7 +274,8 @@ func Load(root string) (plugins []Plugin, broken []Broken, err error) {
 		path := filepath.Join(root, e.Name(), "plugin.yaml")
 		p, err := load(path)
 		if err != nil {
-			broken = append(broken, Broken{ID: e.Name(), Err: err})
+			data, _ := os.ReadFile(path)
+			broken = append(broken, Broken{ID: e.Name(), Name: nameIn(data), Err: err})
 			continue
 		}
 		p.ID = e.Name()
@@ -282,6 +285,38 @@ func Load(root string) (plugins []Plugin, broken []Broken, err error) {
 	return plugins, broken, nil
 }
 
+// nameIn reads only the name, so a manifest that fails to load can still be
+// shown by the name its author wrote.
+func nameIn(data []byte) Text {
+	var head struct {
+		Name Text `yaml:"name"`
+	}
+	if yaml.Unmarshal(data, &head) != nil || head.Name.IsZero() {
+		return Text{}
+	}
+	return head.Name
+}
+
+// EnvMissing is a ${env:NAME} whose variable is not set.
+type EnvMissing struct {
+	Field string
+	Name  string
+}
+
+func (e *EnvMissing) Error() string {
+	return fmt.Sprintf("%s uses ${env:%s}, which is not set", e.Field, e.Name)
+}
+
+// Located is an error in one file. Path is that file; Err is the reason,
+// without the path.
+type Located struct {
+	Path string
+	Err  error
+}
+
+func (e *Located) Error() string { return e.Path + ": " + e.Err.Error() }
+func (e *Located) Unwrap() error { return e.Err }
+
 func load(path string) (Plugin, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -289,7 +324,7 @@ func load(path string) (Plugin, error) {
 	}
 	p, err := parse(data)
 	if err != nil {
-		return Plugin{}, fmt.Errorf("%s: %w", path, err)
+		return Plugin{}, &Located{Path: path, Err: err}
 	}
 	return p, nil
 }

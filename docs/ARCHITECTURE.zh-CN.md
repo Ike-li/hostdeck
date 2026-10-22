@@ -37,7 +37,7 @@ flowchart LR
 启动过程（`main.go`）：
 
 1. 确定文件夹：`--dir`，否则 `HOSTDECK_DIR`，否则 macOS 上的 `~/.config/hostdeck` 或 Windows 上的 `%LOCALAPPDATA%\hostdeck`。
-2. 读取每个 `plugins/<id>/plugin.yaml`。读不进来的插件连同错误原因单独放着，之后显示成错误卡片；其他插件照常加载。
+2. 读取每个 `plugins/<id>/plugin.yaml`。读不进来的插件连同错误原因单独放着，之后显示成错误卡片；其他插件照常加载。卡片能读到清单里的名称时就用那个名称。没设置的变量单独写明是哪一个，文件路径不写进那句话里。
 3. 监听 `--addr`（只能是 127.0.0.1，默认 4678）。
 4. 给每个带 `page.proxy` 的插件分一个转发端口，从控制台端口 + 1 往上找，记在 `ports.json` 里。端口从此不变，浏览器为这个服务保存的 cookie 和存储也就一直有效。
 5. 开始服务。

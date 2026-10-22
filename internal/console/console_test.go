@@ -20,6 +20,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/ports"
 	"github.com/Ike-li/hostdeck/internal/proxy"
 )
 
@@ -141,7 +142,7 @@ func TestPluginsSayWhereEachSidebarEntryOpens(t *testing.T) {
 	}
 	served := map[string]Served{
 		"grafana": {URL: "http://127.0.0.1:4679/grafana/"},
-		"stuck":   {Err: errors.New("port 4680, which stuck keeps, is in use by another program")},
+		"stuck":   {Err: &ports.InUse{Port: 4680, ID: "stuck"}},
 	}
 
 	resp := get(Handler(Config{Plugins: plugins, Served: served}), "http://127.0.0.1:4678/api/plugins", nil)
@@ -149,7 +150,7 @@ func TestPluginsSayWhereEachSidebarEntryOpens(t *testing.T) {
 	want := parseJSON(`[
 		{"id": "grafana", "name": "Grafana", "icon": "G", "type": "proxy", "url": "http://127.0.0.1:4679/grafana/"},
 		{"id": "stuck", "name": "Stuck", "type": "proxy",
-		 "error": {"code": "port_unavailable", "detail": "port 4680, which stuck keeps, is in use by another program"}},
+		 "error": {"code": "port_unavailable", "detail": "4680"}},
 		{"id": "wiki", "name": {"en": "Wiki", "zh-CN": "维基"}, "type": "link", "url": "https://wiki.example/"},
 		{"id": "disks", "name": "Disks", "type": "detail"}
 	]`)
@@ -284,15 +285,63 @@ func TestDetailAndActionsAnswerOnlyForPluginsThatHaveThem(t *testing.T) {
 }
 
 func TestPluginsThatDidNotLoadShowAsErrorCards(t *testing.T) {
-	broken := []plugin.Broken{{ID: "bad", Err: errors.New(`plugins/bad/plugin.yaml: line 3: unknown field "lnk"`)}}
+	path := "/tmp/plugins/bad/plugin.yaml"
+	broken := []plugin.Broken{{
+		ID:   "bad",
+		Name: plugin.Text{ByLang: map[string]string{"en": "Broken", "zh-CN": "坏了"}},
+		Err:  &plugin.Located{Path: path, Err: errors.New(`line 3: unknown field "lnk"`)},
+	}}
 
 	resp := get(Handler(Config{Broken: broken, PluginDir: "plugins"}), "http://127.0.0.1:4678/api/cards", nil)
 
 	want := parseJSON(`{"pluginDir": "plugins", "cards": [
-		{"id": "bad", "name": "bad", "error": {"code": "bad_manifest", "detail": "plugins/bad/plugin.yaml: line 3: unknown field \"lnk\""}}
+		{"id": "bad", "name": {"en": "Broken", "zh-CN": "坏了"},
+		 "error": {"code": "bad_manifest", "detail": "line 3: unknown field \"lnk\"", "file": "/tmp/plugins/bad/plugin.yaml"}}
 	]}`)
 	if got := decodeJSON(t, resp); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestAMissingVariableIsItsOwnErrorAndNamesTheVariable(t *testing.T) {
+	path := "/tmp/plugins/sync/plugin.yaml"
+	broken := []plugin.Broken{{
+		ID:   "sync",
+		Name: plugin.Text{All: "Syncthing"},
+		Err:  &plugin.Located{Path: path, Err: &plugin.EnvMissing{Field: "card.http.headers.X-API-Key", Name: "SYNCTHING_API_KEY"}},
+	}}
+
+	resp := get(Handler(Config{Broken: broken, PluginDir: "plugins"}), "http://127.0.0.1:4678/api/cards", nil)
+
+	want := parseJSON(`{"pluginDir": "plugins", "cards": [
+		{"id": "sync", "name": "Syncthing",
+		 "error": {"code": "env_missing", "detail": "SYNCTHING_API_KEY", "file": "/tmp/plugins/sync/plugin.yaml"}}
+	]}`)
+	if got := decodeJSON(t, resp); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestThePluginsPageCarriesTheLoadError(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeManifest(t, pluginDir, "sync", "schema: 1\nname: Syncthing\npage: {link: 'https://example/'}\n")
+	h := Handler(Config{
+		PluginDir: pluginDir,
+		BuiltIn:   fstest.MapFS{},
+		Broken: []plugin.Broken{{
+			ID:   "sync",
+			Name: plugin.Text{All: "Syncthing"},
+			Err:  &plugin.Located{Path: filepath.Join(pluginDir, "sync", "plugin.yaml"), Err: &plugin.EnvMissing{Name: "SYNCTHING_API_KEY"}},
+		}},
+	})
+
+	body, _ := io.ReadAll(get(h, "http://127.0.0.1:4678/api/catalog", nil).Body)
+	got := gjson.GetBytes(body, `installed.#(id=="sync")`).Map()
+	if got["error"].Get("code").String() != "env_missing" || got["error"].Get("detail").String() != "SYNCTHING_API_KEY" {
+		t.Errorf("catalog error %s, want env_missing SYNCTHING_API_KEY", got["error"].Raw)
+	}
+	if strings.Contains(got["error"].Get("detail").String(), pluginDir) {
+		t.Errorf("detail contains the path: %s", got["error"].Raw)
 	}
 }
 

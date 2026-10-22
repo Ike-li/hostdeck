@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/local"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/ports"
 	"github.com/Ike-li/hostdeck/internal/proxy"
 	"github.com/Ike-li/hostdeck/web"
 )
@@ -140,7 +142,7 @@ func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
 		} else {
 			e.Type = "proxy"
 			if served := now.Served[p.ID]; served.Err != nil {
-				e.Error = &card.Error{Code: "port_unavailable", Detail: served.Err.Error()}
+				e.Error = portError(served.Err)
 			} else {
 				e.URL = served.URL
 			}
@@ -209,7 +211,11 @@ func (s *server) serveCards(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 	for _, b := range now.Broken {
-		cards = append(cards, card.View{ID: b.ID, Name: plugin.Text{All: b.ID}, Error: &card.Error{Code: "bad_manifest", Detail: b.Err.Error()}})
+		name := b.Name
+		if name.IsZero() {
+			name = plugin.Text{All: b.ID}
+		}
+		cards = append(cards, card.View{ID: b.ID, Name: name, Error: manifestError(b)})
 	}
 	l := s.layout()
 	type placed struct {
@@ -315,11 +321,44 @@ func (s *server) serveCatalog(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusInternalServerError, &card.Error{Code: "catalog_failed", Detail: err.Error()})
 }
 
+// manifestError is the overview and plugins-page wording of a plugin that
+// did not load. A missing variable names that variable. The file path is
+// kept in File, out of the sentence.
+func manifestError(b plugin.Broken) *card.Error {
+	err := b.Err
+	file := ""
+	var located *plugin.Located
+	if errors.As(err, &located) {
+		file = located.Path
+		err = located.Err
+	}
+	var missing *plugin.EnvMissing
+	if errors.As(err, &missing) {
+		return &card.Error{Code: "env_missing", Detail: missing.Name, File: file}
+	}
+	detail := ""
+	if err != nil {
+		detail = err.Error()
+	}
+	return &card.Error{Code: "bad_manifest", Detail: detail, File: file}
+}
+
+// portError words a forwarding port that could not be opened. A port this
+// plugin keeps is reported as that port number; the page says it is not moved.
+func portError(err error) *card.Error {
+	var inUse *ports.InUse
+	if errors.As(err, &inUse) {
+		return &card.Error{Code: "port_unavailable", Detail: strconv.Itoa(inUse.Port)}
+	}
+	return &card.Error{Code: "port_unavailable", Detail: err.Error()}
+}
+
 func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin, builtIn []catalog.Entry) {
 	type listed struct {
 		catalog.Plugin
-		Loaded bool `json:"loaded"`
-		Broken bool `json:"broken"`
+		Loaded bool        `json:"loaded"`
+		Broken bool        `json:"broken"`
+		Error  *card.Error `json:"error,omitempty"`
 	}
 	listing := struct {
 		PluginDir string          `json:"pluginDir"`
@@ -328,8 +367,14 @@ func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin,
 	}{s.cfg.PluginDir, []listed{}, []catalog.Entry{}}
 	for _, p := range installed {
 		_, loaded := s.plugin(p.ID)
-		broken := slices.ContainsFunc(s.loaded().Broken, func(b plugin.Broken) bool { return b.ID == p.ID })
-		listing.Installed = append(listing.Installed, listed{p, loaded || broken, broken})
+		var problem *card.Error
+		for _, b := range s.loaded().Broken {
+			if b.ID == p.ID {
+				problem = manifestError(b)
+				break
+			}
+		}
+		listing.Installed = append(listing.Installed, listed{p, loaded || problem != nil, problem != nil, problem})
 	}
 	for _, e := range builtIn {
 		if !e.Added {

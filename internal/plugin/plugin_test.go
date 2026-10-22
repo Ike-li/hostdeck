@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -55,6 +56,54 @@ func TestABrokenPluginIsSetAsideAndTheOthersLoad(t *testing.T) {
 	}
 	if msg := broken[1].Err.Error(); !strings.Contains(msg, "plugin.yaml") {
 		t.Errorf("empty: %q, want it to say plugin.yaml is missing", msg)
+	}
+}
+
+func TestABrokenManifestKeepsItsName(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "bad", "schema: 1\nname: {en: Broken, zh-CN: 坏了}\npage: {lnk: 'http://127.0.0.1:1/'}\n")
+
+	_, broken, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(broken) != 1 {
+		t.Fatalf("broken %+v, want the one plugin", broken)
+	}
+	want := Text{ByLang: map[string]string{"en": "Broken", "zh-CN": "坏了"}}
+	if !reflect.DeepEqual(broken[0].Name, want) {
+		t.Errorf("name %+v, want %+v", broken[0].Name, want)
+	}
+}
+
+func TestAMissingEnvironmentVariableNamesTheVariable(t *testing.T) {
+	if _, ok := os.LookupEnv("HOSTDECK_TEST_ABSENT"); ok {
+		t.Fatal("HOSTDECK_TEST_ABSENT is set; this test needs it unset")
+	}
+	root := t.TempDir()
+	writePlugin(t, root, "sync", `schema: 1
+name: Syncthing
+card:
+  http:
+    url: http://127.0.0.1:9/rest
+    headers: {X-API-Key: "${env:HOSTDECK_TEST_ABSENT}"}
+  value: n
+`)
+
+	_, broken, err := Load(root)
+	if err != nil || len(broken) != 1 {
+		t.Fatalf("broken %+v, err %v; want the one plugin", broken, err)
+	}
+	var missing *EnvMissing
+	var located *Located
+	if !errors.As(broken[0].Err, &located) || !errors.As(broken[0].Err, &missing) {
+		t.Fatalf("err %T %v, want a located missing variable", broken[0].Err, broken[0].Err)
+	}
+	if missing.Name != "HOSTDECK_TEST_ABSENT" || broken[0].Name.All != "Syncthing" {
+		t.Errorf("variable %q name %q, want HOSTDECK_TEST_ABSENT and Syncthing", missing.Name, broken[0].Name.All)
+	}
+	if strings.Contains(missing.Error(), located.Path) {
+		t.Errorf("the reason %q contains the path", missing.Error())
 	}
 }
 
