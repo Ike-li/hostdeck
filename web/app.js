@@ -364,6 +364,16 @@ function actionButton(p, item, action, view) {
   return btn;
 }
 
+function showNote(view, text) {
+  const note = view.querySelector('.detail-note');
+  note.textContent = text;
+  note.hidden = false;
+  clearTimeout(note.timer);
+  note.timer = setTimeout(() => {
+    note.hidden = true;
+  }, 8000);
+}
+
 // The plugins page lists the plugins built into hostdeck. Like a detail page,
 // it is rebuilt only when it is loaded or the language changes, so that a
 // periodic render does not reset an add button waiting for its second click.
@@ -382,30 +392,36 @@ function renderCatalog(loaded) {
   catalog.lang = lang;
   document.title = `${t('catalog.title')} · hostdeck`;
   $('catalog-intro').textContent = t('catalog.intro', { dir: catalog.pluginDir });
-  $('catalog-list').replaceChildren(...catalog.plugins.map(catalogItem));
+  const installed = catalog.installed.map(installedItem);
+  $('catalog-installed').replaceChildren(...(installed.length ? installed : [el('p', 'empty', t('catalog.none'))]));
+  $('catalog-available-heading').hidden = !catalog.available.length;
+  $('catalog-available').replaceChildren(...catalog.available.map(availableItem));
 }
 
-function catalogItem(p) {
+function catalogCard(p) {
   const item = el('article', 'card catalog-item');
   item.dataset.id = p.id;
   const head = el('header', 'card-head');
   head.append(el('span', 'icon', pick(p.name).slice(0, 1)), el('h2', 'card-name', pick(p.name)));
-  item.append(head, el('p', 'catalog-description', pick(p.description)));
-  if (p.loaded || p.added) {
-    item.append(el('p', 'catalog-state', t(p.loaded ? 'catalog.state.loaded' : 'catalog.state.added')));
-    return item;
-  }
-  const btn = el('button', 'btn add', t('catalog.add'));
+  item.append(head);
+  if (p.description) item.append(el('p', 'catalog-description', pick(p.description)));
+  return item;
+}
+
+// catalogButton posts to url on a second click, says how it went with
+// noteOf(the answer), and reads the page again.
+function catalogButton(label, armedText, url, noteOf) {
+  const btn = el('button', 'btn', label);
   btn.type = 'button';
-  twoClicks(btn, t('catalog.add.confirm'), async () => {
+  twoClicks(btn, armedText, async () => {
     btn.disabled = true;
-    btn.textContent = t('catalog.adding');
+    btn.textContent = t('catalog.working');
     let note;
     try {
-      const resp = await fetch(`/api/catalog/${encodeURIComponent(p.id)}`, { method: 'POST' });
+      const resp = await fetch(url, { method: 'POST' });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw body.error || { code: '', detail: `HTTP ${resp.status}` };
-      note = t('catalog.added', { path: body.path });
+      note = noteOf(body);
     } catch (err) {
       note = explain(err);
     }
@@ -414,18 +430,41 @@ function catalogItem(p) {
     n.hidden = false;
     loadCatalog();
   });
-  item.append(btn);
+  return btn;
+}
+
+function installedItem(p) {
+  const item = catalogCard(p);
+  const folder = `.${p.id}`;
+  const state = p.broken
+    ? t('catalog.state.broken')
+    : p.disabled
+      ? t(p.loaded ? 'catalog.state.disabling' : 'catalog.state.disabled', { folder })
+      : t(p.loaded ? 'catalog.state.loaded' : 'catalog.state.added');
+  const stateLine = el('p', 'catalog-state', state);
+  stateLine.dataset.state = p.broken ? 'broken' : p.disabled ? 'disabled' : 'enabled';
+  item.append(stateLine);
+  const name = pick(p.name);
+  const verb = p.disabled ? 'enable' : 'disable';
+  item.append(
+    catalogButton(
+      t(`catalog.${verb}`),
+      t(`catalog.${verb}.confirm`),
+      `/api/plugins/${encodeURIComponent(p.id)}/${verb}`,
+      () => t(`catalog.${verb}d.note`, { name }),
+    ),
+  );
   return item;
 }
 
-function showNote(view, text) {
-  const note = view.querySelector('.detail-note');
-  note.textContent = text;
-  note.hidden = false;
-  clearTimeout(note.timer);
-  note.timer = setTimeout(() => {
-    note.hidden = true;
-  }, 8000);
+function availableItem(p) {
+  const item = catalogCard(p);
+  const btn = catalogButton(t('catalog.add'), t('catalog.add.confirm'), `/api/catalog/${encodeURIComponent(p.id)}`, (body) =>
+    t('catalog.added', { path: body.path }),
+  );
+  btn.classList.add('add');
+  item.append(btn);
+  return item;
 }
 
 // Clearing needs two clicks: the first arms the button and says what clearing

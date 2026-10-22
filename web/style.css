@@ -258,6 +258,14 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.catalog-heading {
+  margin: 24px 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.catalog-state + .btn { margin-top: 10px; }
+
 .catalog-description {
   margin: 10px 0 12px;
   color: var(--muted);
@@ -269,6 +277,9 @@ h1 {
   font-size: 13px;
   color: var(--ok);
 }
+
+.catalog-state[data-state="disabled"] { color: var(--muted); }
+.catalog-state[data-state="broken"] { color: var(--error); }
 
 .service {
   display: flex;

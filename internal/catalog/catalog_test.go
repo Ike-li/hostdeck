@@ -4,8 +4,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/Ike-li/hostdeck/internal/plugin"
 )
 
 var builtIn = fstest.MapFS{
@@ -92,5 +96,121 @@ func TestOnlyBuiltInPluginsCanBeAdded(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(filepath.Dir(pluginDir)); len(entries) != 1 {
 		t.Errorf("next to the plugins folder: %v, want nothing written", entries)
+	}
+}
+
+// writeFolder makes <pluginDir>/<name>/plugin.yaml holding manifest.
+func writeFolder(t *testing.T, pluginDir, name, manifest string) string {
+	t.Helper()
+	dir := filepath.Join(pluginDir, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestInstalledListsEnabledAndDisabledPlugins(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeFolder(t, pluginDir, "mine", "schema: 1\nname: {en: Mine, zh-CN: 我的}\n")
+	writeFolder(t, pluginDir, ".off", "schema: 1\nname: Off\ndescription: Was on.\n")
+	writeFolder(t, pluginDir, "broken", "this is: [not yaml")
+	// Neither of these is a disabled plugin.
+	if err := os.MkdirAll(filepath.Join(pluginDir, ".git", "objects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, "notes.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Installed(pluginDir)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Plugin{
+		{ID: "broken", Name: plugin.Text{All: "broken"}},
+		{ID: "mine", Name: plugin.Text{ByLang: map[string]string{"en": "Mine", "zh-CN": "我的"}}},
+		{ID: "off", Name: plugin.Text{All: "Off"}, Description: plugin.Text{All: "Was on."}, Disabled: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestDisablingAndEnablingRenameTheFolderAndKeepItsFiles(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeFolder(t, pluginDir, "mine", "schema: 1\nname: Mine # edited by hand\n")
+
+	if err := Disable(pluginDir, "mine"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "mine")); err == nil {
+		t.Error("the folder is still where hostdeck loads it")
+	}
+	if got, _ := os.ReadFile(filepath.Join(pluginDir, ".mine", "plugin.yaml")); string(got) != "schema: 1\nname: Mine # edited by hand\n" {
+		t.Errorf("disabled manifest %q", got)
+	}
+
+	if err := Enable(pluginDir, "mine"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(pluginDir, "mine", "plugin.yaml")); string(got) != "schema: 1\nname: Mine # edited by hand\n" {
+		t.Errorf("enabled manifest %q", got)
+	}
+}
+
+func TestDisablingAndEnablingNeverReplaceAFolder(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeFolder(t, pluginDir, "a", "schema: 1\nname: A on\n")
+	writeFolder(t, pluginDir, ".a", "schema: 1\nname: A off\n")
+
+	if err := Disable(pluginDir, "a"); !errors.Is(err, ErrTaken) {
+		t.Errorf("disabling over a disabled copy: err = %v, want ErrTaken", err)
+	}
+	if err := Enable(pluginDir, "a"); !errors.Is(err, ErrTaken) {
+		t.Errorf("enabling over an enabled copy: err = %v, want ErrTaken", err)
+	}
+	for name, want := range map[string]string{"a": "A on", ".a": "A off"} {
+		if got, _ := os.ReadFile(filepath.Join(pluginDir, name, "plugin.yaml")); !strings.Contains(string(got), want) {
+			t.Errorf("%s now holds %q", name, got)
+		}
+	}
+}
+
+func TestOnlyInstalledPluginsCanBeDisabledOrEnabled(t *testing.T) {
+	pluginDir := filepath.Join(t.TempDir(), "plugins")
+	writeFolder(t, pluginDir, "on", "schema: 1\nname: On\n")
+	writeFolder(t, pluginDir, ".off", "schema: 1\nname: Off\n")
+	if err := os.MkdirAll(filepath.Join(pluginDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"", ".", "..", "../plugins", "nope", ".on", "on/plugin.yaml", "off"} {
+		if err := Disable(pluginDir, id); !errors.Is(err, ErrUnknown) {
+			t.Errorf("Disable(%q): err = %v, want ErrUnknown", id, err)
+		}
+	}
+	for _, id := range []string{"", ".", "..", "nope", "on", ".off", "git"} {
+		if err := Enable(pluginDir, id); !errors.Is(err, ErrUnknown) {
+			t.Errorf("Enable(%q): err = %v, want ErrUnknown", id, err)
+		}
+	}
+}
+
+func TestABuiltInPluginThatIsDisabledCountsAsAdded(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeFolder(t, pluginDir, ".disk", "schema: 1\nname: My disk\n")
+
+	if _, err := Add(builtIn, pluginDir, "disk"); !errors.Is(err, ErrAdded) {
+		t.Errorf("adding disk next to a disabled disk: err = %v, want ErrAdded", err)
+	}
+	entries, err := List(builtIn, pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !entries[0].Added {
+		t.Errorf("disk: %+v, want it counted as added", entries[0])
 	}
 }

@@ -795,3 +795,51 @@ func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
 		t.Errorf("disk now shows %q, want it added and waiting for a restart", got)
 	}
 }
+
+// A plugin is disabled on the plugins page by a second click, which renames
+// its folder so that the next start skips it, and enabled again the same way.
+func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "site", "schema: 1\nname: Site\npage: {link: 'http://127.0.0.1:9/'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	const site = `#catalog-installed .catalog-item[data-id="site"]`
+	button := site + " button"
+	waitLabel := func(want string) {
+		t.Helper()
+		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector(%q)?.textContent === %q`, button, want))); err != nil {
+			t.Fatalf("waiting for the button to say %q: %v; it says %q", want, err, text(t, ctx, button))
+		}
+	}
+	enabled, disabled := filepath.Join(dir, "plugins", "site"), filepath.Join(dir, "plugins", ".site")
+
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(button)))
+	if got := text(t, ctx, site+" .catalog-state"); got != "使用中" {
+		t.Errorf("site shows %q, want it in use", got)
+	}
+	doubleClick(t, ctx, button)
+	time.Sleep(1500 * time.Millisecond)
+	if _, err := os.Stat(enabled); err != nil {
+		t.Fatal("a double-click disabled the plugin")
+	}
+	waitLabel("停用")
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	waitLabel("再点一次停用")
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	waitLabel("启用")
+	if _, err := os.Stat(filepath.Join(disabled, "plugin.yaml")); err != nil {
+		t.Fatalf("not disabled: %v", err)
+	}
+	if note, state := text(t, ctx, "#catalog-note"), text(t, ctx, site+" .catalog-state"); !strings.Contains(note, "重启") || !strings.Contains(state, ".site") {
+		t.Errorf("note %q, state %q; want a restart mentioned and the folder's new name", note, state)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	waitLabel("再点一次启用")
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	waitLabel("停用")
+	if _, err := os.Stat(filepath.Join(enabled, "plugin.yaml")); err != nil {
+		t.Fatalf("not enabled again: %v", err)
+	}
+}

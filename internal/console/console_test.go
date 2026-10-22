@@ -3,6 +3,7 @@ package console
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -302,8 +303,56 @@ func postFrom(h http.Handler, url string, header map[string]string) *http.Respon
 	return w.Result()
 }
 
+// catalogState is what /api/catalog says, by plugin ID.
+func catalogState(t *testing.T, h http.Handler) (installed map[string]string, available []string) {
+	t.Helper()
+	body, _ := io.ReadAll(get(h, "http://127.0.0.1:4678/api/catalog", nil).Body)
+	var got struct {
+		Installed []struct {
+			ID       string `json:"id"`
+			Disabled bool   `json:"disabled"`
+			Loaded   bool   `json:"loaded"`
+			Broken   bool   `json:"broken"`
+		} `json:"installed"`
+		Available []struct {
+			ID string `json:"id"`
+		} `json:"available"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("%v: %s", err, body)
+	}
+	installed = map[string]string{}
+	for _, p := range got.Installed {
+		installed[p.ID] = fmt.Sprintf("disabled=%v loaded=%v broken=%v", p.Disabled, p.Loaded, p.Broken)
+	}
+	for _, p := range got.Available {
+		available = append(available, p.ID)
+	}
+	return installed, available
+}
+
+// writeManifest makes <pluginDir>/<name>/plugin.yaml.
+func writeManifest(t *testing.T, pluginDir, name, manifest string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(pluginDir, name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, name, "plugin.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+var (
+	fromConsole   = map[string]string{"Origin": "http://127.0.0.1:4678", "Sec-Fetch-Site": "same-origin"}
+	fromOtherPage = map[string]map[string]string{
+		"an embedded service's page":  {"Origin": "http://127.0.0.1:4679", "Sec-Fetch-Site": "same-site"},
+		"a program without an Origin": nil,
+	}
+)
+
 func TestBuiltInPluginsAreAddedFromTheConsolePageOnly(t *testing.T) {
 	pluginDir := t.TempDir()
+	writeManifest(t, pluginDir, "used", "schema: 1\nname: Used\n")
 	builtIn := fstest.MapFS{
 		"disk/plugin.yaml": {Data: []byte("schema: 1\nname: Disk\ndescription: Free space.\ncard: {exec: {command: [sh, card.sh]}}\n")},
 		"used/plugin.yaml": {Data: []byte("schema: 1\nname: Used\n")},
@@ -314,12 +363,8 @@ func TestBuiltInPluginsAreAddedFromTheConsolePageOnly(t *testing.T) {
 		BuiltIn:   builtIn,
 		Plugins:   []plugin.Plugin{{ID: "used", Name: plugin.Text{All: "Used"}}},
 	})
-	console := map[string]string{"Origin": "http://127.0.0.1:4678", "Sec-Fetch-Site": "same-origin"}
 
-	for name, header := range map[string]map[string]string{
-		"an embedded service's page":  {"Origin": "http://127.0.0.1:4679", "Sec-Fetch-Site": "same-site"},
-		"a program without an Origin": nil,
-	} {
+	for name, header := range fromOtherPage {
 		if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/disk", header); resp.StatusCode != http.StatusForbidden {
 			t.Errorf("%s: status %d, want 403", name, resp.StatusCode)
 		}
@@ -327,8 +372,11 @@ func TestBuiltInPluginsAreAddedFromTheConsolePageOnly(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(pluginDir, "disk")); err == nil {
 		t.Fatal("a refused request added the plugin")
 	}
+	if installed, available := catalogState(t, h); !reflect.DeepEqual(available, []string{"disk"}) || len(installed) != 1 {
+		t.Errorf("before adding: installed %v, available %v", installed, available)
+	}
 
-	resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/disk", console)
+	resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/disk", fromConsole)
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"path"`) {
 		t.Fatalf("adding disk: %d %s", resp.StatusCode, body)
@@ -336,32 +384,63 @@ func TestBuiltInPluginsAreAddedFromTheConsolePageOnly(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(pluginDir, "disk", "plugin.yaml")); err != nil {
 		t.Errorf("disk was not added: %v", err)
 	}
-	if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/disk", console); resp.StatusCode != http.StatusConflict {
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/disk", fromConsole); resp.StatusCode != http.StatusConflict {
 		t.Errorf("adding disk again: status %d, want 409", resp.StatusCode)
 	}
-	if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/nope", console); resp.StatusCode != http.StatusNotFound {
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/nope", fromConsole); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("adding an unknown plugin: status %d, want 404", resp.StatusCode)
 	}
 
-	body, _ = io.ReadAll(get(h, "http://127.0.0.1:4678/api/catalog", nil).Body)
-	var got struct {
-		Plugins []struct {
-			ID     string `json:"id"`
-			Added  bool   `json:"added"`
-			Loaded bool   `json:"loaded"`
-		} `json:"plugins"`
+	installed, available := catalogState(t, h)
+	want := map[string]string{"disk": "disabled=false loaded=false broken=false", "used": "disabled=false loaded=true broken=false"}
+	if !reflect.DeepEqual(installed, want) || len(available) != 0 {
+		t.Errorf("after adding: installed %v, available %v; want %v and nothing available", installed, available, want)
 	}
-	if err := json.Unmarshal(body, &got); err != nil {
-		t.Fatalf("%v: %s", err, body)
-	}
-	type state struct{ added, loaded bool }
-	want := map[string]state{"disk": {true, false}, "used": {false, true}}
-	for _, p := range got.Plugins {
-		if (state{p.Added, p.Loaded}) != want[p.ID] {
-			t.Errorf("%s: added %v, loaded %v; want %+v", p.ID, p.Added, p.Loaded, want[p.ID])
+}
+
+func TestPluginsAreDisabledAndEnabledFromTheConsolePageOnly(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeManifest(t, pluginDir, "used", "schema: 1\nname: Used\n")
+	writeManifest(t, pluginDir, "bad", "schema: 1\nname: Bad\n")
+	h := Handler(Config{
+		Origin:    "http://127.0.0.1:4678",
+		PluginDir: pluginDir,
+		BuiltIn:   fstest.MapFS{},
+		Plugins:   []plugin.Plugin{{ID: "used", Name: plugin.Text{All: "Used"}}},
+		Broken:    []plugin.Broken{{ID: "bad", Err: errors.New("bad manifest")}},
+	})
+
+	for name, header := range fromOtherPage {
+		if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/used/disable", header); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", name, resp.StatusCode)
 		}
 	}
-	if len(got.Plugins) != 2 {
-		t.Errorf("listed %s", body)
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/used/disable", fromConsole); resp.StatusCode != http.StatusOK {
+		t.Fatalf("disabling: status %d", resp.StatusCode)
+	}
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/used/disable", fromConsole); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("disabling twice: status %d, want 404", resp.StatusCode)
+	}
+	installed, _ := catalogState(t, h)
+	want := map[string]string{"used": "disabled=true loaded=true broken=false", "bad": "disabled=false loaded=true broken=true"}
+	if !reflect.DeepEqual(installed, want) {
+		t.Errorf("after disabling: %v, want %v", installed, want)
+	}
+
+	for name, header := range fromOtherPage {
+		if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/used/enable", header); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("enabling from %s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	writeManifest(t, pluginDir, "used", "schema: 1\nname: A new one\n")
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/used/enable", fromConsole); resp.StatusCode != http.StatusConflict {
+		t.Errorf("enabling over a new folder of that name: status %d, want 409", resp.StatusCode)
+	}
+	os.RemoveAll(filepath.Join(pluginDir, "used"))
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/used/enable", fromConsole); resp.StatusCode != http.StatusOK {
+		t.Errorf("enabling: status %d", resp.StatusCode)
+	}
+	if installed, _ := catalogState(t, h); installed["used"] != "disabled=false loaded=true broken=false" {
+		t.Errorf("after enabling: %v", installed)
 	}
 }

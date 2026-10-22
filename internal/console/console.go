@@ -57,6 +57,8 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/action/{id}", cfg.serveAction)
 	mux.HandleFunc("GET /api/catalog", cfg.serveCatalog)
 	mux.HandleFunc("POST /api/catalog/{id}", cfg.serveAdd)
+	mux.HandleFunc("POST /api/plugins/{id}/disable", cfg.serveRename(catalog.Disable))
+	mux.HandleFunc("POST /api/plugins/{id}/enable", cfg.serveRename(catalog.Enable))
 	return local.Only(sameOriginAPI(noFraming(mux)))
 }
 
@@ -238,28 +240,43 @@ func (cfg Config) serveAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveCatalog lists the built-in plugins: whether the plugins folder has
-// one of that name, and whether this run of hostdeck loaded it.
+// serveCatalog lists the plugins folder, with whether this run of hostdeck
+// loaded each plugin, and the built-in plugins that are not in it.
 func (cfg Config) serveCatalog(w http.ResponseWriter, r *http.Request) {
-	entries, err := catalog.List(cfg.BuiltIn, cfg.PluginDir)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, &card.Error{Code: "catalog_failed", Detail: err.Error()})
-		return
+	installed, err := catalog.Installed(cfg.PluginDir)
+	if err == nil {
+		var builtIn []catalog.Entry
+		builtIn, err = catalog.List(cfg.BuiltIn, cfg.PluginDir)
+		if err == nil {
+			cfg.writeCatalog(w, installed, builtIn)
+			return
+		}
 	}
+	writeError(w, http.StatusInternalServerError, &card.Error{Code: "catalog_failed", Detail: err.Error()})
+}
+
+func (cfg Config) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin, builtIn []catalog.Entry) {
 	type listed struct {
-		catalog.Entry
+		catalog.Plugin
 		Loaded bool `json:"loaded"`
+		Broken bool `json:"broken"`
 	}
-	plugins := make([]listed, len(entries))
-	for i, e := range entries {
-		_, loaded := cfg.plugin(e.ID)
-		loaded = loaded || slices.ContainsFunc(cfg.Broken, func(b plugin.Broken) bool { return b.ID == e.ID })
-		plugins[i] = listed{e, loaded}
+	listing := struct {
+		PluginDir string          `json:"pluginDir"`
+		Installed []listed        `json:"installed"`
+		Available []catalog.Entry `json:"available"`
+	}{cfg.PluginDir, []listed{}, []catalog.Entry{}}
+	for _, p := range installed {
+		_, loaded := cfg.plugin(p.ID)
+		broken := slices.ContainsFunc(cfg.Broken, func(b plugin.Broken) bool { return b.ID == p.ID })
+		listing.Installed = append(listing.Installed, listed{p, loaded || broken, broken})
 	}
-	writeJSON(w, struct {
-		PluginDir string   `json:"pluginDir"`
-		Plugins   []listed `json:"plugins"`
-	}{cfg.PluginDir, plugins})
+	for _, e := range builtIn {
+		if !e.Added {
+			listing.Available = append(listing.Available, e)
+		}
+	}
+	writeJSON(w, listing)
 }
 
 // serveAdd copies a built-in plugin into the plugins folder, for the console
@@ -281,6 +298,26 @@ func (cfg Config) serveAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, struct {
 			Path string `json:"path"`
 		}{path})
+	}
+}
+
+// serveRename disables or enables a plugin, for the console page only.
+func (cfg Config) serveRename(rename func(pluginDir, id string) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != cfg.Origin {
+			writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+			return
+		}
+		switch err := rename(cfg.PluginDir, r.PathValue("id")); {
+		case errors.Is(err, catalog.ErrUnknown):
+			writeError(w, http.StatusNotFound, &card.Error{Code: "not_installed"})
+		case errors.Is(err, catalog.ErrTaken):
+			writeError(w, http.StatusConflict, &card.Error{Code: "name_taken"})
+		case err != nil:
+			writeError(w, http.StatusInternalServerError, &card.Error{Code: "rename_failed", Detail: err.Error()})
+		default:
+			writeJSON(w, struct{}{})
+		}
 	}
 }
 
