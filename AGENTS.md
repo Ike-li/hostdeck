@@ -65,7 +65,7 @@ Agreed in the M0 plan, 2026-10-22:
 
 M0 slices S1 to S7 are merged, and after them the plugins page, reloading plugins as that page changes them, and embedding a web page by its address.
 
-The owner asked for a layout and CRUD pass and approved this shape: failures say what is wrong, card numbers stay inside the card, a narrow window uses a top bar, the overview can refresh, cards open, the plugins page groups and sorts by name, reorder works from the keyboard, cards can be hidden and the layout reset, a page's name, icon and address can be edited with yaml.Node on an allowlist, a link can be added, and delete goes through a trash folder. The page does not write a command, and there is no settings page yet. Plain errors is the first of these, card numbers staying inside the card is the second, the narrow window's top bar is the third, and the overview saying when a card was read is the fourth.
+The owner asked for a layout and CRUD pass and approved this shape: failures say what is wrong, card numbers stay inside the card, a narrow window uses a top bar, the overview can refresh, cards open, the plugins page groups and sorts by name, reorder works from the keyboard, cards can be hidden and the layout reset, a page's name, icon and address can be edited with yaml.Node on an allowlist, a link can be added, and delete goes through a trash folder. The page does not write a command, and there is no settings page yet. Plain errors is the first of these, card numbers staying inside the card is the second, the narrow window's top bar is the third, the overview saying when a card was read is the fourth, and a card opening its plugin's page is the fifth.
 
 Left for S8, the last M0 slice:
 

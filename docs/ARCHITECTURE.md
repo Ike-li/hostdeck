@@ -96,6 +96,8 @@ Text shown to people is a string, or `{en: …, zh-CN: …}`. Programs run in th
 
 **The overview is read again.** A card says when its value was read. `POST /api/cards/refresh` needs the console's Origin, writes nothing, and forgets the kept values, so the next read asks every card again. While the overview stays open, a card that failed is asked again. A card that succeeded is kept for its interval.
 
+**A card opens its plugin.** An overview card whose plugin is in the sidebar opens that entry. A proxy or a detail page opens in the console, and a link opens in a new tab. The widen button does not. A card with no sidebar entry opens nothing. The plugins page names which of a sidebar page, a card, a detail page and actions each manifest declares, a disabled one included, and offers Open for a plugin this run loaded into the sidebar.
+
 **The sidebar or the cards are rearranged.** A sidebar entry or a card is dragged to its place, and a card's button, shown under the pointer, makes it two columns wide or one again; the sidebar and the cards each keep their own order. The page sends `POST /api/layout` with the list that changed, from the console's Origin, and the other lists stay as they were. `/api/plugins` and `/api/cards` answer in the saved order; plugins not in it follow in folder order. While something is dragged the page is not redrawn, and the cards are rebuilt only when they are read, rearranged or the language changes, so that a periodic redraw does not drop a drag or a click.
 
 **An action runs.** The first click arms the button, and a double click counts as one click. `POST /api/action/<id>` must come from the console's own Origin. The detail program is run again, and the action runs only if it is still offered for that item. Once started, the action runs to its end or its 30 s limit even if the page is closed or reloaded, so that a restart is not stopped halfway.
@@ -122,7 +124,7 @@ Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `d
 ## Tests and CI
 
 - Each package has unit tests that use local HTTP servers and the test binary as a fake plugin program.
-- `e2e/` builds the program and drives Chrome or Edge through chromedp: languages, embedding a service that refuses frames, clearing its cache, cards, actions, dragging sidebar entries and cards and widening a card, adding, disabling and enabling plugins on the plugins page, and embedding a web page by its address or by dropping it. Without a browser these tests are skipped, unless `HOSTDECK_E2E=1`.
+- `e2e/` builds the program and drives Chrome or Edge through chromedp: languages, embedding a service that refuses frames, clearing its cache, cards, opening a card and the plugins page saying what a plugin provides, actions, dragging sidebar entries and cards and widening a card, adding, disabling and enabling plugins on the plugins page, and embedding a web page by its address or by dropping it. Without a browser these tests are skipped, unless `HOSTDECK_E2E=1`.
 - `examples/` tests run the disk example on the machine at hand, and again on a macOS `df` output copied from a Mac with two disks and Time Machine backups mounted; they answer the Grafana, Syncthing and Ollama examples with responses copied from their documentation.
 - CI runs gofmt, vet and all tests on macOS and Windows, then the browser tests again in Edge. Another job builds the release archives with GoReleaser as a snapshot and checks that each holds the program and the examples. Nothing is published.
 

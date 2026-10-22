@@ -1362,3 +1362,151 @@ card:
 		t.Fatal(err)
 	}
 }
+
+// An overview card opens its plugin's page. The plugins page says what each
+// plugin provides, and opens one that is in the sidebar.
+func TestAnOverviewCardOpensThatPluginsPageAndThePluginsPageSaysWhatItOffers(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/health") {
+			io.WriteString(w, `{"v":"ok"}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, `<!doctype html><html><body><h1 id="mark">Embedded</h1></body></html>`)
+	}))
+	t.Cleanup(svc.Close)
+	dir := t.TempDir()
+	writePlugin(t, dir, "board", fmt.Sprintf(`schema: 1
+name: {en: Board, zh-CN: 看板}
+page: {proxy: %q}
+card:
+  http: {url: %q}
+  value: v
+`, svc.URL+"/", svc.URL+"/health"))
+	writePlugin(t, dir, "list", fmt.Sprintf(`schema: 1
+name: {en: List, zh-CN: 清单}
+card:
+  http: {url: %q}
+  value: v
+detail:
+  exec: {command: [%q, fake-plugin, detail]}
+actions:
+  exec: {command: [%q, fake-plugin, action]}
+`, svc.URL+"/health", exe, exe))
+	writePlugin(t, dir, "only", fmt.Sprintf(`schema: 1
+name: {en: Only, zh-CN: 仅卡片}
+card:
+  http: {url: %q}
+  value: v
+`, svc.URL+"/health"))
+	writePlugin(t, dir, "out", fmt.Sprintf(`schema: 1
+name: {en: Out, zh-CN: 外链}
+page: {link: 'https://example.test/'}
+card:
+  http: {url: %q}
+  value: v
+`, svc.URL+"/health"))
+	writePlugin(t, dir, ".off", "schema: 1\nname: {en: Off, zh-CN: 停用}\npage: {link: 'https://off.example/'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	count := func(css string) int {
+		t.Helper()
+		n, err := chromedp.Run(ctx, chromedp.Evaluate[int](fmt.Sprintf(`document.querySelectorAll(%q).length`, css)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	do(t, ctx,
+		chromedp.EmulateViewport(1280, 800),
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="board"] .card-value`)),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="list"] .card-value`)),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="only"] .card-value`)),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="out"] .card-value`)),
+	)
+	if n := count(`.card[data-id="board"] .card-name a`); n != 1 {
+		t.Fatalf("the board card has %d links, want one that opens its page", n)
+	}
+
+	do(t, ctx,
+		chromedp.Click(chromedp.CSS(`.card[data-id="board"] .card-value`)),
+		chromedp.WaitVisible(chromedp.CSS("#service-name")),
+	)
+	if name := text(t, ctx, "#service-name"); name != "看板" {
+		t.Errorf("opened %q, want the board's page", name)
+	}
+	if got, ok := tryFrameText(ctx, "#frames iframe", "#mark", 15*time.Second); !ok || got != "Embedded" {
+		t.Errorf("embedded page %q, %v; want the service", got, ok)
+	}
+
+	do(t, ctx,
+		chromedp.Click(chromedp.CSS("#nav-overview")),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="list"] .card-name a`)),
+		chromedp.Click(chromedp.CSS(`.card[data-id="list"] .card-name a`)),
+		chromedp.WaitVisible(chromedp.CSS(".detail-item")),
+	)
+	if name, item := text(t, ctx, "#service-name"), text(t, ctx, ".detail-name"); name != "清单" || item != "服务" {
+		t.Errorf("opened %q item %q, want the list's detail page", name, item)
+	}
+
+	do(t, ctx,
+		chromedp.Click(chromedp.CSS("#nav-overview")),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="only"] .card-value`)),
+	)
+	if n := count(`.card[data-id="only"] .card-name a`); n != 0 {
+		t.Errorf("a card with no page has %d links, want none", n)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="only"] .card-value`)))
+	if title := text(t, ctx, "h1"); title != "总览" {
+		t.Errorf("clicking a card with no page left the overview for %q", title)
+	}
+	link := attrs(t, ctx, `.card[data-id="out"] .card-name a`)
+	if link["href"] != "https://example.test/" || link["target"] != "_blank" {
+		t.Errorf("out card link %#v, want the external page in a new tab", link)
+	}
+
+	do(t, ctx,
+		chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`.catalog-item[data-id="list"] .catalog-provides`)),
+	)
+	says := func(id string) string {
+		t.Helper()
+		return text(t, ctx, fmt.Sprintf(`.catalog-item[data-id="%s"] .catalog-provides`, id))
+	}
+	if got := says("list"); !strings.Contains(got, "卡片") || !strings.Contains(got, "详情") || !strings.Contains(got, "操作") || strings.Contains(got, "侧栏页面") {
+		t.Errorf("list provides %q, want a card, a detail page and actions", got)
+	}
+	if got := says("board"); !strings.Contains(got, "侧栏页面") || !strings.Contains(got, "卡片") || strings.Contains(got, "详情") {
+		t.Errorf("board provides %q, want a sidebar page and a card", got)
+	}
+	if got := says("only"); got != "卡片" {
+		t.Errorf("only provides %q, want just a card", got)
+	}
+	if got := says("off"); got != "侧栏页面" {
+		t.Errorf("disabled plugin provides %q, want a sidebar page", got)
+	}
+	if got := says("out"); !strings.Contains(got, "侧栏页面") || !strings.Contains(got, "卡片") {
+		t.Errorf("out provides %q, want a sidebar page and a card", got)
+	}
+	if n := count(`.catalog-item[data-id="only"] .catalog-open`) + count(`.catalog-item[data-id="off"] .catalog-open`); n != 0 {
+		t.Errorf("a card-only or disabled plugin has an Open control")
+	}
+	open := attrs(t, ctx, `.catalog-item[data-id="out"] .catalog-open`)
+	if open["href"] != "https://example.test/" || open["target"] != "_blank" {
+		t.Errorf("out's Open is %#v, want the external page in a new tab", open)
+	}
+	do(t, ctx,
+		chromedp.Click(chromedp.CSS(`.catalog-item[data-id="list"] .catalog-open`)),
+		chromedp.WaitVisible(chromedp.CSS(".detail-item")),
+	)
+	if name := text(t, ctx, "#service-name"); name != "清单" {
+		t.Errorf("Open went to %q, want the list", name)
+	}
+}

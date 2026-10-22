@@ -292,6 +292,15 @@ h1 {
   font-weight: 600;
 }
 
+.card-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-name a:hover { text-decoration: underline; }
+
+.card:has(.card-name a) { cursor: pointer; }
+
 /* Out of the row until the pointer, the keyboard, or a screen without hover. */
 .card-width {
   position: absolute;
@@ -397,6 +406,30 @@ h1 {
   margin: 10px 0 12px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.catalog-provides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-provides li {
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.catalog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .catalog-state {

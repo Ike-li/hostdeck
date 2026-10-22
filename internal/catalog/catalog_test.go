@@ -13,7 +13,7 @@ import (
 )
 
 var builtIn = fstest.MapFS{
-	"disk/plugin.yaml": {Data: []byte("schema: 1\nname: {en: Disk space, zh-CN: 磁盘空间}\ndescription: {en: Free space., zh-CN: 可用空间。}\ncard: {exec: {command: [sh, card.sh]}}\n")},
+	"disk/plugin.yaml": {Data: []byte("schema: 1\nname: {en: Disk space, zh-CN: 磁盘空间}\ndescription: {en: Free space., zh-CN: 可用空间。}\ncard: {exec: {command: [sh, card.sh]}}\ndetail: {exec: {command: [sh, detail.sh]}}\nactions: {exec: {command: [sh, action.sh]}}\n")},
 	"disk/card.sh":     {Data: []byte("echo '{}'\n")},
 	// A plugin whose manifest needs an environment variable is still listed.
 	"keyed/plugin.yaml": {Data: []byte("schema: 1\nname: Keyed\ndescription: Needs a key.\ncard: {http: {url: 'http://127.0.0.1:1/?k=${env:HOSTDECK_TEST_UNSET}'}, value: v}\n")},
@@ -137,6 +137,40 @@ func TestInstalledListsEnabledAndDisabledPlugins(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestAPluginListsThePageCardDetailAndActionsItProvides(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeFolder(t, pluginDir, "board", "schema: 1\nname: Board\npage: {proxy: 'http://127.0.0.1:9/'}\ncard: {http: {url: 'http://127.0.0.1:9/health'}, value: v}\n")
+	writeFolder(t, pluginDir, "list", "schema: 1\nname: List\ndetail: {exec: {command: [sh, d.sh]}}\nactions: {exec: {command: [sh, a.sh]}}\n")
+	writeFolder(t, pluginDir, "only", "schema: 1\nname: Only\ncard: {exec: {command: [sh, c.sh]}}\n")
+	writeFolder(t, pluginDir, "out", "schema: 1\nname: Out\npage: {link: 'https://example.test/'}\n")
+
+	got, err := Installed(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offers := map[string]Offers{}
+	for _, p := range got {
+		offers[p.ID] = p.Offers
+	}
+	want := map[string]Offers{
+		"board": {Page: true, Card: true},
+		"list":  {Detail: true, Actions: true},
+		"only":  {Card: true},
+		"out":   {Page: true},
+	}
+	if !reflect.DeepEqual(offers, want) {
+		t.Errorf("installed offers %v, want %v", offers, want)
+	}
+
+	listed, err := List(builtIn, pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed[0].ID != "disk" || listed[0].Offers != (Offers{Card: true, Detail: true, Actions: true}) {
+		t.Errorf("built-in disk offers %+v, want a card, a detail page and actions", listed[0].Offers)
 	}
 }
 

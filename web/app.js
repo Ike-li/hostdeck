@@ -31,6 +31,7 @@ let clearing = false;
 let clearFailure = null; // why the last clearing failed
 const hiddenSince = new Map(); // plugin id -> when its page was switched away from
 let dragging = false; // whether a sidebar entry or a card is being dragged
+let suppressClick = false; // a click that ends a drag is not an open
 
 // A choice made on this page wins; otherwise the first of the browser's
 // languages that the console has.
@@ -209,8 +210,12 @@ function cardElement(c) {
     saveLayout({ wide: overview.cards.filter((x) => x.wide).map((x) => x.id) });
     render();
   });
-  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), el('h2', 'card-name', pick(c.name)), width);
+  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), cardTitle(c), width);
   card.append(head);
+  card.addEventListener('click', (e) => {
+    if (suppressClick || e.target.closest('button, a, summary')) return;
+    card.querySelector('.card-name a')?.click();
+  });
   if (c.pending) card.append(el('p', 'card-pending', t('loading')));
   if (c.error) {
     card.dataset.status = 'error';
@@ -242,6 +247,28 @@ function cardElement(c) {
   return card;
 }
 
+// cardTitle names the card, and links it when the plugin is in the sidebar.
+// A card on its own has nowhere to open.
+function cardTitle(c) {
+  const name = el('h2', 'card-name');
+  const page = plugins.find((p) => p.id === c.id);
+  if (!page) {
+    name.textContent = pick(c.name);
+    return name;
+  }
+  const a = el('a', null, pick(c.name));
+  a.draggable = false;
+  if (page.type === 'link') {
+    a.href = page.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+  } else {
+    a.href = `#/${encodeURIComponent(page.id)}`;
+  }
+  name.append(a);
+  return name;
+}
+
 // sortable lets the user drag the items of list that match selector into a
 // new order. Once one is dropped, moved gets the IDs in the order they ended in.
 function sortable(list, selector, moved) {
@@ -271,6 +298,11 @@ function sortable(list, selector, moved) {
     dragged.classList.remove('dragging');
     dragged = null;
     dragging = false;
+    // The click that ends a drag would otherwise open the card.
+    suppressClick = true;
+    setTimeout(() => {
+      suppressClick = false;
+    }, 0);
     moved([...list.querySelectorAll(selector)].map((item) => item.dataset.id));
   });
 }
@@ -477,6 +509,30 @@ function catalogCard(p) {
   return item;
 }
 
+// providesList names the parts a plugin's manifest declares.
+function providesList(p) {
+  const keys = ['page', 'card', 'detail', 'actions'].filter((key) => p[key]);
+  if (!keys.length) return null;
+  const list = el('ul', 'catalog-provides');
+  for (const key of keys) list.append(el('li', null, t(`catalog.provides.${key}`)));
+  return list;
+}
+
+// openControl opens a plugin that this run put in the sidebar.
+function openControl(p) {
+  const live = plugins.find((x) => x.id === p.id);
+  if (!live) return null;
+  const a = el('a', 'btn catalog-open', t('catalog.open'));
+  if (live.type === 'link') {
+    a.href = live.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+  } else {
+    a.href = `#/${encodeURIComponent(live.id)}`;
+  }
+  return a;
+}
+
 // catalogButton posts to url on a second click, says how it went with
 // noteOf(the answer), and reads the page and the sidebar again.
 function catalogButton(label, armedText, url, noteOf) {
@@ -575,9 +631,14 @@ function installedItem(p) {
   stateLine.dataset.state = p.error || p.broken ? 'broken' : p.disabled ? 'disabled' : 'enabled';
   item.append(stateLine);
   if (p.error?.file) item.append(errorFile(p.error.file));
+  const offers = providesList(p);
+  if (offers) item.append(offers);
+  const actions = el('div', 'catalog-actions');
+  const open = openControl(p);
+  if (open) actions.append(open);
   const name = pick(p.name);
   const verb = p.disabled ? 'enable' : 'disable';
-  item.append(
+  actions.append(
     catalogButton(
       t(`catalog.${verb}`),
       t(`catalog.${verb}.confirm`),
@@ -585,11 +646,14 @@ function installedItem(p) {
       () => t(`catalog.${verb}d.note`, { name }),
     ),
   );
+  item.append(actions);
   return item;
 }
 
 function availableItem(p) {
   const item = catalogCard(p);
+  const offers = providesList(p);
+  if (offers) item.append(offers);
   const btn = catalogButton(t('catalog.add'), t('catalog.add.confirm'), `/api/catalog/${encodeURIComponent(p.id)}`, (body) =>
     t('catalog.added', { path: body.path }),
   );

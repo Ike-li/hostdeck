@@ -31,6 +31,15 @@ var (
 	ErrTaken    = errors.New("the folder that name would be renamed to is already there")
 )
 
+// Offers says which parts a plugin's manifest declares. The plugins page
+// names them; nothing here is run.
+type Offers struct {
+	Page    bool `json:"page,omitempty"`
+	Card    bool `json:"card,omitempty"`
+	Detail  bool `json:"detail,omitempty"`
+	Actions bool `json:"actions,omitempty"`
+}
+
 // Entry is a built-in plugin as the plugins page lists it.
 type Entry struct {
 	ID          string      `json:"id"`
@@ -39,6 +48,7 @@ type Entry struct {
 	// Added says that pluginDir has a folder of this name, enabled or
 	// disabled, whatever it holds.
 	Added bool `json:"added"`
+	Offers
 }
 
 // List returns the plugins in builtIn, one per top-level folder. Only their
@@ -62,7 +72,7 @@ func List(builtIn fs.FS, pluginDir string) ([]Entry, error) {
 		if err := yaml.Unmarshal(data, &m); err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{ID: d.Name(), Name: m.Name, Description: m.Description, Added: present(pluginDir, d.Name())})
+		entries = append(entries, Entry{ID: d.Name(), Name: m.Name, Description: m.Description, Added: present(pluginDir, d.Name()), Offers: m.offers()})
 	}
 	return entries, nil
 }
@@ -179,10 +189,19 @@ func onLocalNetwork(host string) bool {
 	return true
 }
 
-// about is what the plugins page shows of a manifest.
+// about is what the plugins page shows of a manifest. A page, card, detail
+// or actions key is recorded only as present: the page does not read them.
 type about struct {
 	Name        plugin.Text `yaml:"name"`
 	Description plugin.Text `yaml:"description"`
+	Page        *yaml.Node  `yaml:"page"`
+	Card        *yaml.Node  `yaml:"card"`
+	Detail      *yaml.Node  `yaml:"detail"`
+	Actions     *yaml.Node  `yaml:"actions"`
+}
+
+func (m about) offers() Offers {
+	return Offers{Page: m.Page != nil, Card: m.Card != nil, Detail: m.Detail != nil, Actions: m.Actions != nil}
 }
 
 // present says whether pluginDir has a folder for id, enabled or disabled.
@@ -201,6 +220,7 @@ type Plugin struct {
 	Name        plugin.Text `json:"name"`
 	Description plugin.Text `json:"description,omitzero"`
 	Disabled    bool        `json:"disabled"`
+	Offers
 }
 
 // Installed lists the plugin folders in pluginDir by ID: each folder, and each
@@ -225,7 +245,7 @@ func Installed(pluginDir string) ([]Plugin, error) {
 		if err != nil || yaml.Unmarshal(data, &m) != nil || m.Name.IsZero() {
 			m = about{Name: plugin.Text{All: id}}
 		}
-		plugins = append(plugins, Plugin{ID: id, Name: m.Name, Description: m.Description, Disabled: disabled})
+		plugins = append(plugins, Plugin{ID: id, Name: m.Name, Description: m.Description, Disabled: disabled, Offers: m.offers()})
 	}
 	slices.SortFunc(plugins, func(a, b Plugin) int { return strings.Compare(a.ID, b.ID) })
 	return plugins, nil
