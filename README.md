@@ -33,6 +33,7 @@ Each milestone is released on its own.
 - A local server for macOS and Windows that only this machine can reach
 - UI in English and 简体中文, switchable
 - A sidebar of your local web UIs that open full-page, including services that forbid being embedded
+- A clear-cache button on each embedded service that clears that service's cache and site data and nothing else: cookies and other services are left alone
 - An overview of status cards
 - Plugin manifest v1: a plugin is a folder whose manifest declares its page, card, detail page and actions
 - Declarative plugins: a URL, which fields of its JSON go on the card, and thresholds for yellow and red
