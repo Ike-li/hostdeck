@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/card"
@@ -42,13 +43,44 @@ type Config struct {
 	// Layout is how the user arranged the sidebar and the cards; nil is the
 	// order the plugins load in.
 	Layout *layout.Store
+	// Reload reads the plugins folder again after the plugins page changed
+	// it. Nil leaves Plugins, Broken and Served as they are.
+	Reload func() (Loaded, error)
 }
 
-func (cfg Config) layout() layout.Layout {
-	if cfg.Layout == nil {
+// Loaded is what one reading of the plugins folder gave.
+type Loaded struct {
+	Plugins []plugin.Plugin
+	Broken  []plugin.Broken
+	Served  map[string]Served
+}
+
+type server struct {
+	cfg     Config
+	current atomic.Pointer[state]
+	// changing lets one change to the plugins folder, with its reload, run
+	// at a time.
+	changing sync.Mutex
+}
+
+// state is the plugins in use, with a card cache of their own: a plugin
+// enabled again, perhaps changed, is asked anew.
+type state struct {
+	Loaded
+	cards *card.Cache
+}
+
+func (s *server) loaded() *state { return s.current.Load() }
+
+func (s *server) use(l Loaded) {
+	s.current.Store(&state{l, card.NewCache(time.Now)})
+}
+
+func (s *server) layout() layout.Layout {
+	if s.cfg.Layout == nil {
 		return layout.Layout{}
 	}
-	return cfg.Layout.Get()
+	return s.cfg.Layout.Get()
 }
 
 func pluginID(p plugin.Plugin) string { return p.ID }
@@ -60,19 +92,21 @@ type Served struct {
 }
 
 func Handler(cfg Config) http.Handler {
+	s := &server{cfg: cfg}
+	s.use(Loaded{cfg.Plugins, cfg.Broken, cfg.Served})
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServerFS(web.Files))
-	mux.HandleFunc("GET /api/plugins", cfg.servePlugins)
-	mux.HandleFunc("GET /api/status", cfg.serveStatus)
-	mux.HandleFunc("GET /api/cards", cfg.serveCards(card.NewCache(time.Now)))
-	mux.HandleFunc("POST /api/clear/{id}", cfg.serveClear)
-	mux.HandleFunc("GET /api/detail/{id}", cfg.serveDetail)
-	mux.HandleFunc("POST /api/action/{id}", cfg.serveAction)
-	mux.HandleFunc("GET /api/catalog", cfg.serveCatalog)
-	mux.HandleFunc("POST /api/catalog/{id}", cfg.serveAdd)
-	mux.HandleFunc("POST /api/plugins/{id}/disable", cfg.serveRename(catalog.Disable))
-	mux.HandleFunc("POST /api/plugins/{id}/enable", cfg.serveRename(catalog.Enable))
-	mux.HandleFunc("POST /api/layout", cfg.serveLayout)
+	mux.HandleFunc("GET /api/plugins", s.servePlugins)
+	mux.HandleFunc("GET /api/status", s.serveStatus)
+	mux.HandleFunc("GET /api/cards", s.serveCards)
+	mux.HandleFunc("POST /api/clear/{id}", s.serveClear)
+	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
+	mux.HandleFunc("POST /api/action/{id}", s.serveAction)
+	mux.HandleFunc("GET /api/catalog", s.serveCatalog)
+	mux.HandleFunc("POST /api/catalog/{id}", s.serveAdd)
+	mux.HandleFunc("POST /api/plugins/{id}/disable", s.serveRename(catalog.Disable))
+	mux.HandleFunc("POST /api/plugins/{id}/enable", s.serveRename(catalog.Enable))
+	mux.HandleFunc("POST /api/layout", s.serveLayout)
 	return local.Only(sameOriginAPI(noFraming(mux)))
 }
 
@@ -86,9 +120,10 @@ type entry struct {
 	Error *card.Error `json:"error,omitempty"`
 }
 
-func (cfg Config) servePlugins(w http.ResponseWriter, r *http.Request) {
+func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
+	now := s.loaded()
 	entries := []entry{}
-	for _, p := range layout.Arrange(cfg.Plugins, cfg.layout().Sidebar, pluginID) {
+	for _, p := range layout.Arrange(now.Plugins, s.layout().Sidebar, pluginID) {
 		e := entry{ID: p.ID, Name: p.Name, Icon: p.Icon}
 		switch {
 		case p.Detail != nil:
@@ -102,10 +137,10 @@ func (cfg Config) servePlugins(w http.ResponseWriter, r *http.Request) {
 			e.Type, e.URL = "link", p.Page.Link
 		} else {
 			e.Type = "proxy"
-			if s := cfg.Served[p.ID]; s.Err != nil {
-				e.Error = &card.Error{Code: "port_unavailable", Detail: s.Err.Error()}
+			if served := now.Served[p.ID]; served.Err != nil {
+				e.Error = &card.Error{Code: "port_unavailable", Detail: served.Err.Error()}
 			} else {
-				e.URL = s.URL
+				e.URL = served.URL
 			}
 		}
 		entries = append(entries, e)
@@ -120,11 +155,11 @@ var probe = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
-func (cfg Config) serveStatus(w http.ResponseWriter, r *http.Request) {
+func (s *server) serveStatus(w http.ResponseWriter, r *http.Request) {
 	status := map[string]string{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	for _, p := range cfg.Plugins {
+	for _, p := range s.loaded().Plugins {
 		if p.Page == nil || p.Page.Proxy == "" {
 			continue
 		}
@@ -155,74 +190,74 @@ func answers(ctx context.Context, url string) bool {
 	return true
 }
 
-func (cfg Config) serveCards(cache *card.Cache) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), overviewWait)
-		defer cancel()
-		var withCard []plugin.Plugin
-		for _, p := range cfg.Plugins {
-			if p.Card != nil {
-				withCard = append(withCard, p)
-			}
+func (s *server) serveCards(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), overviewWait)
+	defer cancel()
+	now := s.loaded()
+	var withCard []plugin.Plugin
+	for _, p := range now.Plugins {
+		if p.Card != nil {
+			withCard = append(withCard, p)
 		}
-		cards := make([]card.View, len(withCard))
-		var wg sync.WaitGroup
-		for i, p := range withCard {
-			wg.Go(func() { cards[i] = cache.Get(ctx, p) })
-		}
-		wg.Wait()
-		for _, b := range cfg.Broken {
-			cards = append(cards, card.View{ID: b.ID, Name: plugin.Text{All: b.ID}, Error: &card.Error{Code: "bad_manifest", Detail: b.Err.Error()}})
-		}
-		l := cfg.layout()
-		type placed struct {
-			card.View
-			Wide bool `json:"wide,omitempty"`
-		}
-		arranged := []placed{}
-		for _, c := range layout.Arrange(cards, l.Cards, func(c card.View) string { return c.ID }) {
-			arranged = append(arranged, placed{c, slices.Contains(l.Wide, c.ID)})
-		}
-		writeJSON(w, struct {
-			PluginDir string   `json:"pluginDir"`
-			Cards     []placed `json:"cards"`
-		}{cfg.PluginDir, arranged})
 	}
+	cards := make([]card.View, len(withCard))
+	var wg sync.WaitGroup
+	for i, p := range withCard {
+		wg.Go(func() { cards[i] = now.cards.Get(ctx, p) })
+	}
+	wg.Wait()
+	for _, b := range now.Broken {
+		cards = append(cards, card.View{ID: b.ID, Name: plugin.Text{All: b.ID}, Error: &card.Error{Code: "bad_manifest", Detail: b.Err.Error()}})
+	}
+	l := s.layout()
+	type placed struct {
+		card.View
+		Wide bool `json:"wide,omitempty"`
+	}
+	arranged := []placed{}
+	for _, c := range layout.Arrange(cards, l.Cards, func(c card.View) string { return c.ID }) {
+		arranged = append(arranged, placed{c, slices.Contains(l.Wide, c.ID)})
+	}
+	writeJSON(w, struct {
+		PluginDir string   `json:"pluginDir"`
+		Cards     []placed `json:"cards"`
+	}{s.cfg.PluginDir, arranged})
 }
 
 // serveClear hands out the address at which an embedded service's proxy has
 // the browser clear that service's cache and storage. The address works once.
-func (cfg Config) serveClear(w http.ResponseWriter, r *http.Request) {
+func (s *server) serveClear(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	s, ok := cfg.Served[id]
-	if !ok || s.Err != nil {
+	served, ok := s.loaded().Served[id]
+	if !ok || served.Err != nil {
 		writeError(w, http.StatusNotFound, &card.Error{Code: "not_embedded"})
 		return
 	}
-	served, err := url.Parse(s.URL)
+	u, err := url.Parse(served.URL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	clear := url.URL{
-		Scheme:   served.Scheme,
-		Host:     served.Host,
+		Scheme:   u.Scheme,
+		Host:     u.Host,
 		Path:     proxy.ClearPath,
-		RawQuery: url.Values{"token": {cfg.Tokens.Issue(id)}}.Encode(),
+		RawQuery: url.Values{"token": {s.cfg.Tokens.Issue(id)}}.Encode(),
 	}
 	writeJSON(w, map[string]string{"url": clear.String()})
 }
 
-func (cfg Config) plugin(id string) (plugin.Plugin, bool) {
-	i := slices.IndexFunc(cfg.Plugins, func(p plugin.Plugin) bool { return p.ID == id })
+func (s *server) plugin(id string) (plugin.Plugin, bool) {
+	plugins := s.loaded().Plugins
+	i := slices.IndexFunc(plugins, func(p plugin.Plugin) bool { return p.ID == id })
 	if i < 0 {
 		return plugin.Plugin{}, false
 	}
-	return cfg.Plugins[i], true
+	return plugins[i], true
 }
 
-func (cfg Config) serveDetail(w http.ResponseWriter, r *http.Request) {
-	p, ok := cfg.plugin(r.PathValue("id"))
+func (s *server) serveDetail(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.plugin(r.PathValue("id"))
 	if !ok || p.Detail == nil {
 		writeError(w, http.StatusNotFound, &card.Error{Code: "no_detail"})
 		return
@@ -232,12 +267,12 @@ func (cfg Config) serveDetail(w http.ResponseWriter, r *http.Request) {
 
 // serveAction runs an action that the console page asked for. Every other
 // page on 127.0.0.1, embedded services included, is turned away by its Origin.
-func (cfg Config) serveAction(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Origin") != cfg.Origin {
+func (s *server) serveAction(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
 		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
 		return
 	}
-	p, ok := cfg.plugin(r.PathValue("id"))
+	p, ok := s.plugin(r.PathValue("id"))
 	if !ok || p.Actions == nil {
 		writeError(w, http.StatusNotFound, &card.Error{Code: "no_actions"})
 		return
@@ -265,20 +300,20 @@ func (cfg Config) serveAction(w http.ResponseWriter, r *http.Request) {
 
 // serveCatalog lists the plugins folder, with whether this run of hostdeck
 // loaded each plugin, and the built-in plugins that are not in it.
-func (cfg Config) serveCatalog(w http.ResponseWriter, r *http.Request) {
-	installed, err := catalog.Installed(cfg.PluginDir)
+func (s *server) serveCatalog(w http.ResponseWriter, r *http.Request) {
+	installed, err := catalog.Installed(s.cfg.PluginDir)
 	if err == nil {
 		var builtIn []catalog.Entry
-		builtIn, err = catalog.List(cfg.BuiltIn, cfg.PluginDir)
+		builtIn, err = catalog.List(s.cfg.BuiltIn, s.cfg.PluginDir)
 		if err == nil {
-			cfg.writeCatalog(w, installed, builtIn)
+			s.writeCatalog(w, installed, builtIn)
 			return
 		}
 	}
 	writeError(w, http.StatusInternalServerError, &card.Error{Code: "catalog_failed", Detail: err.Error()})
 }
 
-func (cfg Config) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin, builtIn []catalog.Entry) {
+func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin, builtIn []catalog.Entry) {
 	type listed struct {
 		catalog.Plugin
 		Loaded bool `json:"loaded"`
@@ -288,10 +323,10 @@ func (cfg Config) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin
 		PluginDir string          `json:"pluginDir"`
 		Installed []listed        `json:"installed"`
 		Available []catalog.Entry `json:"available"`
-	}{cfg.PluginDir, []listed{}, []catalog.Entry{}}
+	}{s.cfg.PluginDir, []listed{}, []catalog.Entry{}}
 	for _, p := range installed {
-		_, loaded := cfg.plugin(p.ID)
-		broken := slices.ContainsFunc(cfg.Broken, func(b plugin.Broken) bool { return b.ID == p.ID })
+		_, loaded := s.plugin(p.ID)
+		broken := slices.ContainsFunc(s.loaded().Broken, func(b plugin.Broken) bool { return b.ID == p.ID })
 		listing.Installed = append(listing.Installed, listed{p, loaded || broken, broken})
 	}
 	for _, e := range builtIn {
@@ -302,14 +337,16 @@ func (cfg Config) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin
 	writeJSON(w, listing)
 }
 
-// serveAdd copies a built-in plugin into the plugins folder, for the console
-// page only: what is added there runs its commands once hostdeck restarts.
-func (cfg Config) serveAdd(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Origin") != cfg.Origin {
+// serveAdd copies a built-in plugin into the plugins folder and puts it to
+// use, for the console page only.
+func (s *server) serveAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
 		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
 		return
 	}
-	path, err := catalog.Add(cfg.BuiltIn, cfg.PluginDir, r.PathValue("id"))
+	s.changing.Lock()
+	defer s.changing.Unlock()
+	path, err := catalog.Add(s.cfg.BuiltIn, s.cfg.PluginDir, r.PathValue("id"))
 	switch {
 	case errors.Is(err, catalog.ErrUnknown):
 		writeError(w, http.StatusNotFound, &card.Error{Code: "not_built_in"})
@@ -317,6 +354,7 @@ func (cfg Config) serveAdd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, &card.Error{Code: "already_added"})
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, &card.Error{Code: "add_failed", Detail: err.Error()})
+	case !s.reload(w):
 	default:
 		writeJSON(w, struct {
 			Path string `json:"path"`
@@ -324,39 +362,58 @@ func (cfg Config) serveAdd(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveRename disables or enables a plugin, for the console page only.
-func (cfg Config) serveRename(rename func(pluginDir, id string) error) http.HandlerFunc {
+// serveRename disables or enables a plugin, for the console page only, and
+// stops or starts it.
+func (s *server) serveRename(rename func(pluginDir, id string) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Origin") != cfg.Origin {
+		if r.Header.Get("Origin") != s.cfg.Origin {
 			writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
 			return
 		}
-		switch err := rename(cfg.PluginDir, r.PathValue("id")); {
+		s.changing.Lock()
+		defer s.changing.Unlock()
+		switch err := rename(s.cfg.PluginDir, r.PathValue("id")); {
 		case errors.Is(err, catalog.ErrUnknown):
 			writeError(w, http.StatusNotFound, &card.Error{Code: "not_installed"})
 		case errors.Is(err, catalog.ErrTaken):
 			writeError(w, http.StatusConflict, &card.Error{Code: "name_taken"})
 		case err != nil:
 			writeError(w, http.StatusInternalServerError, &card.Error{Code: "rename_failed", Detail: err.Error()})
+		case !s.reload(w):
 		default:
 			writeJSON(w, struct{}{})
 		}
 	}
 }
 
+// reload reads the plugins folder again and puts what it holds to use. If
+// that fails, what was in use stays, and reload writes the error to w.
+func (s *server) reload(w http.ResponseWriter) bool {
+	if s.cfg.Reload == nil {
+		return true
+	}
+	l, err := s.cfg.Reload()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "reload_failed", Detail: err.Error()})
+		return false
+	}
+	s.use(l)
+	return true
+}
+
 // serveLayout saves how the user arranged the console, for the console page
 // only. A list the request leaves out stays as it was.
-func (cfg Config) serveLayout(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Origin") != cfg.Origin {
+func (s *server) serveLayout(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
 		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
 		return
 	}
-	l := cfg.Layout.Get()
+	l := s.cfg.Layout.Get()
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&l); err != nil {
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
 		return
 	}
-	if err := cfg.Layout.Set(l); err != nil {
+	if err := s.cfg.Layout.Set(l); err != nil {
 		writeError(w, http.StatusInternalServerError, &card.Error{Code: "layout_failed", Detail: err.Error()})
 		return
 	}

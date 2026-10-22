@@ -79,7 +79,7 @@ go run .
 
 Then open http://127.0.0.1:4678/.
 
-Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. Plugins are read when hostdeck starts, so restart it after adding or changing one. The **Plugins** page in the sidebar adds the ones that come with hostdeck, and disables or enables installed ones: a disabled plugin's folder is renamed to start with a dot, which hostdeck skips, and nothing in it changes.
+Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. The **Plugins** page in the sidebar adds the ones that come with hostdeck, and disables or enables installed ones, each change taking effect at once: a disabled plugin's folder is renamed to start with a dot, which hostdeck skips, and nothing in it changes. A plugin folder added or changed by hand is read when hostdeck restarts, or with the next change on that page.
 
 A plugin is a folder holding a `plugin.yaml`. Two small ones:
 

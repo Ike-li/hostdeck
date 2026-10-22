@@ -134,7 +134,9 @@ function render() {
 // status refresh would drop a click that lands while it is replaced.
 function renderNav() {
   const nav = $('nav');
-  if (nav.children.length !== plugins.length + 2) {
+  const entries = JSON.stringify(plugins.map((p) => [p.id, p.type, p.url]));
+  if (nav.dataset.entries !== entries) {
+    nav.dataset.entries = entries;
     const pageItem = (href) => {
       const a = el('a', 'nav-item');
       a.href = href;
@@ -478,7 +480,7 @@ function catalogCard(p) {
 }
 
 // catalogButton posts to url on a second click, says how it went with
-// noteOf(the answer), and reads the page again.
+// noteOf(the answer), and reads the page and the sidebar again.
 function catalogButton(label, armedText, url, noteOf) {
   const btn = el('button', 'btn', label);
   btn.type = 'button';
@@ -497,6 +499,9 @@ function catalogButton(label, armedText, url, noteOf) {
     const n = $('catalog-note');
     n.textContent = note;
     n.hidden = false;
+    await loadPlugins();
+    render();
+    refreshStatus();
     loadCatalog();
   });
   return btn;
@@ -621,6 +626,26 @@ function releaseIdleFrames() {
   }
 }
 
+// The sidebar is read at start and after the plugins page changed the plugins.
+// A page whose entry went away or changed is unloaded.
+async function loadPlugins() {
+  let next;
+  try {
+    next = await getJSON('/api/plugins');
+  } catch (e) {
+    failure = e.message;
+    return;
+  }
+  for (const [id, f] of frames) {
+    const before = JSON.stringify(plugins.find((p) => p.id === id));
+    if (JSON.stringify(next.find((p) => p.id === id)) === before) continue;
+    f.remove();
+    frames.delete(id);
+    hiddenSince.delete(id);
+  }
+  plugins = next;
+}
+
 // A card still being read is asked for again shortly, for as long as the
 // overview is shown.
 async function loadCards() {
@@ -664,11 +689,7 @@ async function init() {
     else frames.get(current.id).src = current.url;
   });
   await setLang(initialLang(), false);
-  try {
-    plugins = await getJSON('/api/plugins');
-  } catch (e) {
-    failure = e.message;
-  }
+  await loadPlugins();
   addEventListener('hashchange', route);
   route();
   refreshStatus();

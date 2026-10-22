@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -47,20 +48,30 @@ func run(args []string) error {
 	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
 		return err
 	}
-	plugins, broken, err := plugin.Load(pluginDir)
-	if err != nil {
-		return err
-	}
-	for _, b := range broken {
-		log.Printf("%s: not loaded: %v", b.ID, b.Err)
-	}
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		return err
 	}
 	consolePort := ln.Addr().(*net.TCPAddr).Port
 	tokens := onetime.New(time.Now)
-	served, err := serveProxies(plugins, filepath.Join(dir, "ports.json"), consolePort, tokens)
+	f := &forwarders{portsFile: filepath.Join(dir, "ports.json"), consolePort: consolePort, tokens: tokens}
+	// The console calls reload one change at a time.
+	reload := func() (console.Loaded, error) {
+		plugins, broken, err := plugin.Load(pluginDir)
+		if err != nil {
+			return console.Loaded{}, err
+		}
+		for _, b := range broken {
+			log.Printf("%s: not loaded: %v", b.ID, b.Err)
+		}
+		served, err := f.sync(plugins)
+		if err != nil {
+			return console.Loaded{}, err
+		}
+		log.Printf("hostdeck: %d plugins in %s", len(plugins), pluginDir)
+		return console.Loaded{Plugins: plugins, Broken: broken, Served: served}, nil
+	}
+	loaded, err := reload()
 	if err != nil {
 		return err
 	}
@@ -68,57 +79,105 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("hostdeck: http://%s/ (%d plugins in %s)", ln.Addr(), len(plugins), pluginDir)
+	log.Printf("hostdeck: http://%s/", ln.Addr())
 	return http.Serve(ln, console.Handler(console.Config{
 		Origin:    fmt.Sprintf("http://127.0.0.1:%d", consolePort),
-		Plugins:   plugins,
-		Broken:    broken,
+		Plugins:   loaded.Plugins,
+		Broken:    loaded.Broken,
 		PluginDir: pluginDir,
 		BuiltIn:   examples.Files,
-		Served:    served,
+		Served:    loaded.Served,
 		Tokens:    tokens,
 		Layout:    arranged,
+		Reload:    reload,
 	}))
 }
 
-// serveProxies re-serves each plugin's proxied page on a port of its own, from
-// the port after the console's up, and says where the browser finds each one.
-// Each proxy clears its service's browser data with a token from tokens.
-func serveProxies(plugins []plugin.Plugin, portsFile string, consolePort int, tokens *onetime.Tokens) (map[string]console.Served, error) {
+// forwarders re-serve each plugin's proxied page on a port of its own, from
+// the port after the console's up. Each proxy clears its service's browser
+// data with a token from tokens.
+type forwarders struct {
+	portsFile   string
+	consolePort int
+	tokens      *onetime.Tokens
+	running     map[string]*forwarder // by plugin ID
+}
+
+type forwarder struct {
+	target string // the manifest's page.proxy
+	url    string // where the browser finds it
+	server *http.Server
+}
+
+// sync serves the proxied pages of plugins, and only those, and says where the
+// browser finds each one. A service keeps its port when it stops and starts
+// again; one whose port could not be opened is tried again on the next sync.
+func (f *forwarders) sync(plugins []plugin.Plugin) (map[string]console.Served, error) {
+	if f.running == nil {
+		f.running = map[string]*forwarder{}
+	}
+	want := map[string]string{}
 	var ids []string
 	for _, p := range plugins {
-		if p.Page != nil && p.Page.Proxy != "" {
+		if p.Page == nil || p.Page.Proxy == "" {
+			continue
+		}
+		want[p.ID] = p.Page.Proxy
+		if r, ok := f.running[p.ID]; !ok || r.target != p.Page.Proxy {
 			ids = append(ids, p.ID)
 		}
 	}
-	opened, err := ports.Listen(portsFile, ids, consolePort+1)
+	// Stopped first, so that a service pointed elsewhere gets its port back.
+	for id, r := range f.running {
+		if want[id] != r.target {
+			r.server.Close()
+			delete(f.running, id)
+			log.Printf("%s: %s stopped", id, r.url)
+		}
+	}
+	opened, err := ports.Listen(f.portsFile, ids, f.consolePort+1)
 	if err != nil {
 		return nil, err
 	}
-	consoleOrigin := fmt.Sprintf("http://127.0.0.1:%d", consolePort)
-	served := make(map[string]console.Served, len(ids))
-	for _, p := range plugins {
-		o, ok := opened[p.ID]
-		if !ok {
-			continue
-		}
+	consoleOrigin := fmt.Sprintf("http://127.0.0.1:%d", f.consolePort)
+	served := make(map[string]console.Served, len(want))
+	for _, id := range ids {
+		o := opened[id]
 		if o.Err != nil {
-			log.Printf("%s: %v", p.ID, o.Err)
-			served[p.ID] = console.Served{Err: o.Err}
+			log.Printf("%s: %v", id, o.Err)
+			served[id] = console.Served{Err: o.Err}
 			continue
 		}
-		target, err := url.Parse(p.Page.Proxy)
+		target, err := url.Parse(want[id])
 		if err != nil {
-			return nil, err
+			o.Listener.Close()
+			served[id] = console.Served{Err: err}
+			continue
 		}
-		served[p.ID] = console.Served{URL: fmt.Sprintf("http://127.0.0.1:%d%s", o.Port, target.RequestURI())}
-		log.Printf("%s: http://127.0.0.1:%d/ -> %s", p.ID, o.Port, p.Page.Proxy)
+		redeem := func(token string) bool { return f.tokens.Redeem(id, token) }
+		r := &forwarder{
+			target: want[id],
+			url:    fmt.Sprintf("http://127.0.0.1:%d%s", o.Port, target.RequestURI()),
+			server: &http.Server{Handler: proxy.New(target, consoleOrigin, redeem)},
+		}
+		f.running[id] = r
+		log.Printf("%s: http://127.0.0.1:%d/ -> %s", id, o.Port, r.target)
 		go func() {
-			redeem := func(token string) bool { return tokens.Redeem(p.ID, token) }
-			log.Printf("%s: %v", p.ID, http.Serve(o.Listener, proxy.New(target, consoleOrigin, redeem)))
+			if err := r.server.Serve(o.Listener); !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("%s: %v", id, err)
+			}
 		}()
 	}
+	for id, r := range f.running {
+		served[id] = console.Served{URL: r.url}
+	}
 	return served, nil
+}
+
+func (f *forwarders) close() {
+	for _, r := range f.running {
+		r.server.Close()
+	}
 }
 
 // checkAddr allows 127.0.0.1 only. Anything else either reaches beyond this

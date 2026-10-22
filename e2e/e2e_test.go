@@ -752,7 +752,7 @@ func TestARefusedClearingSaysItFailed(t *testing.T) {
 }
 
 // A first run has no plugins: the overview points to the plugins page, which
-// adds a built-in plugin on a second click and says to restart.
+// adds a built-in plugin on a second click and puts it to use.
 func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
 	dir := t.TempDir()
 	url := startConsole(t, dir)
@@ -788,16 +788,20 @@ func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
 	if _, err := os.Stat(added); err != nil {
 		t.Fatalf("not added: %v", err)
 	}
-	if got := text(t, ctx, "#catalog-note"); !strings.Contains(got, filepath.Join(dir, "plugins", "disk")) || !strings.Contains(got, "重启") {
-		t.Errorf("note %q, want where it was added and to restart", got)
+	if got := text(t, ctx, "#catalog-note"); !strings.Contains(got, filepath.Join(dir, "plugins", "disk")) || strings.Contains(got, "重启") {
+		t.Errorf("note %q, want where it was added and no restart", got)
 	}
-	if got := text(t, ctx, disk+" .catalog-state"); !strings.Contains(got, "重启") {
-		t.Errorf("disk now shows %q, want it added and waiting for a restart", got)
+	if got := text(t, ctx, disk+" .catalog-state"); got != "使用中" {
+		t.Errorf("disk now shows %q, want it in use", got)
 	}
+
+	// In use at once: in the sidebar, and on the overview with its card.
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="disk"]`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/"]`)), chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="disk"]`)))
 }
 
 // A plugin is disabled on the plugins page by a second click, which renames
-// its folder so that the next start skips it, and enabled again the same way.
+// its folder and stops it, and enabled again the same way.
 func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	dir := t.TempDir()
 	writePlugin(t, dir, "site", "schema: 1\nname: Site\npage: {link: 'http://127.0.0.1:9/'}\n")
@@ -831,9 +835,10 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(disabled, "plugin.yaml")); err != nil {
 		t.Fatalf("not disabled: %v", err)
 	}
-	if note, state := text(t, ctx, "#catalog-note"), text(t, ctx, site+" .catalog-state"); !strings.Contains(note, "重启") || !strings.Contains(state, ".site") {
-		t.Errorf("note %q, state %q; want a restart mentioned and the folder's new name", note, state)
+	if note, state := text(t, ctx, "#catalog-note"), text(t, ctx, site+" .catalog-state"); strings.Contains(note+state, "重启") || !strings.Contains(state, ".site") {
+		t.Errorf("note %q, state %q; want the folder's new name and no restart", note, state)
 	}
+	gone(t, ctx, `.nav-item[data-id="site"]`)
 
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
 	waitLabel("再点一次启用")
@@ -841,6 +846,15 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	waitLabel("停用")
 	if _, err := os.Stat(filepath.Join(enabled, "plugin.yaml")); err != nil {
 		t.Fatalf("not enabled again: %v", err)
+	}
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="site"]`)))
+}
+
+// gone waits until nothing matches selector.
+func gone(t *testing.T, ctx context.Context, selector string) {
+	t.Helper()
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`!document.querySelector(%q)`, selector))); err != nil {
+		t.Fatalf("%s is still there: %v", selector, err)
 	}
 }
 

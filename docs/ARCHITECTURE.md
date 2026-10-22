@@ -2,7 +2,7 @@
 
 [简体中文](ARCHITECTURE.zh-CN.md)
 
-hostdeck is one Go program. It serves a web console on 127.0.0.1, reads plugins from a folder when it starts, and re-serves each embedded web UI on a port of its own. There is no database and no background worker: everything happens when the console page asks.
+hostdeck is one Go program. It serves a web console on 127.0.0.1, reads plugins from a folder when it starts and after each change on its plugins page, and re-serves each embedded web UI on a port of its own. There is no database and no background worker: everything happens when the console page asks.
 
 ## The pieces
 
@@ -30,7 +30,7 @@ flowchart LR
   console --> cache -->|"card.http"| json
   cache -->|"card.exec"| run
   console -->|"detail, actions"| run --> cmd
-  folder -. "read at start" .-> console
+  folder -. "read at start and after each change" .-> console
   folder -. "ports kept" .-> proxy
 ```
 
@@ -42,7 +42,7 @@ Startup, in `main.go`:
 4. Give each plugin with `page.proxy` a forwarding port, from the console's port + 1 up, remembered in `ports.json` so that it never moves and the browser keeps that service's cookies and storage.
 5. Serve.
 
-Plugins are read only at start: after adding or changing one, restart hostdeck.
+After the plugins page adds, disables or enables a plugin, the same request reads the plugins folder again, steps 2 and 4 included: a service that is no longer there, or whose `page.proxy` changed, stops serving its port, and a new one gets a port as above, or its own back. Cards are then asked anew. If reading fails, what was in use stays and the page says so. A folder changed by hand is read at the next start or the next change on the plugins page.
 
 ## Packages
 
@@ -87,9 +87,9 @@ Text shown to people is a string, or `{en: …, zh-CN: …}`. Programs run in th
 
 **Clear cache.** The first click arms the button; the second runs it. The page asks `POST /api/clear/<id>` for a one-time token, unloads the service's frame, opens `/.well-known/hostdeck/clear-site-data?token=…` on the service's port in a hidden frame, and goes back. The proxy answers that address itself with `Clear-Site-Data: "cache", "storage"` and a page that tells the console, by `postMessage`, that it cleared; a refused token also loads a page, so without that message the console reports a failure. Cookies are kept, because browsers keep cookies per host, not per port.
 
-**A built-in plugin is added.** The plugins page lists the plugins embedded in the program, with whether the plugins folder has one of that name and whether this run loaded it. Adding needs a second click and the console's Origin. Only a top-level folder of the built-in plugins can be named, and a folder that is already there is never replaced. The copy is written under a name that starts with a dot, which loading skips, and then renamed, so a failure leaves nothing half written. The page then says to restart hostdeck. Nothing is downloaded.
+**A built-in plugin is added.** The plugins page lists the plugins embedded in the program, with whether the plugins folder has one of that name and whether this run loaded it. Adding needs a second click and the console's Origin. Only a top-level folder of the built-in plugins can be named, and a folder that is already there is never replaced. The copy is written under a name that starts with a dot, which loading skips, and then renamed, so a failure leaves nothing half written. The plugin is then in use. Nothing is downloaded.
 
-**A plugin is disabled or enabled.** The plugins page lists every folder in the plugins folder, disabled ones included, with whether this run loaded it. Disabling renames `disk` to `.disk`, and enabling renames it back; nothing inside changes, and neither replaces a folder that is there. Both need a second click and the console's Origin, and take effect when hostdeck restarts.
+**A plugin is disabled or enabled.** The plugins page lists every folder in the plugins folder, disabled ones included, with whether this run loaded it. Disabling renames `disk` to `.disk`, and enabling renames it back; nothing inside changes, and neither replaces a folder that is there. Both need a second click and the console's Origin, and take effect at once.
 
 **The sidebar or the cards are rearranged.** A sidebar entry or a card is dragged to its place, and a card's button, shown under the pointer, makes it two columns wide or one again; the sidebar and the cards each keep their own order. The page sends `POST /api/layout` with the list that changed, from the console's Origin, and the other lists stay as they were. `/api/plugins` and `/api/cards` answer in the saved order; plugins not in it follow in folder order. While something is dragged the page is not redrawn, and the cards are rebuilt only when they are read, rearranged or the language changes, so that a periodic redraw does not drop a drag or a click.
 

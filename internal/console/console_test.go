@@ -561,3 +561,113 @@ func TestTheLayoutIsSavedFromTheConsolePageOnly(t *testing.T) {
 		t.Errorf("wide %v, want none", got)
 	}
 }
+
+// reloadFrom reads pluginDir again, as hostdeck does at start.
+func reloadFrom(pluginDir string) func() (Loaded, error) {
+	return func() (Loaded, error) {
+		plugins, broken, err := plugin.Load(pluginDir)
+		return Loaded{Plugins: plugins, Broken: broken}, err
+	}
+}
+
+func TestAddingDisablingAndEnablingTakeEffectAtOnce(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeManifest(t, pluginDir, "site", "schema: 1\nname: Site\npage: {link: 'https://site.example/'}\n")
+	reload := reloadFrom(pluginDir)
+	loaded, err := reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{
+		Origin:    "http://127.0.0.1:4678",
+		PluginDir: pluginDir,
+		BuiltIn:   fstest.MapFS{"wiki/plugin.yaml": {Data: []byte("schema: 1\nname: Wiki\npage: {link: 'https://wiki.example/'}\n")}},
+		Plugins:   loaded.Plugins,
+		Reload:    reload,
+	})
+	sidebar := func() []string {
+		t.Helper()
+		return ids(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body, "#.id")
+	}
+
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/catalog/wiki", fromConsole); resp.StatusCode != http.StatusOK {
+		t.Fatalf("adding: status %d", resp.StatusCode)
+	}
+	if got := sidebar(); !reflect.DeepEqual(got, []string{"site", "wiki"}) {
+		t.Errorf("after adding, the sidebar has %v", got)
+	}
+	if installed, _ := catalogState(t, h); installed["wiki"] != "disabled=false loaded=true broken=false" {
+		t.Errorf("after adding: %v", installed)
+	}
+
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/site/disable", fromConsole); resp.StatusCode != http.StatusOK {
+		t.Fatalf("disabling: status %d", resp.StatusCode)
+	}
+	if got := sidebar(); !reflect.DeepEqual(got, []string{"wiki"}) {
+		t.Errorf("after disabling, the sidebar has %v", got)
+	}
+	if installed, _ := catalogState(t, h); installed["site"] != "disabled=true loaded=false broken=false" {
+		t.Errorf("after disabling: %v", installed)
+	}
+
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/site/enable", fromConsole); resp.StatusCode != http.StatusOK {
+		t.Fatalf("enabling: status %d", resp.StatusCode)
+	}
+	if got := sidebar(); !reflect.DeepEqual(got, []string{"site", "wiki"}) {
+		t.Errorf("after enabling, the sidebar has %v", got)
+	}
+}
+
+func TestAPluginEnabledAgainShowsAFreshCard(t *testing.T) {
+	asked := 0
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		fmt.Fprintf(w, `{"asked": %d}`, asked)
+	}))
+	defer svc.Close()
+	pluginDir := t.TempDir()
+	writeManifest(t, pluginDir, "demo", fmt.Sprintf("schema: 1\nname: Demo\ncard:\n  http: {url: '%s'}\n  value: asked\n  interval: 1h\n", svc.URL))
+	reload := reloadFrom(pluginDir)
+	loaded, err := reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Plugins: loaded.Plugins, Reload: reload})
+	value := func() []string {
+		t.Helper()
+		return ids(t, get(h, "http://127.0.0.1:4678/api/cards", nil).Body, "cards.#.value")
+	}
+
+	if got := value(); !reflect.DeepEqual(got, []string{"1"}) {
+		t.Fatalf("first card: %v", got)
+	}
+	postFrom(h, "http://127.0.0.1:4678/api/plugins/demo/disable", fromConsole)
+	if got := value(); len(got) != 0 {
+		t.Errorf("a disabled plugin still has a card: %v", got)
+	}
+	postFrom(h, "http://127.0.0.1:4678/api/plugins/demo/enable", fromConsole)
+	if got := value(); !reflect.DeepEqual(got, []string{"2"}) {
+		t.Errorf("after enabling, the card says %v, want it asked again", got)
+	}
+}
+
+func TestAFailedReloadKeepsWhatWasLoadedAndSaysWhy(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeManifest(t, pluginDir, "site", "schema: 1\nname: Site\npage: {link: 'https://site.example/'}\n")
+	h := Handler(Config{
+		Origin:    "http://127.0.0.1:4678",
+		PluginDir: pluginDir,
+		BuiltIn:   fstest.MapFS{},
+		Plugins:   []plugin.Plugin{{ID: "site", Name: plugin.Text{All: "Site"}, Page: &plugin.Page{Link: "https://site.example/"}}},
+		Reload:    func() (Loaded, error) { return Loaded{}, errors.New("ports.json: permission denied") },
+	})
+
+	resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/site/disable", fromConsole)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusInternalServerError || gjson.GetBytes(body, "error.code").String() != "reload_failed" || !strings.Contains(string(body), "permission denied") {
+		t.Errorf("got %d %s, want 500 reload_failed with the reason", resp.StatusCode, body)
+	}
+	if got := ids(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body, "#.id"); !reflect.DeepEqual(got, []string{"site"}) {
+		t.Errorf("the sidebar has %v, want what was loaded before", got)
+	}
+}
