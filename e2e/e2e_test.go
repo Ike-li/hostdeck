@@ -1068,3 +1068,119 @@ card:
 		t.Errorf("dot title %q, want it to say the address answered", title)
 	}
 }
+
+// The big number stays on one line beside a normal label, a long label stays
+// inside the card, and the widen button does not take a place in the row.
+// On a screen with no hover, the button is visible.
+func TestACardKeepsItsNumberTogetherAndInsideTheCard(t *testing.T) {
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/free":
+			io.WriteString(w, `{"free":"209 GB"}`)
+		default:
+			io.WriteString(w, `{"n":"123456789012345678901234567890 GB"}`)
+		}
+	}))
+	t.Cleanup(svc.Close)
+	dir := t.TempDir()
+	writePlugin(t, dir, "disk", fmt.Sprintf(`schema: 1
+name: {en: Disk space, zh-CN: 磁盘空间}
+card:
+  http: {url: %q}
+  value: free
+  label: {en: "free of 460 GB", zh-CN: "可用，共 460 GB"}
+`, svc.URL+"/free"))
+	writePlugin(t, dir, "long", fmt.Sprintf(`schema: 1
+name: {en: Long, zh-CN: 很长}
+card:
+  http: {url: %q}
+  value: n
+  label: {en: "a very long label that sits beside the number", zh-CN: "一个很长的说明写在数字旁边"}
+`, svc.URL+"/n"))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	do(t, ctx,
+		chromedp.EmulateViewport(1280, 860),
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="disk"] .card-value`)),
+	)
+
+	fits := func(id string) (valueLines float64, labelInside bool, btnPos, btnOpacity string) {
+		t.Helper()
+		raw, err := chromedp.Run(ctx, chromedp.Evaluate[string](fmt.Sprintf(`(() => {
+			const card = document.querySelector('.card[data-id=%q]');
+			const v = card.querySelector('.card-value');
+			const label = card.querySelector('.card-label');
+			const btn = card.querySelector('.card-width');
+			const line = parseFloat(getComputedStyle(v).lineHeight) || parseFloat(getComputedStyle(v).fontSize) * 1.2;
+			const cr = card.getBoundingClientRect();
+			const lr = label.getBoundingClientRect();
+			return JSON.stringify({
+				lines: v.getBoundingClientRect().height / line,
+				inside: lr.right <= cr.right + 1 && lr.left >= cr.left - 1 && lr.bottom <= cr.bottom + 1,
+				pos: getComputedStyle(btn).position,
+				opacity: getComputedStyle(btn).opacity
+			});
+		})()`, id)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got struct {
+			Lines   float64 `json:"lines"`
+			Inside  bool    `json:"inside"`
+			Pos     string  `json:"pos"`
+			Opacity string  `json:"opacity"`
+		}
+		if err := json.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Lines, got.Inside, got.Pos, got.Opacity
+	}
+
+	if lines, inside, pos, opacity := fits("disk"); lines > 1.4 || !inside || pos != "absolute" || opacity != "0" {
+		t.Errorf("disk at 1280: lines %.2f inside %v button %s opacity %s; want one line, label inside, absolute button, hidden", lines, inside, pos, opacity)
+	}
+	if _, inside, _, _ := fits("long"); !inside {
+		t.Errorf("the long label leaves its card at 1280")
+	}
+
+	do(t, ctx, chromedp.EmulateViewport(520, 860))
+	if lines, inside, _, _ := fits("disk"); lines > 1.4 || !inside {
+		t.Errorf("disk at 520: lines %.2f inside %v; want one line, label inside", lines, inside)
+	}
+
+	// A headless page is not focused, so a script focus sets activeElement and
+	// still leaves :focus unmatched. Focus emulation is what a real window does.
+	if _, err := chromedp.Call(ctx, emulation.SetFocusEmulationEnabled, emulation.SetFocusEmulationEnabledParams{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ctx, chromedp.Focus(chromedp.CSS(`.card[data-id="disk"] .card-width`)))
+	raw, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+		const btn = document.querySelector('.card[data-id="disk"] .card-width');
+		return JSON.stringify({
+			hasFocus: document.hasFocus(),
+			active: document.activeElement === btn,
+			focus: btn.matches(':focus'),
+			opacity: getComputedStyle(btn).opacity
+		});
+	})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, `"opacity":"1"`) {
+		t.Errorf("after focus: %s", raw)
+	}
+
+	// Focus leaves the button. A touch screen has no hover, so the button stays
+	// visible. setEmulatedMedia does not change hover; touch emulation does.
+	do(t, ctx, chromedp.Focus(chromedp.CSS("a.brand")))
+	if _, err := chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{
+		Enabled:        true,
+		MaxTouchPoints: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, pos, opacity := fits("disk"); pos != "absolute" || opacity != "1" {
+		t.Errorf("widen button on a touch screen is %s with opacity %s, want absolute and 1", pos, opacity)
+	}
+}
