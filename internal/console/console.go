@@ -16,6 +16,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/card"
 	"github.com/Ike-li/hostdeck/internal/catalog"
 	"github.com/Ike-li/hostdeck/internal/detail"
+	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/local"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
@@ -38,7 +39,19 @@ type Config struct {
 	// Served holds, by plugin ID, where each embedded service is served.
 	Served map[string]Served
 	Tokens *onetime.Tokens
+	// Layout is how the user arranged the sidebar and the cards; nil is the
+	// order the plugins load in.
+	Layout *layout.Store
 }
+
+func (cfg Config) layout() layout.Layout {
+	if cfg.Layout == nil {
+		return layout.Layout{}
+	}
+	return cfg.Layout.Get()
+}
+
+func pluginID(p plugin.Plugin) string { return p.ID }
 
 // Served is where the browser finds an embedded service, or why it cannot.
 type Served struct {
@@ -59,6 +72,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/catalog/{id}", cfg.serveAdd)
 	mux.HandleFunc("POST /api/plugins/{id}/disable", cfg.serveRename(catalog.Disable))
 	mux.HandleFunc("POST /api/plugins/{id}/enable", cfg.serveRename(catalog.Enable))
+	mux.HandleFunc("POST /api/layout", cfg.serveLayout)
 	return local.Only(sameOriginAPI(noFraming(mux)))
 }
 
@@ -74,7 +88,7 @@ type entry struct {
 
 func (cfg Config) servePlugins(w http.ResponseWriter, r *http.Request) {
 	entries := []entry{}
-	for _, p := range cfg.Plugins {
+	for _, p := range layout.Arrange(cfg.Plugins, cfg.layout().Sidebar, pluginID) {
 		e := entry{ID: p.ID, Name: p.Name, Icon: p.Icon}
 		switch {
 		case p.Detail != nil:
@@ -160,10 +174,19 @@ func (cfg Config) serveCards(cache *card.Cache) http.HandlerFunc {
 		for _, b := range cfg.Broken {
 			cards = append(cards, card.View{ID: b.ID, Name: plugin.Text{All: b.ID}, Error: &card.Error{Code: "bad_manifest", Detail: b.Err.Error()}})
 		}
+		l := cfg.layout()
+		type placed struct {
+			card.View
+			Wide bool `json:"wide,omitempty"`
+		}
+		arranged := []placed{}
+		for _, c := range layout.Arrange(cards, l.Cards, func(c card.View) string { return c.ID }) {
+			arranged = append(arranged, placed{c, slices.Contains(l.Wide, c.ID)})
+		}
 		writeJSON(w, struct {
-			PluginDir string      `json:"pluginDir"`
-			Cards     []card.View `json:"cards"`
-		}{cfg.PluginDir, cards})
+			PluginDir string   `json:"pluginDir"`
+			Cards     []placed `json:"cards"`
+		}{cfg.PluginDir, arranged})
 	}
 }
 
@@ -319,6 +342,25 @@ func (cfg Config) serveRename(rename func(pluginDir, id string) error) http.Hand
 			writeJSON(w, struct{}{})
 		}
 	}
+}
+
+// serveLayout saves how the user arranged the console, for the console page
+// only. A list the request leaves out stays as it was.
+func (cfg Config) serveLayout(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	l := cfg.Layout.Get()
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&l); err != nil {
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
+		return
+	}
+	if err := cfg.Layout.Set(l); err != nil {
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "layout_failed", Detail: err.Error()})
+		return
+	}
+	writeJSON(w, struct{}{})
 }
 
 // sameOriginAPI keeps other pages from calling the API. Every port on 127.0.0.1

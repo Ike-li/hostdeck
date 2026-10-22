@@ -56,6 +56,7 @@ Plugins are read only at start: after adding or changing one, restart hostdeck.
 | `internal/console` | The console's HTTP handler: the page from `web/`, the API, and the checks every request passes. |
 | `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache address itself. |
 | `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |
+| `internal/layout` | Remembers in `layout.json` the order of the sidebar and of the cards, and which cards are wide. |
 | `internal/local` | Lets through only requests addressed to `127.0.0.1`; `localhost` is redirected there. |
 | `internal/onetime` | One-time tokens for clearing a service's cache. |
 | `internal/catalog` | For the plugins page: lists the plugins built into hostdeck and copies one into the plugins folder; lists the installed plugins and disables or enables one by renaming its folder. |
@@ -90,6 +91,8 @@ Text shown to people is a string, or `{en: …, zh-CN: …}`. Programs run in th
 
 **A plugin is disabled or enabled.** The plugins page lists every folder in the plugins folder, disabled ones included, with whether this run loaded it. Disabling renames `disk` to `.disk`, and enabling renames it back; nothing inside changes, and neither replaces a folder that is there. Both need a second click and the console's Origin, and take effect when hostdeck restarts.
 
+**The sidebar or the cards are rearranged.** A sidebar entry or a card is dragged to its place, and a card's button, shown under the pointer, makes it two columns wide or one again; the sidebar and the cards each keep their own order. The page sends `POST /api/layout` with the list that changed, from the console's Origin, and the other lists stay as they were. `/api/plugins` and `/api/cards` answer in the saved order; plugins not in it follow in folder order. While something is dragged the page is not redrawn, and the cards are rebuilt only when they are read, rearranged or the language changes, so that a periodic redraw does not drop a drag or a click.
+
 **An action runs.** The first click arms the button, and a double click counts as one click. `POST /api/action/<id>` must come from the console's own Origin. The detail program is run again, and the action runs only if it is still offered for that item. Once started, the action runs to its end or its 30 s limit even if the page is closed or reloaded, so that a restart is not stopped halfway.
 
 ## Security model
@@ -101,7 +104,7 @@ Everything rests on hostdeck being reachable from this machine only.
 - `/api/` refuses requests from other sites by their `Sec-Fetch-Site` header; a request typed into the address bar may only read. Actions also require the console's Origin. Other ports on 127.0.0.1 count as the same site, which is why the Origin check is needed too.
 - The console cannot be framed (`frame-ancestors 'none'`), and it frames only `http://127.0.0.1:*`. An embedded service may be framed only by itself and the console.
 - Clearing a service's data needs a token from the console, so another local page cannot wipe it with a link.
-- Adding a plugin from the plugins page needs the console's Origin and can only copy a plugin built into the program, so the worst a page could do through it is add one of those. Disabling and enabling need the console's Origin too, and only rename a folder inside the plugins folder.
+- Adding a plugin from the plugins page needs the console's Origin and can only copy a plugin built into the program, so the worst a page could do through it is add one of those. Disabling and enabling need the console's Origin too, and only rename a folder inside the plugins folder. Saving the layout needs it as well, and writes only `layout.json`.
 - `${env:NAME}` values are sent to the service but replaced by `***` in errors, also when quoted or URL-escaped. A token is never written into `plugin.yaml`.
 - A plugin program cannot outlive its deadline: its whole process tree is ended.
 
@@ -114,7 +117,7 @@ Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `d
 ## Tests and CI
 
 - Each package has unit tests that use local HTTP servers and the test binary as a fake plugin program.
-- `e2e/` builds the program and drives Chrome or Edge through chromedp: languages, embedding a service that refuses frames, clearing its cache, cards, actions, and adding, disabling and enabling plugins on the plugins page. Without a browser these tests are skipped, unless `HOSTDECK_E2E=1`.
+- `e2e/` builds the program and drives Chrome or Edge through chromedp: languages, embedding a service that refuses frames, clearing its cache, cards, actions, dragging sidebar entries and cards and widening a card, and adding, disabling and enabling plugins on the plugins page. Without a browser these tests are skipped, unless `HOSTDECK_E2E=1`.
 - `examples/` tests run the disk example on the machine at hand, and again on a macOS `df` output copied from a Mac with two disks and Time Machine backups mounted; they answer the Grafana, Syncthing and Ollama examples with responses copied from their documentation.
 - CI runs gofmt, vet and all tests on macOS and Windows, then the browser tests again in Edge. Another job builds the release archives with GoReleaser as a snapshot and checks that each holds the program and the examples. Nothing is published.
 

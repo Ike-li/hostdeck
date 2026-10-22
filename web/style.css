@@ -167,7 +167,17 @@ h1 {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 14px;
+  container-type: inline-size;
 }
+
+.card.wide { grid-column: span 2; }
+
+/* Narrower than two columns of 220px and the gap, a wide card takes one. */
+@container (max-width: 453px) {
+  .card.wide { grid-column: auto; }
+}
+
+.dragging { opacity: .4; }
 
 .card {
   padding: 14px 16px;
@@ -231,6 +241,25 @@ h1 {
   font-size: 15px;
   font-weight: 600;
 }
+
+/* Shown on the card under the pointer, or reached with the keyboard. */
+.card-width {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.card-width + .pill { margin-left: 0; }
+
+.card:hover .card-width,
+.card-width:focus-visible { opacity: 1; }
 
 .card-big {
   display: flex;

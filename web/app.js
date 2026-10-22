@@ -30,6 +30,7 @@ let clearArmed = null; // the timer while the clear button waits for its second 
 let clearing = false;
 let clearFailure = null; // why the last clearing failed
 const hiddenSince = new Map(); // plugin id -> when its page was switched away from
+let dragging = false; // whether a sidebar entry or a card is being dragged
 
 // A choice made on this page wins; otherwise the first of the browser's
 // languages that the console has.
@@ -118,6 +119,8 @@ function render() {
   $('banner').hidden = !failure;
   if (failure) $('banner').textContent = t('error.backend', { detail: failure });
 
+  // Redrawing the sidebar or the cards would drop what is being dragged.
+  if (dragging) return;
   renderNav();
   $('overview').hidden = !!current || catalogOpen;
   $('catalog').hidden = !catalogOpen;
@@ -159,6 +162,7 @@ function renderNav() {
 function navItem(p) {
   const a = el('a', 'nav-item');
   a.dataset.id = p.id;
+  a.draggable = true;
   a.append(el('span', 'icon'), el('span', 'nav-name'));
   if (p.type === 'link') {
     a.href = p.url;
@@ -186,14 +190,29 @@ function renderOverview() {
   const cards = overview ? overview.cards : [];
   $('empty').hidden = !overview || cards.length > 0;
   if (overview) $('empty').textContent = t('overview.empty', { dir: overview.pluginDir });
+  // The cards are rebuilt only when they are read or rearranged or the
+  // language changes: a periodic render would swallow a click on a card's
+  // button that lands while the card is replaced.
+  if (!overview || overview.lang === lang) return;
+  overview.lang = lang;
   $('cards').replaceChildren(...cards.map(cardElement));
 }
 
 function cardElement(c) {
   const card = el('article', 'card');
   card.dataset.id = c.id;
+  card.draggable = true;
+  card.classList.toggle('wide', !!c.wide);
   const head = el('header', 'card-head');
-  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), el('h2', 'card-name', pick(c.name)));
+  const width = el('button', 'card-width', t(c.wide ? 'card.narrow' : 'card.widen'));
+  width.type = 'button';
+  width.addEventListener('click', () => {
+    c.wide = !c.wide;
+    overview.lang = null;
+    saveLayout({ wide: overview.cards.filter((x) => x.wide).map((x) => x.id) });
+    render();
+  });
+  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), el('h2', 'card-name', pick(c.name)), width);
   card.append(head);
   if (c.pending) card.append(el('p', 'card-pending', t('loading')));
   if (c.error) {
@@ -203,7 +222,7 @@ function cardElement(c) {
   }
   if (c.status) {
     card.dataset.status = c.status;
-    head.append(el('span', 'pill', t(`card.status.${c.status}`)));
+    width.after(el('span', 'pill', t(`card.status.${c.status}`)));
   }
   // A pending card that has never been read has nothing more to show.
   if (c.pending && !c.status && !c.value) return card;
@@ -221,6 +240,56 @@ function cardElement(c) {
     card.append(rows);
   }
   return card;
+}
+
+// sortable lets the user drag the items of list that match selector into a
+// new order. Once one is dropped, moved gets the IDs in the order they ended in.
+function sortable(list, selector, moved) {
+  let dragged = null;
+  list.addEventListener('dragstart', (e) => {
+    dragged = e.target.closest(selector);
+    if (!dragged) return;
+    dragging = true;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragged.dataset.id);
+    dragged.classList.add('dragging');
+  });
+  list.addEventListener('dragover', (e) => {
+    const over = e.target.closest(selector);
+    if (!dragged || !over) return;
+    e.preventDefault();
+    if (over === dragged) return;
+    const items = [...list.querySelectorAll(selector)];
+    if (items.indexOf(dragged) < items.indexOf(over)) over.after(dragged);
+    else over.before(dragged);
+  });
+  list.addEventListener('drop', (e) => {
+    if (dragged) e.preventDefault();
+  });
+  list.addEventListener('dragend', () => {
+    if (!dragged) return;
+    dragged.classList.remove('dragging');
+    dragged = null;
+    dragging = false;
+    moved([...list.querySelectorAll(selector)].map((item) => item.dataset.id));
+  });
+}
+
+const byOrder = (order) => (a, b) => order.indexOf(a.id) - order.indexOf(b.id);
+
+// saveLayout sends the lists of the layout that changed; the others stay.
+async function saveLayout(change) {
+  try {
+    const resp = await fetch('/api/layout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(change),
+    });
+    if (!resp.ok) throw new Error(`/api/layout: HTTP ${resp.status}`);
+  } catch (e) {
+    failure = e.message;
+    render();
+  }
 }
 
 function renderService(p) {
@@ -581,6 +650,14 @@ async function init() {
     b.addEventListener('click', () => setLang(b.dataset.lang, true));
   }
   $('service-clear').addEventListener('click', onClearClick);
+  sortable($('nav'), '.nav-item[data-id]', (order) => {
+    plugins.sort(byOrder(order));
+    saveLayout({ sidebar: order });
+  });
+  sortable($('cards'), '.card', (order) => {
+    overview.cards.sort(byOrder(order));
+    saveLayout({ cards: order });
+  });
   $('service-reload').addEventListener('click', () => {
     if (!current || !frames.has(current.id)) return;
     if (current.type === 'detail') loadDetail(current, frames.get(current.id));

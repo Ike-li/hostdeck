@@ -843,3 +843,111 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 		t.Fatalf("not enabled again: %v", err)
 	}
 }
+
+// threeLinks writes plugins a, b and c, each a sidebar link with a card.
+func threeLinks(t *testing.T, dir string) {
+	t.Helper()
+	svc := databaseService(t)
+	for _, id := range []string{"a", "b", "c"} {
+		writePlugin(t, dir, id, fmt.Sprintf("schema: 1\nname: %s\npage: {link: 'https://%s.example/'}\ncard:\n  http: {url: '%s'}\n  value: database\n", strings.ToUpper(id), id, svc))
+	}
+}
+
+// drag drops the element at from onto the one at to, as the browser reports
+// a drag made with the mouse.
+func drag(t *testing.T, ctx context.Context, from, to string) {
+	t.Helper()
+	_, err := chromedp.Run(ctx, chromedp.Evaluate[any](fmt.Sprintf(`(() => {
+		const from = document.querySelector(%q), to = document.querySelector(%q), dt = new DataTransfer();
+		const fire = (el, type) => el.dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, dataTransfer: dt}));
+		fire(from, 'dragstart'); fire(to, 'dragenter'); fire(to, 'dragover'); fire(to, 'drop'); fire(from, 'dragend');
+	})()`, from, to)))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func idsOf(t *testing.T, ctx context.Context, css string) []string {
+	t.Helper()
+	got, err := chromedp.Run(ctx, chromedp.Evaluate[[]string](fmt.Sprintf(`[...document.querySelectorAll(%q)].map(e => e.dataset.id)`, css)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// savedLayout waits for layout.json in dir to hold want under key.
+func savedLayout(t *testing.T, dir, key string, want []string) {
+	t.Helper()
+	var got map[string][]string
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		data, err := os.ReadFile(filepath.Join(dir, "layout.json"))
+		got = nil
+		if err == nil && json.Unmarshal(data, &got) == nil && slices.Equal(got[key], want) {
+			return
+		}
+	}
+	t.Fatalf("layout.json has %s %v, want %v", key, got[key], want)
+}
+
+func TestSidebarEntriesAreDraggedIntoAnOrderThatLasts(t *testing.T) {
+	dir := t.TempDir()
+	threeLinks(t, dir)
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+
+	const entry = `#nav .nav-item[data-id]`
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(entry)))
+	drag(t, ctx, entry+`[data-id="c"]`, entry+`[data-id="a"]`)
+	if got, want := idsOf(t, ctx, entry), []string{"c", "a", "b"}; !slices.Equal(got, want) {
+		t.Errorf("after dragging: %v, want %v", got, want)
+	}
+	savedLayout(t, dir, "sidebar", []string{"c", "a", "b"})
+
+	do(t, ctx, chromedp.Reload(), chromedp.WaitVisible(chromedp.CSS(entry)))
+	if got, want := idsOf(t, ctx, entry), []string{"c", "a", "b"}; !slices.Equal(got, want) {
+		t.Errorf("after reloading: %v, want %v", got, want)
+	}
+	if got, want := idsOf(t, ctx, ".card"), []string{"a", "b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("cards %v, want them in their own order %v", got, want)
+	}
+}
+
+func TestCardsAreDraggedAndWidenedAndStaySo(t *testing.T) {
+	dir := t.TempDir()
+	threeLinks(t, dir)
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	const card = ".card"
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"] .card-value`)))
+	drag(t, ctx, `.card[data-id="c"]`, `.card[data-id="a"]`)
+	if got, want := idsOf(t, ctx, card), []string{"c", "a", "b"}; !slices.Equal(got, want) {
+		t.Errorf("after dragging: %v, want %v", got, want)
+	}
+	savedLayout(t, dir, "cards", []string{"c", "a", "b"})
+
+	// Widening is undone as easily, so one click does it.
+	if label := text(t, ctx, `.card[data-id="b"] .card-width`); label != "加宽" {
+		t.Errorf("width button says %q, want 加宽", label)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="b"] .card-width`)))
+	savedLayout(t, dir, "wide", []string{"b"})
+
+	do(t, ctx, chromedp.Reload(), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="b"] .card-value`)))
+	if got, want := idsOf(t, ctx, card), []string{"c", "a", "b"}; !slices.Equal(got, want) {
+		t.Errorf("after reloading: %v, want %v", got, want)
+	}
+	widths, err := chromedp.Run(ctx, chromedp.Evaluate[[]float64](`['a', 'b'].map(id => document.querySelector('.card[data-id="' + id + '"]').getBoundingClientRect().width)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if widths[1] < 1.8*widths[0] {
+		t.Errorf("widths of a and b: %v, want b about twice as wide", widths)
+	}
+	if label := text(t, ctx, `.card[data-id="b"] .card-width`); label != "恢复" {
+		t.Errorf("width button of a wide card says %q, want 恢复", label)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="b"] .card-width`)))
+	savedLayout(t, dir, "wide", nil)
+}

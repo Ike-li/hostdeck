@@ -20,6 +20,8 @@
   "card.status.ok": "正常",
   "card.status.warn": "注意",
   "card.status.error": "异常",
+  "card.widen": "加宽",
+  "card.narrow": "恢复",
   "error.command_timeout": "命令没有按时结束",
   "error.command_exit": "命令出错：{detail}",
   "error.command_start": "命令启动不了：{detail}",

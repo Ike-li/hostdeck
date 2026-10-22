@@ -20,6 +20,8 @@
   "card.status.ok": "OK",
   "card.status.warn": "Warning",
   "card.status.error": "Problem",
+  "card.widen": "Widen",
+  "card.narrow": "Narrow",
   "error.command_timeout": "The command did not finish in time",
   "error.command_exit": "The command failed: {detail}",
   "error.command_start": "The command could not start: {detail}",

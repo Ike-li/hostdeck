@@ -15,6 +15,9 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/tidwall/gjson"
+
+	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/proxy"
@@ -442,5 +445,119 @@ func TestPluginsAreDisabledAndEnabledFromTheConsolePageOnly(t *testing.T) {
 	}
 	if installed, _ := catalogState(t, h); installed["used"] != "disabled=false loaded=true broken=false" {
 		t.Errorf("after enabling: %v", installed)
+	}
+}
+
+// arranged is a layout store in a temporary folder that holds l.
+func arranged(t *testing.T, l layout.Layout) *layout.Store {
+	t.Helper()
+	s, err := layout.Open(filepath.Join(t.TempDir(), "layout.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set(l); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func ids(t *testing.T, body io.Reader, path string) []string {
+	t.Helper()
+	data, _ := io.ReadAll(body)
+	var got []string
+	for _, r := range gjson.GetBytes(data, path).Array() {
+		got = append(got, r.String())
+	}
+	return got
+}
+
+func TestTheSidebarFollowsTheSavedOrder(t *testing.T) {
+	plugins := []plugin.Plugin{
+		{ID: "disk", Name: plugin.Text{All: "Disk"}, Detail: &plugin.Detail{Exec: &plugin.Exec{Command: []string{"sh", "detail.sh"}}}},
+		{ID: "grafana", Name: plugin.Text{All: "Grafana"}, Page: &plugin.Page{Link: "http://127.0.0.1:3000/"}},
+		{ID: "wiki", Name: plugin.Text{All: "Wiki"}, Page: &plugin.Page{Link: "https://wiki.example/"}},
+	}
+	h := Handler(Config{Plugins: plugins, Layout: arranged(t, layout.Layout{Sidebar: []string{"wiki", "disk"}})})
+
+	got := ids(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body, "#.id")
+	if want := []string{"wiki", "disk", "grafana"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sidebar %v, want %v", got, want)
+	}
+}
+
+func TestCardsFollowTheSavedOrderAndSayWhichAreWide(t *testing.T) {
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"v": 1}`)
+	}))
+	defer svc.Close()
+	withCard := func(id string) plugin.Plugin {
+		return plugin.Plugin{ID: id, Name: plugin.Text{All: id}, Card: &plugin.Card{HTTP: &plugin.HTTP{URL: svc.URL}, Value: "v"}}
+	}
+	h := Handler(Config{
+		Plugins: []plugin.Plugin{withCard("disk"), withCard("grafana"), withCard("ollama")},
+		Broken:  []plugin.Broken{{ID: "typo", Err: errors.New("bad")}},
+		Layout:  arranged(t, layout.Layout{Cards: []string{"typo", "ollama", "disk"}, Wide: []string{"disk", "gone"}}),
+	})
+
+	body, _ := io.ReadAll(get(h, "http://127.0.0.1:4678/api/cards", nil).Body)
+	var got []string
+	for _, c := range gjson.GetBytes(body, "cards").Array() {
+		got = append(got, fmt.Sprintf("%s wide=%v", c.Get("id"), c.Get("wide").Bool()))
+	}
+	want := []string{"typo wide=false", "ollama wide=false", "disk wide=true", "grafana wide=false"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("cards %v, want %v", got, want)
+	}
+}
+
+func postLayout(h http.Handler, header map[string]string, body string) *http.Response {
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4678/api/layout", strings.NewReader(body))
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w.Result()
+}
+
+func TestTheLayoutIsSavedFromTheConsolePageOnly(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "layout.json")
+	store, err := layout.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := layout.Layout{Sidebar: []string{"a", "b"}, Cards: []string{"b", "a"}, Wide: []string{"a"}}
+	store.Set(before)
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", Layout: store})
+
+	for name, header := range fromOtherPage {
+		if resp := postLayout(h, header, `{"sidebar": ["b", "a"]}`); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	if resp := postLayout(h, fromConsole, `{"sidebar": [`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("half a body: status %d, want 400", resp.StatusCode)
+	}
+	if got := store.Get(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("refused requests changed the layout to %+v", got)
+	}
+
+	// Moving one sidebar entry sends the sidebar only; the cards stay as they were.
+	if resp := postLayout(h, fromConsole, `{"sidebar": ["b", "a"]}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d, want 200", resp.StatusCode)
+	}
+	reopened, err := layout.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := layout.Layout{Sidebar: []string{"b", "a"}, Cards: []string{"b", "a"}, Wide: []string{"a"}}
+	if got := reopened.Get(); !reflect.DeepEqual(got, want) {
+		t.Errorf("saved %+v, want %+v", got, want)
+	}
+
+	// Narrowing the last wide card sends an empty list, which counts.
+	postLayout(h, fromConsole, `{"wide": []}`)
+	if got := store.Get().Wide; len(got) != 0 {
+		t.Errorf("wide %v, want none", got)
 	}
 }

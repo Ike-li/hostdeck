@@ -15,6 +15,7 @@ import (
 
 	"github.com/Ike-li/hostdeck/examples"
 	"github.com/Ike-li/hostdeck/internal/console"
+	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/ports"
@@ -63,6 +64,10 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	arranged, err := layout.Open(filepath.Join(dir, "layout.json"))
+	if err != nil {
+		return err
+	}
 	log.Printf("hostdeck: http://%s/ (%d plugins in %s)", ln.Addr(), len(plugins), pluginDir)
 	return http.Serve(ln, console.Handler(console.Config{
 		Origin:    fmt.Sprintf("http://127.0.0.1:%d", consolePort),
@@ -72,6 +77,7 @@ func run(args []string) error {
 		BuiltIn:   examples.Files,
 		Served:    served,
 		Tokens:    tokens,
+		Layout:    arranged,
 	}))
 }
 

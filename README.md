@@ -21,7 +21,7 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 - **Linux** before v1, a Docker image, multiple users.
 - **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page only adds the plugins built into hostdeck.
 - **Hundreds of built-in integrations.** Common services are covered by example plugins.
-- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin and disabling or enabling a plugin.
+- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, disabling or enabling a plugin, and arranging the sidebar and the cards.
 - **Electron.**
 
 ## Roadmap
@@ -35,6 +35,7 @@ Each milestone is released on its own.
 - A sidebar of your local web UIs that open full-page, including services that forbid being embedded
 - A clear-cache button on each embedded service that clears that service's cache and site data and nothing else: cookies and other services are left alone
 - An overview of status cards
+- Sidebar entries and cards dragged into the order you like, and cards made two columns wide; kept in `layout.json`
 - Plugin manifest v1: a plugin is a folder whose manifest declares its page, card, detail page and actions
 - Declarative plugins: a URL, which fields of its JSON go on the card, and thresholds for yellow and red
 - External-program plugins: any executable that prints the card as JSON
