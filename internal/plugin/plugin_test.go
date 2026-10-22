@@ -40,6 +40,7 @@ card:
 	}
 	want := []Plugin{{
 		ID:   "demo",
+		Dir:  filepath.Join(root, "demo"),
 		Name: Text{All: "Demo"},
 		Icon: "D",
 		Card: &Card{
@@ -62,9 +63,33 @@ func TestPagePluginsLoadWithoutACard(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Plugin{
-		{ID: "grafana", Name: Text{All: "Grafana"}, Page: &Page{Proxy: "http://127.0.0.1:3000/grafana/"}},
-		{ID: "wiki", Name: Text{All: "Wiki"}, Page: &Page{Link: "https://wiki.example/"}},
+		{ID: "grafana", Dir: filepath.Join(root, "grafana"), Name: Text{All: "Grafana"}, Page: &Page{Proxy: "http://127.0.0.1:3000/grafana/"}},
+		{ID: "wiki", Dir: filepath.Join(root, "wiki"), Name: Text{All: "Wiki"}, Page: &Page{Link: "https://wiki.example/"}},
 	}
+	if !reflect.DeepEqual(plugins, want) {
+		t.Errorf("got %+v, want %+v", plugins, want)
+	}
+}
+
+func TestAnExecCardPluginLoads(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "disk", `schema: 1
+name: Disk
+card:
+  exec:
+    command: [sh, card.sh]
+    windows: [powershell, -File, card.ps1]
+`)
+	plugins, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Plugin{{
+		ID:   "disk",
+		Dir:  filepath.Join(root, "disk"),
+		Name: Text{All: "Disk"},
+		Card: &Card{Exec: &Exec{Command: []string{"sh", "card.sh"}, Windows: []string{"powershell", "-File", "card.ps1"}}},
+	}}
 	if !reflect.DeepEqual(plugins, want) {
 		t.Errorf("got %+v, want %+v", plugins, want)
 	}
@@ -105,7 +130,10 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 		{"schema: 1\nname: Demo\npage: {proxy: 'http://127.0.0.1:3000/', link: 'http://127.0.0.1:3000/'}\n", "page.proxy or page.link"},
 		{"schema: 1\nname: Demo\npage: {proxy: '127.0.0.1:3000'}\n", "page.proxy"},
 		{"schema: 1\nname: Demo\npage: {link: 'ftp://files.example/'}\n", "page.link"},
-		{"schema: 1\nname: Demo\ncard: {value: status}\n", "card.http"},
+		{"schema: 1\nname: Demo\ncard: {value: status}\n", "card.http or card.exec"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}, exec: {command: [sh]}, value: v}\n", "card.http or card.exec"},
+		{"schema: 1\nname: Demo\ncard: {exec: {}}\n", "card.exec.command"},
+		{"schema: 1\nname: Demo\ncard: {exec: {command: [sh, card.sh]}, value: status}\n", "card.value"},
 		{"schema: 1\nname: Demo\ncard: {http: {}, value: status}\n", "card.http.url"},
 		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}}\n", "card.value"},
 		{"schema: 1\nname: {fr: Démo}\n" + card, `"fr"`},

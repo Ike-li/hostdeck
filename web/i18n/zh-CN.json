@@ -15,5 +15,12 @@
   "service.clear.confirm": "再点一次清除",
   "service.clearing": "正在清除…",
   "service.clear.explain": "只清除这个服务的缓存和网站数据：HTTP 缓存、localStorage、IndexedDB、Cache Storage 和 service worker。cookie 和其他服务都不受影响。如果这个服务把登录状态存在 localStorage 里，你会退出这个服务的登录。它的 service worker 会被注销，依赖它的网页推送需要重新订阅。这个标签里已经载入的脚本和样式可能还会被沿用；如果清除后页面看起来还是旧的，请刷新整个控制台页面。",
-  "error.clear_failed": "没能清除：{detail}"
+  "error.clear_failed": "没能清除：{detail}",
+  "card.status.ok": "正常",
+  "card.status.warn": "注意",
+  "card.status.error": "异常",
+  "error.command_timeout": "命令没有按时结束",
+  "error.command_exit": "命令出错：{detail}",
+  "error.command_start": "命令启动不了：{detail}",
+  "error.command_output": "命令输出的不是卡片：{detail}"
 }

@@ -57,6 +57,7 @@ function pick(text) {
 // An error from the backend is worded here from its code; an unknown code
 // shows the backend's own detail.
 function explain(error) {
+  if (error.code === 'reported') return pick(error.text);
   const key = `error.${error.code}`;
   return key in dict ? t(key, { detail: error.detail }) : error.detail;
 }
@@ -183,9 +184,23 @@ function cardElement(c) {
     card.append(el('p', 'card-error', explain(c.error)));
     return card;
   }
+  if (c.status) {
+    card.dataset.status = c.status;
+    head.append(el('span', 'pill', t(`card.status.${c.status}`)));
+  }
   const big = el('div', 'card-big');
   big.append(el('span', 'card-value', c.value ?? ''), el('span', 'card-label', pick(c.label)));
   card.append(big);
+  if (c.rows?.length) {
+    const rows = el('ul', 'rows');
+    for (const r of c.rows) {
+      const li = el('li', 'row');
+      if (r.status) li.dataset.status = r.status;
+      li.append(el('span', 'row-dot'), el('span', 'row-name', pick(r.name)), el('span', 'row-value', r.value));
+      rows.append(li);
+    }
+    card.append(rows);
+  }
   return card;
 }
 
