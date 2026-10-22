@@ -771,7 +771,7 @@ function catalogCard(p) {
   const item = el('article', 'card catalog-item');
   item.dataset.id = p.id;
   const head = el('header', 'card-head');
-  head.append(el('span', 'icon', pick(p.name).slice(0, 1)), el('h2', 'card-name', pick(p.name)));
+  head.append(el('span', 'icon', iconOf(p)), el('h2', 'card-name', pick(p.name)));
   item.append(head);
   if (p.description) item.append(el('p', 'catalog-description', pick(p.description)));
   return item;
@@ -925,8 +925,84 @@ function installedItem(p) {
       p.id,
     ),
   );
-  item.append(actions);
+  item.append(actions, pageEdit(p));
   return item;
+}
+
+// labeled is one labelled field of the page editor.
+function labeled(name, label, value) {
+  const wrap = el('label', 'edit-field');
+  const input = el('input');
+  input.name = name;
+  input.value = value;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  wrap.append(el('span', null, label), input);
+  return wrap;
+}
+
+// pageEdit is the form that saves a page's name, icon and address once.
+// It has no field a command could be written into.
+function pageEdit(p) {
+  const details = el('details', 'page-edit');
+  const form = el('form', 'page-edit-form');
+  form.append(labeled('name', t('page.name'), pick(p.name)), labeled('icon', t('page.icon'), p.icon || ''));
+  form.elements.name.required = true;
+  if (p.page) {
+    const kind = el('select');
+    kind.name = 'kind';
+    for (const [value, key] of [['proxy', 'page.embed'], ['link', 'page.link']]) {
+      const option = el('option', null, t(key));
+      option.value = value;
+      kind.append(option);
+    }
+    kind.value = p.link ? 'link' : 'proxy';
+    const address = labeled('address', t('page.address'), p.proxy || p.link || '');
+    address.querySelector('input').required = true;
+    form.append(kind, address);
+  }
+  if (p.cardUrl) form.append(labeled('cardUrl', t('page.card'), p.cardUrl));
+  const save = el('button', 'btn', t('page.save'));
+  save.type = 'submit';
+  form.append(save);
+  form.addEventListener('submit', (e) => savePage(e, p.id));
+  details.append(el('summary', null, t('page.edit')), form);
+  return details;
+}
+
+// savePage writes the form once. A failure leaves what was typed; success
+// is a note on that plugin's card.
+async function savePage(e, id) {
+  e.preventDefault();
+  const form = e.target;
+  const body = { name: form.elements.name.value, icon: form.elements.icon.value };
+  if (form.elements.kind) body[form.elements.kind.value] = form.elements.address.value.trim();
+  if (form.elements.cardUrl) body.cardUrl = form.elements.cardUrl.value.trim();
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  catalogNoteFor = id;
+  const note = $('catalog-note');
+  try {
+    const resp = await fetch(`/api/plugins/${encodeURIComponent(id)}/page`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const got = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw got.error || { code: '', detail: `HTTP ${resp.status}` };
+    note.textContent = t('page.saved');
+    note.hidden = false;
+    await loadPlugins();
+    render();
+    refreshStatus();
+    await loadCatalog();
+  } catch (err) {
+    note.textContent = explain(err);
+    note.hidden = false;
+    const card = form.closest('.catalog-item');
+    if (card) card.insertBefore(note, card.firstChild);
+    btn.disabled = false;
+  }
 }
 
 function availableItem(p) {

@@ -1,7 +1,9 @@
 // Package catalog manages the plugins folder for the plugins page: it lists
-// the plugins built into hostdeck and adds one, and lists the installed ones
-// and disables or enables them. A disabled plugin is its folder renamed to
-// start with a dot, which loading skips. Nothing comes from the network.
+// the plugins built into hostdeck and adds one, lists the installed ones and
+// disables or enables them, and edits the name, icon and addresses an
+// installed plugin is allowed to change. A disabled plugin is its folder
+// renamed to start with a dot, which loading skips. Nothing comes from the
+// network.
 package catalog
 
 import (
@@ -20,6 +22,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/Ike-li/hostdeck/internal/atomicfile"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 )
 
@@ -29,6 +32,10 @@ var (
 	ErrUnknown  = errors.New("no such plugin")
 	ErrAdded    = errors.New("a plugin folder of that name is already there")
 	ErrTaken    = errors.New("the folder that name would be renamed to is already there")
+	// ErrBoth means the edit named both an embed address and a link.
+	ErrBoth = errors.New("proxy and link are both set")
+	// ErrNoCardURL means the manifest has no declarative card.http.url to change.
+	ErrNoCardURL = errors.New("this plugin has no declarative card address")
 )
 
 // Offers says which parts a plugin's manifest declares. The plugins page
@@ -157,6 +164,186 @@ func AddPage(pluginDir, address, name string) (string, error) {
 	return id, nil
 }
 
+// PageChange is what the console may write into an existing manifest. A nil
+// field stays as it is. Proxy and Link cannot both be set. CardURL changes
+// card.http.url only when that key is already there.
+type PageChange struct {
+	Name    *string
+	Icon    *string
+	Proxy   *string
+	Link    *string
+	CardURL *string
+}
+
+// EditPage writes the allowlisted fields of one plugin's manifest and leaves
+// every other line, including its commands, as it was. The folder is not
+// renamed, so a remembered forwarding port stays with this plugin.
+func EditPage(pluginDir, id string, change PageChange) error {
+	if !plainName(id) {
+		return ErrUnknown
+	}
+	if change.Proxy != nil && change.Link != nil {
+		return ErrBoth
+	}
+	if change.Proxy != nil {
+		proxy, err := localPage(*change.Proxy)
+		if err != nil {
+			return err
+		}
+		change.Proxy = &proxy
+	}
+	if change.Link != nil {
+		link, err := webPage(*change.Link)
+		if err != nil {
+			return err
+		}
+		change.Link = &link
+	}
+	if change.CardURL != nil {
+		cardURL, err := webPage(*change.CardURL)
+		if err != nil {
+			return err
+		}
+		change.CardURL = &cardURL
+	}
+	path := filepath.Join(pluginDir, id, "plugin.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ErrUnknown
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return err
+	}
+	root := mappingOf(&doc)
+	if root == nil {
+		return fmt.Errorf("plugin.yaml is not a mapping")
+	}
+	if change.CardURL != nil && cardHTTP(root) == nil {
+		return ErrNoCardURL
+	}
+	if change.Name != nil {
+		setScalar(root, "name", *change.Name)
+	}
+	if change.Icon != nil {
+		setScalar(root, "icon", *change.Icon)
+	}
+	if change.Proxy != nil {
+		page := ensureMapping(root, "page")
+		setScalar(page, "proxy", *change.Proxy)
+		deleteKey(page, "link")
+	}
+	if change.Link != nil {
+		page := ensureMapping(root, "page")
+		setScalar(page, "link", *change.Link)
+		deleteKey(page, "proxy")
+	}
+	if change.CardURL != nil {
+		setScalar(cardHTTP(root), "url", *change.CardURL)
+	}
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(path, out)
+}
+
+// webPage reports whether address is an http or https URL.
+func webPage(address string) (string, error) {
+	u, err := url.Parse(address)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return "", ErrNotWeb
+	}
+	return u.String(), nil
+}
+
+// localPage checks address the way AddPage does and returns it as a URL.
+func localPage(address string) (string, error) {
+	if !strings.Contains(address, "://") {
+		address = "http://" + address
+	}
+	u, err := url.Parse(address)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return "", ErrNotWeb
+	}
+	if !onLocalNetwork(u.Hostname()) {
+		return "", ErrNotLocal
+	}
+	return u.String(), nil
+}
+
+// mappingOf is the document's mapping, if that is what it holds.
+func mappingOf(doc *yaml.Node) *yaml.Node {
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) == 1 {
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return nil
+	}
+	return doc
+}
+
+func field(mapping *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			return mapping.Content[i+1]
+		}
+	}
+	return nil
+}
+
+// cardHTTP is the card.http mapping when it already has a url.
+func cardHTTP(root *yaml.Node) *yaml.Node {
+	card := field(root, "card")
+	if card == nil || card.Kind != yaml.MappingNode {
+		return nil
+	}
+	httpNode := field(card, "http")
+	if httpNode == nil || httpNode.Kind != yaml.MappingNode || field(httpNode, "url") == nil {
+		return nil
+	}
+	return httpNode
+}
+
+func deleteKey(mapping *yaml.Node, key string) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content = slices.Delete(mapping.Content, i, i+2)
+			return
+		}
+	}
+}
+
+// setScalar writes key as a single string, replacing a language map or any
+// other value already there.
+func setScalar(mapping *yaml.Node, key, value string) {
+	if n := field(mapping, key); n != nil {
+		*n = yaml.Node{Kind: yaml.ScalarNode, Value: value}
+		return
+	}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: value},
+	)
+}
+
+// ensureMapping returns the mapping at key, replacing whatever else was there.
+func ensureMapping(parent *yaml.Node, key string) *yaml.Node {
+	if n := field(parent, key); n != nil && n.Kind == yaml.MappingNode {
+		return n
+	}
+	n := &yaml.Node{Kind: yaml.MappingNode}
+	if old := field(parent, key); old != nil {
+		*old = *n
+		return old
+	}
+	parent.Content = append(parent.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+		n,
+	)
+	return n
+}
+
 // pageID names a page's folder after its host and port, in letters, digits
 // and dashes.
 func pageID(u *url.URL) string {
@@ -190,18 +377,45 @@ func onLocalNetwork(host string) bool {
 }
 
 // about is what the plugins page shows of a manifest. A page, card, detail
-// or actions key is recorded only as present: the page does not read them.
+// or actions key is recorded as present. The page also reads the icon and the
+// addresses it is allowed to edit, and does not read a command.
 type about struct {
 	Name        plugin.Text `yaml:"name"`
 	Description plugin.Text `yaml:"description"`
-	Page        *yaml.Node  `yaml:"page"`
-	Card        *yaml.Node  `yaml:"card"`
-	Detail      *yaml.Node  `yaml:"detail"`
-	Actions     *yaml.Node  `yaml:"actions"`
+	Icon        string      `yaml:"icon"`
+	Page        yaml.Node   `yaml:"page"`
+	Card        yaml.Node   `yaml:"card"`
+	Detail      yaml.Node   `yaml:"detail"`
+	Actions     yaml.Node   `yaml:"actions"`
+}
+
+// editable is the icon and the addresses the console may change. Commands
+// are not decoded.
+func (m about) editable() (icon, proxy, link, cardURL string) {
+	icon = m.Icon
+	var page struct {
+		Proxy string `yaml:"proxy"`
+		Link  string `yaml:"link"`
+	}
+	if !m.Page.IsZero() {
+		m.Page.Decode(&page)
+	}
+	var card struct {
+		HTTP *struct {
+			URL string `yaml:"url"`
+		} `yaml:"http"`
+	}
+	if !m.Card.IsZero() {
+		m.Card.Decode(&card)
+	}
+	if card.HTTP != nil {
+		cardURL = card.HTTP.URL
+	}
+	return icon, page.Proxy, page.Link, cardURL
 }
 
 func (m about) offers() Offers {
-	return Offers{Page: m.Page != nil, Card: m.Card != nil, Detail: m.Detail != nil, Actions: m.Actions != nil}
+	return Offers{Page: !m.Page.IsZero(), Card: !m.Card.IsZero(), Detail: !m.Detail.IsZero(), Actions: !m.Actions.IsZero()}
 }
 
 // present says whether pluginDir has a folder for id, enabled or disabled.
@@ -219,6 +433,10 @@ type Plugin struct {
 	ID          string      `json:"id"`
 	Name        plugin.Text `json:"name"`
 	Description plugin.Text `json:"description,omitzero"`
+	Icon        string      `json:"icon,omitempty"`
+	Proxy       string      `json:"proxy,omitempty"`
+	Link        string      `json:"link,omitempty"`
+	CardURL     string      `json:"cardUrl,omitempty"`
 	Disabled    bool        `json:"disabled"`
 	Offers
 }
@@ -245,7 +463,12 @@ func Installed(pluginDir string) ([]Plugin, error) {
 		if err != nil || yaml.Unmarshal(data, &m) != nil || m.Name.IsZero() {
 			m = about{Name: plugin.Text{All: id}}
 		}
-		plugins = append(plugins, Plugin{ID: id, Name: m.Name, Description: m.Description, Disabled: disabled, Offers: m.offers()})
+		icon, proxy, link, cardURL := m.editable()
+		plugins = append(plugins, Plugin{
+			ID: id, Name: m.Name, Description: m.Description, Icon: icon,
+			Proxy: proxy, Link: link, CardURL: cardURL,
+			Disabled: disabled, Offers: m.offers(),
+		})
 	}
 	slices.SortFunc(plugins, func(a, b Plugin) int { return strings.Compare(a.ID, b.ID) })
 	return plugins, nil

@@ -1874,3 +1874,78 @@ func TestHidingAPluginRemovesItUntilItIsShownOrReset(t *testing.T) {
 	}
 	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
 }
+
+// The plugins page edits a page's name and address in one save. A refused
+// address stays in the form, and the form has no field for a command.
+func TestThePluginsPageEditsAPageAndKeepsWhatWasTypedWhenItFails(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "meter", `schema: 1
+name: {en: Meter, zh-CN: 仪表}
+icon: M
+page: {proxy: 'http://127.0.0.1:9/old'}
+card:
+  exec:
+    command: [echo, secret-command]
+`)
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	const item = `#catalog .catalog-item[data-id="meter"]`
+	do(t, ctx,
+		chromedp.Navigate(url+"#/.plugins"),
+		chromedp.Click(chromedp.CSS(item+` .page-edit summary`)),
+		chromedp.WaitVisible(chromedp.CSS(item+` input[name="address"]`)),
+	)
+	got, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+		const form = document.querySelector('#catalog .catalog-item[data-id="meter"] form');
+		const names = [...form.querySelectorAll('[name]')].map((el) => el.name);
+		if (names.some((n) => /command|exec|action/.test(n))) return 'command ' + names.join(',');
+		const v = (n) => form.elements[n].value;
+		return [v('name'), v('icon'), v('address'), v('kind')].join('|');
+	})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "仪表|M|http://127.0.0.1:9/old|proxy" {
+		t.Fatalf("the form shows %q, want the current name, icon and embed address", got)
+	}
+
+	set := func(js string) {
+		t.Helper()
+		if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](js)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(`(() => {
+		const form = document.querySelector('#catalog .catalog-item[data-id="meter"] form');
+		form.elements.address.value = 'http://8.8.8.8/';
+		form.querySelector('button').click();
+	})()`)
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(document.querySelector('#catalog .catalog-item[data-id="meter"] #catalog-note')?.textContent || '').includes('局域网')`)); err != nil {
+		t.Fatalf("a public address: %v; the card says %q", err, text(t, ctx, item))
+	}
+	kept, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('#catalog .catalog-item[data-id="meter"] input[name="address"]').value`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept != "http://8.8.8.8/" || text(t, ctx, item+` .card-name`) != "仪表" {
+		t.Fatalf("after the refusal the form has %q and the card is %q; want the typed address kept and the old name", kept, text(t, ctx, item+` .card-name`))
+	}
+
+	set(`(() => {
+		const form = document.querySelector('#catalog .catalog-item[data-id="meter"] form');
+		form.elements.name.value = '量表';
+		form.elements.address.value = 'http://127.0.0.1:9/now';
+		form.querySelector('button').click();
+	})()`)
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#catalog .catalog-item[data-id="meter"] .card-name')?.textContent === '量表' && document.querySelector('#nav .nav-item[data-id="meter"] .nav-name')?.textContent === '量表'`)); err != nil {
+		t.Fatalf("after saving: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "plugins", "meter", "plugin.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := string(data)
+	if !strings.Contains(file, "量表") || !strings.Contains(file, "http://127.0.0.1:9/now") || strings.Contains(file, "8.8.8.8") || !strings.Contains(file, "secret-command") {
+		t.Fatalf("plugin.yaml is:\n%s", file)
+	}
+}

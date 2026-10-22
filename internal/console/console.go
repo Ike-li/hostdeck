@@ -111,6 +111,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/pages", s.serveAddPage)
 	mux.HandleFunc("POST /api/plugins/{id}/disable", s.serveRename(catalog.Disable))
 	mux.HandleFunc("POST /api/plugins/{id}/enable", s.serveRename(catalog.Enable))
+	mux.HandleFunc("POST /api/plugins/{id}/page", s.serveEditPage)
 	mux.HandleFunc("GET /api/layout", s.serveLayoutGet)
 	mux.HandleFunc("POST /api/layout", s.serveLayout)
 	return local.Only(sameOriginAPI(noFraming(mux)))
@@ -461,6 +462,48 @@ func (s *server) serveAddPage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, struct {
 			ID string `json:"id"`
 		}{id})
+	}
+}
+
+// serveEditPage writes a page's name, icon or embed address, for the console
+// page only, and leaves the plugin's commands as they are.
+func (s *server) serveEditPage(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	var req struct {
+		Name    *string `json:"name"`
+		Icon    *string `json:"icon"`
+		Proxy   *string `json:"proxy"`
+		Link    *string `json:"link"`
+		CardURL *string `json:"cardUrl"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
+		return
+	}
+	s.changing.Lock()
+	defer s.changing.Unlock()
+	err := catalog.EditPage(s.cfg.PluginDir, r.PathValue("id"), catalog.PageChange{
+		Name: req.Name, Icon: req.Icon, Proxy: req.Proxy, Link: req.Link, CardURL: req.CardURL,
+	})
+	switch {
+	case errors.Is(err, catalog.ErrUnknown):
+		writeError(w, http.StatusNotFound, &card.Error{Code: "not_installed"})
+	case errors.Is(err, catalog.ErrNotWeb):
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "not_web"})
+	case errors.Is(err, catalog.ErrNotLocal):
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "not_local"})
+	case errors.Is(err, catalog.ErrBoth):
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request"})
+	case errors.Is(err, catalog.ErrNoCardURL):
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "no_card_url"})
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "edit_failed", Detail: err.Error()})
+	case !s.reload(w):
+	default:
+		writeJSON(w, struct{}{})
 	}
 }
 

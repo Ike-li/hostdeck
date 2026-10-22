@@ -511,6 +511,35 @@ h1 {
   margin-top: 10px;
 }
 
+.page-edit { margin-top: 10px; font-size: 13px; }
+.page-edit summary { cursor: pointer; color: var(--muted); }
+
+.page-edit-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 12em;
+  color: var(--muted);
+}
+
+.edit-field input,
+.page-edit-form select {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
 .catalog-state {
   margin: 0;
   font-size: 13px;

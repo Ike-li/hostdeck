@@ -901,3 +901,270 @@ func mustRead(t *testing.T, r io.Reader) []byte {
 	}
 	return data
 }
+
+// Editing a page writes its name, icon and embed address back into plugin.yaml
+// and nothing else. The remembered forwarding port stays in ports.json.
+func TestEditingAPageChangesItsNameIconAndAddressAndLeavesItsCommands(t *testing.T) {
+	root := t.TempDir()
+	pluginDir := filepath.Join(root, "plugins")
+	const manifest = `# kept on purpose
+schema: 1
+name: {en: Meter, zh-CN: 仪表}
+icon: M
+page:
+  proxy: http://127.0.0.1:9/old
+card:
+  exec:
+    command: [echo, detail] # leave this command
+`
+	writeManifest(t, pluginDir, "meter", manifest)
+	portsFile := filepath.Join(root, "ports.json")
+	const ports = "{\"meter\": 4679}\n"
+	if err := os.WriteFile(portsFile, []byte(ports), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reload := reloadFrom(pluginDir)
+	loaded, err := reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Plugins: loaded.Plugins, Reload: reload})
+	manifestPath := filepath.Join(pluginDir, "meter", "plugin.yaml")
+	unchanged := func() {
+		t.Helper()
+		if got := string(mustRead(t, mustOpen(t, manifestPath))); got != manifest {
+			t.Errorf("plugin.yaml changed:\n%s", got)
+		}
+		if got := string(mustRead(t, mustOpen(t, portsFile))); got != ports {
+			t.Errorf("ports.json changed: %s", got)
+		}
+	}
+
+	for name, header := range fromOtherPage {
+		resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"name": "Nope"}`, header)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	for body, code := range map[string]string{
+		`{"proxy": "http://93.184.215.14/"}`:                                "not_local",
+		`{"proxy": "ftp://127.0.0.1/"}`:                                     "not_web",
+		`{"proxy": "http://127.0.0.1:9/a", "link": "https://example.com/"}`: "bad_request",
+	} {
+		resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", body, fromConsole)
+		got, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusBadRequest || gjson.GetBytes(got, "error.code").String() != code {
+			t.Errorf("%s: %d %s, want 400 %s", body, resp.StatusCode, got, code)
+		}
+	}
+	if resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/missing/page", `{"name": "Nope"}`, fromConsole); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("missing plugin: status %d, want 404", resp.StatusCode)
+	}
+	unchanged()
+
+	resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"name": "Gauge", "icon": "G", "proxy": "http://127.0.0.1:9/now"}`, fromConsole)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("editing: %d %s", resp.StatusCode, body)
+	}
+	got := string(mustRead(t, mustOpen(t, manifestPath)))
+	for _, want := range []string{"# kept on purpose", "# leave this command", "echo", "http://127.0.0.1:9/now", "Gauge"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("plugin.yaml missing %q:\n%s", want, got)
+		}
+	}
+	for _, gone := range []string{"zh-CN", "仪表", "/old", "icon: M"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("plugin.yaml still has %q:\n%s", gone, got)
+		}
+	}
+	if portsGot := string(mustRead(t, mustOpen(t, portsFile))); portsGot != ports {
+		t.Errorf("ports.json is %s, want it unchanged", portsGot)
+	}
+	listed := string(mustRead(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body))
+	if gjson.Get(listed, "0.id").String() != "meter" || gjson.Get(listed, "0.name").String() != "Gauge" || gjson.Get(listed, "0.icon").String() != "G" || gjson.Get(listed, "0.type").String() != "proxy" {
+		t.Errorf("the sidebar has %s, want meter named Gauge with icon G, still embedded", listed)
+	}
+
+	resp = postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"name": "Dial"}`, fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("editing the name only: %d %s", resp.StatusCode, body)
+	}
+	got = string(mustRead(t, mustOpen(t, manifestPath)))
+	if !strings.Contains(got, "Dial") || !strings.Contains(got, "http://127.0.0.1:9/now") || (!strings.Contains(got, "icon: G") && !strings.Contains(got, `icon: "G"`)) {
+		t.Errorf("a name-only edit touched more than the name:\n%s", got)
+	}
+	if !strings.Contains(got, "# kept on purpose") || !strings.Contains(got, "# leave this command") {
+		t.Errorf("comments were dropped:\n%s", got)
+	}
+}
+
+// A link replaces an embed address, and an embed address replaces a link.
+// A link may point at the internet. It still has to be a web address.
+func TestEditingAPageToALinkRemovesTheEmbedAddress(t *testing.T) {
+	pluginDir := t.TempDir()
+	const manifest = "schema: 1\nname: Meter\npage:\n  proxy: http://127.0.0.1:9/old\n"
+	writeManifest(t, pluginDir, "meter", manifest)
+	reload := reloadFrom(pluginDir)
+	loaded, err := reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Plugins: loaded.Plugins, Reload: reload})
+	manifestPath := filepath.Join(pluginDir, "meter", "plugin.yaml")
+
+	resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"link": "ftp://files.example/meter"}`, fromConsole)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest || gjson.GetBytes(body, "error.code").String() != "not_web" {
+		t.Fatalf("an ftp link: %d %s, want 400 not_web", resp.StatusCode, body)
+	}
+	if got := string(mustRead(t, mustOpen(t, manifestPath))); got != manifest {
+		t.Fatalf("a refused link changed plugin.yaml:\n%s", got)
+	}
+
+	resp = postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"link": "https://example.com/meters"}`, fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("setting a link: %d %s", resp.StatusCode, body)
+	}
+	got := string(mustRead(t, mustOpen(t, manifestPath)))
+	if !strings.Contains(got, "https://example.com/meters") || strings.Contains(got, "proxy") {
+		t.Fatalf("after the link, plugin.yaml is:\n%s", got)
+	}
+	listed := string(mustRead(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body))
+	if gjson.Get(listed, "0.type").String() != "link" || gjson.Get(listed, "0.url").String() != "https://example.com/meters" {
+		t.Fatalf("the sidebar has %s, want a link to the page", listed)
+	}
+
+	resp = postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"proxy": "http://127.0.0.1:9/now"}`, fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("embedding again: %d %s", resp.StatusCode, body)
+	}
+	got = string(mustRead(t, mustOpen(t, manifestPath)))
+	if !strings.Contains(got, "http://127.0.0.1:9/now") || strings.Contains(got, "link") || strings.Contains(got, "example.com") {
+		t.Fatalf("after embedding again, plugin.yaml is:\n%s", got)
+	}
+	listed = string(mustRead(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body))
+	if gjson.Get(listed, "0.type").String() != "proxy" {
+		t.Fatalf("the sidebar has %s, want it embedded again", listed)
+	}
+}
+
+// The plugins page can show a page's icon and address. It does not receive
+// the plugin's commands.
+func TestTheCatalogShowsAPageAddressAndNotItsCommands(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeManifest(t, pluginDir, "meter", `schema: 1
+name: Meter
+icon: M
+page:
+  proxy: http://127.0.0.1:9/old
+card:
+  http: {url: 'http://127.0.0.1:9/metrics'}
+  value: n
+detail:
+  exec:
+    command: [echo, secret-command]
+`)
+	writeManifest(t, pluginDir, "notes", "schema: 1\nname: Notes\npage: {link: 'https://example.com/notes'}\n")
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}})
+
+	body := string(mustRead(t, get(h, "http://127.0.0.1:4678/api/catalog", nil).Body))
+	if strings.Contains(body, "secret-command") || strings.Contains(body, "echo") {
+		t.Fatalf("the catalog includes a command:\n%s", body)
+	}
+	meter := gjson.Get(body, `installed.#(id=="meter")`)
+	if meter.Get("icon").String() != "M" || meter.Get("proxy").String() != "http://127.0.0.1:9/old" || meter.Get("cardUrl").String() != "http://127.0.0.1:9/metrics" || meter.Get("link").String() != "" {
+		t.Errorf("meter is %s, want its icon, embed address and card address", meter.Raw)
+	}
+	notes := gjson.Get(body, `installed.#(id=="notes")`)
+	if notes.Get("link").String() != "https://example.com/notes" || notes.Get("proxy").String() != "" {
+		t.Errorf("notes is %s, want its link and no embed address", notes.Raw)
+	}
+}
+
+// The card address is the declarative card.http.url only. A command card is
+// left alone, and a plugin without that URL does not gain a card.
+func TestEditingACardAddressChangesOnlyADeclarativeURL(t *testing.T) {
+	pluginDir := t.TempDir()
+	const meter = `# kept on purpose
+schema: 1
+name: Meter
+page:
+  proxy: http://127.0.0.1:9/old
+card:
+  http: {url: 'http://127.0.0.1:9/metrics', headers: {Accept: text/plain}}
+  value: n
+`
+	const tool = `schema: 1
+name: Tool
+page: {link: 'https://example.com/tool'}
+card:
+  exec:
+    command: [echo, tool] # leave this command
+`
+	const plain = "schema: 1\nname: Plain\npage: {link: 'https://example.com/plain'}\n"
+	writeManifest(t, pluginDir, "meter", meter)
+	writeManifest(t, pluginDir, "tool", tool)
+	writeManifest(t, pluginDir, "plain", plain)
+	reload := reloadFrom(pluginDir)
+	loaded, err := reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Plugins: loaded.Plugins, Reload: reload})
+	file := func(id string) string {
+		t.Helper()
+		return string(mustRead(t, mustOpen(t, filepath.Join(pluginDir, id, "plugin.yaml"))))
+	}
+
+	resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"cardUrl": "ftp://127.0.0.1/metrics"}`, fromConsole)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest || gjson.GetBytes(body, "error.code").String() != "not_web" {
+		t.Fatalf("an ftp card address: %d %s, want 400 not_web", resp.StatusCode, body)
+	}
+	if file("meter") != meter {
+		t.Fatalf("a refused card address changed plugin.yaml:\n%s", file("meter"))
+	}
+
+	for _, id := range []string{"tool", "plain"} {
+		resp = postJSON(h, "http://127.0.0.1:4678/api/plugins/"+id+"/page", `{"cardUrl": "http://127.0.0.1:9/now"}`, fromConsole)
+		body, _ = io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusBadRequest || gjson.GetBytes(body, "error.code").String() != "no_card_url" {
+			t.Fatalf("%s: %d %s, want 400 no_card_url", id, resp.StatusCode, body)
+		}
+	}
+	if got := file("tool"); got != tool || !strings.Contains(got, "echo") || !strings.Contains(got, "# leave this command") {
+		t.Fatalf("the command card changed:\n%s", got)
+	}
+	if got := file("plain"); got != plain || strings.Contains(got, "card:") {
+		t.Fatalf("a page without a card gained one:\n%s", got)
+	}
+
+	resp = postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", `{"cardUrl": "http://127.0.0.1:9/now"}`, fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("editing the card address: %d %s", resp.StatusCode, body)
+	}
+	got := file("meter")
+	for _, want := range []string{"# kept on purpose", "http://127.0.0.1:9/now", "http://127.0.0.1:9/old", "text/plain", "value: n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("plugin.yaml missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "/metrics") {
+		t.Errorf("the old card address is still there:\n%s", got)
+	}
+}
+
+func mustOpen(t *testing.T, path string) *os.File {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	return f
+}
