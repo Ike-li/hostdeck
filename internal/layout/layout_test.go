@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestALayoutIsKeptAcrossRuns(t *testing.T) {
@@ -61,5 +62,34 @@ func TestChangingWhatGetReturnsLeavesTheStoreAlone(t *testing.T) {
 	l.Sidebar[0] = "changed"
 	if got := s.Get().Sidebar; !reflect.DeepEqual(got, []string{"a", "b"}) {
 		t.Errorf("store holds %v, want [a b]", got)
+	}
+}
+
+// On Windows a program reading the file holds it open, and the file cannot be
+// replaced until it lets go: a save then waits rather than fails.
+func TestASaveWaitsForAReaderToLetGoOfTheFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "layout.json")
+	s, err := Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set(Layout{Wide: []string{"b"}}); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(300*time.Millisecond, func() { reader.Close() })
+
+	if err := s.Set(Layout{}); err != nil {
+		t.Fatalf("saving while the file is read: %v", err)
+	}
+	again, err := Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := again.Get(); !reflect.DeepEqual(got, Layout{}) {
+		t.Errorf("saved %+v, want nothing wide", got)
 	}
 }
