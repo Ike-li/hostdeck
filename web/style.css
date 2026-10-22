@@ -219,6 +219,22 @@ h1 {
   container-type: inline-size;
 }
 
+/* Plugin cards share a row without taking the tallest card's height.
+   Overview cards keep the default stretch. */
+#catalog .cards { align-items: start; }
+
+.catalog-search {
+  width: min(280px, 100%);
+  margin: 0 0 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
 .card.wide { grid-column: span 2; }
 
 /* Narrower than two columns of 220px and the gap, a wide card takes one. */

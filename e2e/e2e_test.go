@@ -1510,3 +1510,170 @@ card:
 		t.Errorf("Open went to %q, want the list", name)
 	}
 }
+
+// The plugins page orders plugins by the name it shows, not by the folder.
+func TestThePluginsPageListsPluginsByName(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "a", "schema: 1\nname: {en: Beta, zh-CN: 乙}\npage: {link: 'https://b.example/'}\n")
+	writePlugin(t, dir, "b", "schema: 1\nname: {en: Alpha, zh-CN: 甲}\npage: {link: 'https://a.example/'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	do(t, ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`#catalog-installed .catalog-item`)),
+	)
+	if got := idsOf(t, ctx, "#catalog-installed .catalog-item"); !slices.Equal(got, []string{"b", "a"}) {
+		t.Errorf("plugins page order %v, want 甲 then 乙", got)
+	}
+	if shown, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => { const s = document.querySelector('#catalog-search'); return !!s && !s.hidden; })()`)); err != nil || shown {
+		t.Errorf("a short plugins page shows a search box (err %v)", err)
+	}
+}
+
+// Installed plugins are grouped into what is in use, what is disabled and
+// what failed to load. Each group is ordered by name.
+func TestThePluginsPageGroupsWhatIsInUseDisabledAndBroken(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "a", "schema: 1\nname: {en: Beta, zh-CN: 乙}\npage: {link: 'https://b.example/'}\n")
+	writePlugin(t, dir, "b", "schema: 1\nname: {en: Alpha, zh-CN: 甲}\npage: {link: 'https://a.example/'}\n")
+	writePlugin(t, dir, ".off", "schema: 1\nname: {en: Off, zh-CN: 停用}\npage: {link: 'https://off.example/'}\n")
+	writePlugin(t, dir, "bad", "this is: [not yaml\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	do(t, ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`#catalog-installed .catalog-item`)),
+	)
+	group := func(name string) []string {
+		t.Helper()
+		return idsOf(t, ctx, `#catalog-installed [data-group="`+name+`"] .catalog-item`)
+	}
+	if got := group("use"); !slices.Equal(got, []string{"b", "a"}) {
+		t.Fatalf("in use %v, want 甲 then 乙", got)
+	}
+	if got := group("disabled"); !slices.Equal(got, []string{"off"}) {
+		t.Fatalf("disabled %v, want off", got)
+	}
+	if got := group("error"); !slices.Equal(got, []string{"bad"}) {
+		t.Fatalf("broken %v, want bad", got)
+	}
+	if use, disabled, broken := text(t, ctx, `[data-group="use"] h3`), text(t, ctx, `[data-group="disabled"] h3`), text(t, ctx, `[data-group="error"] h3`); use != "使用中" || disabled != "已停用" || broken != "有问题" {
+		t.Errorf("group headings %q %q %q", use, disabled, broken)
+	}
+}
+
+// Cards in one row keep their own height. A short card is not stretched to
+// the tall one beside it.
+func TestPluginCardsLineUpAtTheTop(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "short", "schema: 1\nname: {en: Short, zh-CN: 短}\npage: {link: 'https://short.example/'}\n")
+	writePlugin(t, dir, "tall", "schema: 1\nname: {en: Tall, zh-CN: 高}\ndescription: {en: A long description, zh-CN: 这是一段故意写得很长的说明，用来把这张卡片撑高，好让旁边那张短卡片不必跟着变高。它再说一句，确保高度真的不一样。}\npage: {link: 'https://tall.example/'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	do(t, ctx,
+		chromedp.EmulateViewport(1280, 800),
+		chromedp.Navigate(url),
+		chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`.catalog-item[data-id="tall"] .catalog-description`)),
+	)
+	heights, err := chromedp.Run(ctx, chromedp.Evaluate[[]float64](`['short', 'tall'].map(id => document.querySelector('.catalog-item[data-id="' + id + '"]').getBoundingClientRect().height)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !(heights[0]+24 < heights[1]) {
+		t.Errorf("card heights short %.0f tall %.0f, want the short card to stay short", heights[0], heights[1])
+	}
+}
+
+// Disabling a plugin says so on that plugin's card.
+func TestTheResultSitsOnThePluginJustChanged(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "keep", "schema: 1\nname: Keep\npage: {link: 'https://keep.example/'}\n")
+	writePlugin(t, dir, "site", "schema: 1\nname: Site\npage: {link: 'https://site.example/'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	const button = `.catalog-item[data-id="site"] button`
+
+	do(t, ctx,
+		chromedp.Navigate(url+"#/.plugins"),
+		chromedp.WaitVisible(chromedp.CSS(button)),
+		chromedp.Click(chromedp.CSS(button)),
+	)
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('.catalog-item[data-id="site"] .catalog-state')?.textContent.includes('.site')`)); err != nil {
+		t.Fatal(err)
+	}
+	onCard, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('.catalog-item[data-id="site"]').contains(document.querySelector('#catalog-note')) && !document.querySelector('.catalog-item[data-id="keep"]').contains(document.querySelector('#catalog-note'))`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !onCard {
+		t.Errorf("the note is not on Site's card: %q", text(t, ctx, "#catalog-note"))
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)), chromedp.Click(chromedp.CSS(button)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('.catalog-item[data-id="site"]')?.contains(document.querySelector('#catalog-note')) && document.querySelector('#catalog-note')?.textContent.includes('已启用')`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Adding a page and the built-in plugins are one block, after the plugins
+// already installed.
+func TestTheEmbedFormAndTheBuiltInPluginsAreOneBlock(t *testing.T) {
+	dir := t.TempDir()
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	do(t, ctx,
+		chromedp.Navigate(url+"#/.plugins"),
+		chromedp.WaitVisible(chromedp.CSS("#page-form")),
+		chromedp.WaitVisible(chromedp.CSS("#catalog-available .catalog-item")),
+	)
+	ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
+		const block = document.querySelector('#page-form').parentElement;
+		const installed = document.querySelector('#catalog-installed');
+		return block.id === 'catalog-add' && block.contains(document.querySelector('#catalog-available')) && !block.contains(installed) && !!(installed.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING);
+	})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Error("the embed form and the built-in plugins are not one block after the installed plugins")
+	}
+}
+
+// A long plugins page can be searched by the name it shows. A short one has
+// no search box.
+func TestThePluginsPageSearchesWhenThereAreMany(t *testing.T) {
+	dir := t.TempDir()
+	for i := range 9 {
+		id := fmt.Sprintf("n%d", i)
+		name := "插件" + fmt.Sprint(i)
+		if i == 0 {
+			name = "目标"
+		}
+		writePlugin(t, dir, id, fmt.Sprintf("schema: 1\nname: %s\npage: {link: 'https://%s.example/'}\n", name, id))
+	}
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	do(t, ctx,
+		chromedp.Navigate(url+"#/.plugins"),
+		chromedp.WaitVisible(chromedp.CSS(`#catalog-installed .catalog-item`)),
+	)
+	shown, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => { const s = document.querySelector('#catalog-search'); return !!s && !s.hidden; })()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shown {
+		t.Fatal("a long plugins page has no search box")
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`(() => { const s = document.querySelector('#catalog-search'); s.value = '目标'; s.dispatchEvent(new Event('input', {bubbles: true})); })()`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := idsOf(t, ctx, `#catalog .catalog-item:not([hidden])`); !slices.Equal(got, []string{"n0"}) {
+		t.Errorf("search shows %v, want only 目标", got)
+	}
+}

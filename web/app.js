@@ -22,6 +22,7 @@ let status = {}; // plugin id -> up | down
 let current = null; // the open sidebar entry, or null on the overview
 let catalogOpen = false; // whether the plugins page is shown
 let catalog = null; // the last answer of /api/catalog
+let catalogNoteFor = null; // the plugin whose card the last result belongs on
 let overview = null; // the last answer of /api/cards
 let cardsTimer = null; // the next /api/cards while a card is pending
 let failure = null; // why the backend could not be read
@@ -490,13 +491,70 @@ async function loadCatalog() {
 
 function renderCatalog(loaded) {
   if (!catalog || (!loaded && catalog.lang === lang)) return;
+  parkCatalogNote();
   catalog.lang = lang;
   document.title = `${t('catalog.title')} · hostdeck`;
   $('catalog-intro').textContent = t('catalog.intro', { dir: catalog.pluginDir });
-  const installed = catalog.installed.map(installedItem);
-  $('catalog-installed').replaceChildren(...(installed.length ? installed : [el('p', 'empty', t('catalog.none'))]));
+  const byName = (a, b) => pick(a.name).localeCompare(pick(b.name), lang);
+  const groups = [
+    ['use', 'catalog.group.use', (p) => !p.disabled && !p.broken && !p.error],
+    ['disabled', 'catalog.group.disabled', (p) => p.disabled && !p.broken && !p.error],
+    ['error', 'catalog.group.error', (p) => !!(p.broken || p.error)],
+  ].flatMap(([id, key, pred]) => {
+    const items = catalog.installed.filter(pred).sort(byName).map(installedItem);
+    if (!items.length) return [];
+    const section = el('section', 'catalog-group');
+    section.dataset.group = id;
+    const grid = el('div', 'cards');
+    grid.append(...items);
+    section.append(el('h3', 'catalog-heading', t(key)), grid);
+    return [section];
+  });
+  $('catalog-installed').replaceChildren(...(groups.length ? groups : [el('p', 'empty', t('catalog.none'))]));
   $('catalog-available-heading').hidden = !catalog.available.length;
-  $('catalog-available').replaceChildren(...catalog.available.map(availableItem));
+  $('catalog-available').replaceChildren(...[...catalog.available].sort(byName).map(availableItem));
+  placeCatalogNote();
+  updateCatalogSearch();
+}
+
+// The search box is for a long page. Fewer plugins than this stay a plain list.
+const SEARCH_AFTER = 8;
+
+function updateCatalogSearch() {
+  const search = $('catalog-search');
+  const many = (catalog?.installed.length ?? 0) + (catalog?.available.length ?? 0) > SEARCH_AFTER;
+  search.hidden = !many;
+  if (!many) search.value = '';
+  filterCatalog();
+}
+
+function filterCatalog() {
+  const q = $('catalog-search').value.trim().toLowerCase();
+  for (const card of document.querySelectorAll('#catalog .catalog-item')) {
+    const name = card.querySelector('.card-name')?.textContent.toLowerCase() ?? '';
+    card.hidden = q !== '' && !name.includes(q);
+  }
+  for (const group of document.querySelectorAll('.catalog-group')) {
+    group.hidden = ![...group.querySelectorAll('.catalog-item')].some((card) => !card.hidden);
+  }
+  const available = [...document.querySelectorAll('#catalog-available .catalog-item')];
+  if (available.length) $('catalog-available-heading').hidden = available.every((card) => card.hidden);
+}
+
+// parkCatalogNote lifts the result out of a card before that card is rebuilt.
+function parkCatalogNote() {
+  const note = $('catalog-note');
+  const form = $('page-form');
+  if (note && form && note.closest('.catalog-item')) form.before(note);
+}
+
+// placeCatalogNote puts the last result on the card it is about. A result
+// that is not about one plugin, such as an address the form rejected, stays
+// where the page first drew it.
+function placeCatalogNote() {
+  if (!catalogNoteFor) return;
+  const card = document.querySelector(`#catalog .catalog-item[data-id="${CSS.escape(catalogNoteFor)}"]`);
+  if (card) card.insertBefore($('catalog-note'), card.firstChild);
 }
 
 function catalogCard(p) {
@@ -535,7 +593,7 @@ function openControl(p) {
 
 // catalogButton posts to url on a second click, says how it went with
 // noteOf(the answer), and reads the page and the sidebar again.
-function catalogButton(label, armedText, url, noteOf) {
+function catalogButton(label, armedText, url, noteOf, id) {
   const btn = el('button', 'btn', label);
   btn.type = 'button';
   twoClicks(btn, armedText, async () => {
@@ -550,6 +608,7 @@ function catalogButton(label, armedText, url, noteOf) {
     } catch (err) {
       note = explain(err);
     }
+    catalogNoteFor = id;
     const n = $('catalog-note');
     n.textContent = note;
     n.hidden = false;
@@ -564,6 +623,9 @@ function catalogButton(label, armedText, url, noteOf) {
 // addPage embeds the web page at address and opens it. If it cannot, the
 // plugins page says why.
 async function addPage(address, name = '') {
+  catalogNoteFor = null;
+  const note = $('catalog-note');
+  if (note) $('page-form').before(note);
   try {
     const resp = await fetch('/api/pages', {
       method: 'POST',
@@ -644,6 +706,7 @@ function installedItem(p) {
       t(`catalog.${verb}.confirm`),
       `/api/plugins/${encodeURIComponent(p.id)}/${verb}`,
       () => t(`catalog.${verb}d.note`, { name }),
+      p.id,
     ),
   );
   item.append(actions);
@@ -654,8 +717,12 @@ function availableItem(p) {
   const item = catalogCard(p);
   const offers = providesList(p);
   if (offers) item.append(offers);
-  const btn = catalogButton(t('catalog.add'), t('catalog.add.confirm'), `/api/catalog/${encodeURIComponent(p.id)}`, (body) =>
-    t('catalog.added', { path: body.path }),
+  const btn = catalogButton(
+    t('catalog.add'),
+    t('catalog.add.confirm'),
+    `/api/catalog/${encodeURIComponent(p.id)}`,
+    (body) => t('catalog.added', { path: body.path }),
+    p.id,
   );
   btn.classList.add('add');
   item.append(btn);
@@ -808,6 +875,7 @@ async function init() {
   $('page-form').addEventListener('submit', onPageSubmit);
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('drop', onDrop);
+  $('catalog-search').addEventListener('input', filterCatalog);
   $('refresh').addEventListener('click', async () => {
     try {
       const resp = await fetch('/api/cards/refresh', { method: 'POST' });
