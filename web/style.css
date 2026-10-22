@@ -122,7 +122,7 @@ nav {
 .nav-row:focus-within .nav-moves { opacity: 1; }
 
 .nav-row:hover .nav-item,
-.nav-row:focus-within .nav-item { padding-right: 76px; }
+.nav-row:focus-within .nav-item { padding-right: 112px; }
 
 .nav-row .nav-item {
   flex: 1;
@@ -228,6 +228,8 @@ main {
 }
 
 .overview-head h1 { margin: 0; }
+
+.overview-actions { display: flex; gap: 8px; align-items: center; }
 
 .card-updated {
   margin: 8px 0 0;
@@ -354,17 +356,13 @@ h1 {
 .card:hover .card-moves,
 .card:focus-within .card-moves { opacity: 1; }
 
-.card:hover .card-name,
-.card:focus-within .card-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* The buttons stay on the top edge. The title drops below them, so a narrow
+   card can keep its name and its status instead of being covered. */
+#cards .card:hover .card-head,
+#cards .card:focus-within .card-head { padding-top: 28px; }
 
-.card:hover .card-head,
-.card:focus-within .card-head { padding-right: 8.4em; }
+#cards .card:hover .pill,
+#cards .card:focus-within .pill { margin-right: 0; }
 
 .move {
   padding: 0 4px;
@@ -412,16 +410,12 @@ h1 {
 .card-width:focus,
 .card-width:focus-visible { opacity: 1; }
 
-.card:hover .pill,
-.card:focus-within .pill { margin-right: 3.2em; }
-
 @media (hover: none) {
   .card-width { opacity: 1; }
-  .card .pill { margin-right: 3.2em; }
   .nav-moves, .card-moves { opacity: 1; }
-  .nav-row .nav-item { padding-right: 76px; }
-  .card-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card-head { padding-right: 8.4em; }
+  .nav-row .nav-item { padding-right: 112px; }
+  #cards .card-head { padding-top: 28px; }
+  #cards .pill { margin-right: 0; }
 }
 
 .card-big {

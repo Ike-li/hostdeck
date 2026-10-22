@@ -1765,3 +1765,112 @@ func TestSidebarEntriesAndCardsMoveUpAndDownAndTheMoveCanBeUndone(t *testing.T) 
 	}
 	savedLayout(t, dir, "cards", []string{"a", "b", "c"})
 }
+
+// Hiding takes a plugin off the sidebar and the overview without uninstalling
+// it. Its place is kept, Show puts it back, and Reset clears the layout.
+// Each of these is one click and one undo.
+func TestHidingAPluginRemovesItUntilItIsShownOrReset(t *testing.T) {
+	dir := t.TempDir()
+	threeLinks(t, dir)
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	const entry = `#nav .nav-item[data-id]`
+	do(t, ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(chromedp.CSS(entry+`[data-id="c"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"] .card-value`)),
+	)
+
+	kind, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+		const hide = document.querySelector('#nav .nav-row[data-id="a"] .hide');
+		const reset = document.querySelector('#layout-reset');
+		if (!hide || !reset) return 'missing';
+		if (hide.tagName !== 'BUTTON' || hide.type !== 'button' || hide.closest('a')) return 'inside-link';
+		if (reset.tagName !== 'BUTTON' || reset.type !== 'button') return 'reset';
+		return 'ok ' + hide.textContent + ' ' + reset.textContent;
+	})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != "ok 隐藏 重置" {
+		t.Fatalf("hide and reset: %s", kind)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)))
+	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .hide`)))
+	gone(t, ctx, `#nav .nav-item[data-id="a"]`)
+	gone(t, ctx, `.card[data-id="a"]`)
+	if got, want := idsOf(t, ctx, entry), []string{"b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("sidebar after hiding a: %v, want %v", got, want)
+	}
+	if got, want := idsOf(t, ctx, ".card"), []string{"b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("cards after hiding a: %v, want %v", got, want)
+	}
+	savedLayout(t, dir, "hidden", []string{"a"})
+	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
+
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(() => {
+		const note = document.querySelector('#layout-note');
+		const undo = document.querySelector('#layout-undo');
+		return !!note && !note.hidden && note.textContent.includes('布局已保存') && undo && undo.textContent.includes('撤销');
+	})()`)); err != nil {
+		t.Fatalf("no undo for hiding: %v", err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS("#layout-undo")))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!!document.querySelector('#nav .nav-item[data-id="a"]') && !!document.querySelector('.card[data-id="a"]')`)); err != nil {
+		t.Fatalf("undo did not bring a back: %v", err)
+	}
+	if got, want := idsOf(t, ctx, entry), []string{"b", "a", "c"}; !slices.Equal(got, want) {
+		t.Errorf("sidebar after undoing the hide: %v, want %v", got, want)
+	}
+	savedLayout(t, dir, "hidden", nil)
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="b"] .hide`)))
+	gone(t, ctx, `#nav .nav-item[data-id="b"]`)
+	gone(t, ctx, `.card[data-id="b"]`)
+	savedLayout(t, dir, "hidden", []string{"b"})
+	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
+
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#catalog .catalog-item[data-id="b"] .show`)))
+	if label := text(t, ctx, `#catalog .catalog-item[data-id="b"] .show`); label != "显示" {
+		t.Errorf("show button says %q, want 显示", label)
+	}
+	showKind, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+		const show = document.querySelector('#catalog .catalog-item[data-id="b"] .show');
+		if (!show) return 'missing';
+		if (show.tagName !== 'BUTTON' || show.closest('a')) return 'inside-link';
+		return 'ok';
+	})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if showKind != "ok" {
+		t.Fatalf("show button: %s", showKind)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#catalog .catalog-item[data-id="b"] .show`)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!!document.querySelector('#nav .nav-item[data-id="b"]')`)); err != nil {
+		t.Fatalf("show did not bring b back: %v", err)
+	}
+	savedLayout(t, dir, "hidden", nil)
+
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="b"] .card-value`)))
+	if got, want := idsOf(t, ctx, entry), []string{"b", "a", "c"}; !slices.Equal(got, want) {
+		t.Errorf("sidebar after showing b: %v, want its place kept %v", got, want)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS("#layout-reset")))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`JSON.stringify([...document.querySelectorAll('#nav .nav-item[data-id]')].map(e => e.dataset.id)) === '["a","b","c"]'`)); err != nil {
+		t.Fatalf("reset did not restore folder order: %v; sidebar %v", err, idsOf(t, ctx, entry))
+	}
+	savedLayout(t, dir, "sidebar", nil)
+	savedLayout(t, dir, "hidden", nil)
+
+	do(t, ctx, chromedp.Click(chromedp.CSS("#layout-undo")))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`JSON.stringify([...document.querySelectorAll('#nav .nav-item[data-id]')].map(e => e.dataset.id)) === '["b","a","c"]'`)); err != nil {
+		t.Fatalf("undo of reset: %v; sidebar %v", err, idsOf(t, ctx, entry))
+	}
+	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
+}

@@ -617,6 +617,85 @@ func TestTheLayoutIsSavedFromTheConsolePageOnly(t *testing.T) {
 	}
 }
 
+// Hiding drops a plugin from the sidebar and the cards and leaves it installed.
+// Reset clears the order, the wide cards and what was hidden.
+func TestHidingDropsAPluginFromTheSidebarAndTheCardsAndResetClearsTheLayout(t *testing.T) {
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"v": 1}`)
+	}))
+	defer svc.Close()
+	withCard := func(id string) plugin.Plugin {
+		return plugin.Plugin{ID: id, Name: plugin.Text{All: id}, Page: &plugin.Page{Link: "https://" + id + ".example/"}, Card: &plugin.Card{HTTP: &plugin.HTTP{URL: svc.URL}, Value: "v"}}
+	}
+	file := filepath.Join(t.TempDir(), "layout.json")
+	store, err := layout.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(layout.Layout{Sidebar: []string{"b", "a"}, Cards: []string{"b", "a"}, Wide: []string{"a"}}); err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{
+		Origin:  "http://127.0.0.1:4678",
+		Plugins: []plugin.Plugin{withCard("a"), withCard("b")},
+		Layout:  store,
+	})
+
+	if resp := postLayout(h, fromOtherPage["an embedded service's page"], `{"hidden": ["a"]}`); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("hiding from another page: status %d, want 403", resp.StatusCode)
+	}
+	if resp := postLayout(h, fromConsole, `{"hidden": ["a"]}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("hiding: status %d, want 200", resp.StatusCode)
+	}
+	if got, want := ids(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body, "#.id"), []string{"b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sidebar %v, want %v", got, want)
+	}
+	if got, want := ids(t, get(h, "http://127.0.0.1:4678/api/cards", nil).Body, "cards.#.id"), []string{"b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("cards %v, want %v", got, want)
+	}
+	reopened, err := layout.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := layout.Layout{Sidebar: []string{"b", "a"}, Cards: []string{"b", "a"}, Wide: []string{"a"}, Hidden: []string{"a"}}
+	if got := reopened.Get(); !reflect.DeepEqual(got, want) {
+		t.Errorf("saved %+v, want %+v", got, want)
+	}
+	if got, wantIDs := ids(t, get(h, "http://127.0.0.1:4678/api/layout", nil).Body, "hidden"), []string{"a"}; !reflect.DeepEqual(got, wantIDs) {
+		t.Errorf("GET /api/layout hidden %v, want %v", got, wantIDs)
+	}
+
+	// The page sends the sidebar it still shows. The hidden plugin keeps its place.
+	if resp := postLayout(h, fromConsole, `{"sidebar": ["b"]}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("reordering while hidden: status %d, want 200", resp.StatusCode)
+	}
+	kept := layout.Layout{Sidebar: []string{"b", "a"}, Cards: []string{"b", "a"}, Wide: []string{"a"}, Hidden: []string{"a"}}
+	if got := store.Get(); !reflect.DeepEqual(got, kept) {
+		t.Errorf("after reordering while a is hidden %+v, want %+v", got, kept)
+	}
+	// A new order of the same length must not be written over the places just read.
+	if err := store.Set(layout.Layout{Sidebar: []string{"c", "b", "a"}, Cards: []string{"b", "a"}, Wide: []string{"a"}, Hidden: []string{"b"}}); err != nil {
+		t.Fatal(err)
+	}
+	if resp := postLayout(h, fromConsole, `{"sidebar": ["a", "c"]}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("reordering past a hidden entry: status %d, want 200", resp.StatusCode)
+	}
+	kept = layout.Layout{Sidebar: []string{"a", "b", "c"}, Cards: []string{"b", "a"}, Wide: []string{"a"}, Hidden: []string{"b"}}
+	if got := store.Get(); !reflect.DeepEqual(got, kept) {
+		t.Errorf("same-length reorder while b is hidden %+v, want %+v", got, kept)
+	}
+
+	if resp := postLayout(h, fromConsole, `{"reset": true}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("reset: status %d, want 200", resp.StatusCode)
+	}
+	if got := store.Get(); !reflect.DeepEqual(got, layout.Layout{}) {
+		t.Errorf("after reset %+v, want an empty layout", got)
+	}
+	if got, want := ids(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body, "#.id"), []string{"a", "b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sidebar after reset %v, want %v", got, want)
+	}
+}
+
 // reloadFrom reads pluginDir again, as hostdeck does at start.
 func reloadFrom(pluginDir string) func() (Loaded, error) {
 	return func() (Loaded, error) {

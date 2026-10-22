@@ -111,6 +111,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/pages", s.serveAddPage)
 	mux.HandleFunc("POST /api/plugins/{id}/disable", s.serveRename(catalog.Disable))
 	mux.HandleFunc("POST /api/plugins/{id}/enable", s.serveRename(catalog.Enable))
+	mux.HandleFunc("GET /api/layout", s.serveLayoutGet)
 	mux.HandleFunc("POST /api/layout", s.serveLayout)
 	return local.Only(sameOriginAPI(noFraming(mux)))
 }
@@ -127,8 +128,12 @@ type entry struct {
 
 func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
 	now := s.loaded()
+	l := s.layout()
 	entries := []entry{}
-	for _, p := range layout.Arrange(now.Plugins, s.layout().Sidebar, pluginID) {
+	for _, p := range layout.Arrange(now.Plugins, l.Sidebar, pluginID) {
+		if slices.Contains(l.Hidden, p.ID) {
+			continue
+		}
 		e := entry{ID: p.ID, Name: p.Name, Icon: p.Icon}
 		switch {
 		case p.Detail != nil:
@@ -225,6 +230,9 @@ func (s *server) serveCards(w http.ResponseWriter, r *http.Request) {
 	}
 	arranged := []placed{}
 	for _, c := range layout.Arrange(cards, l.Cards, func(c card.View) string { return c.ID }) {
+		if slices.Contains(l.Hidden, c.ID) {
+			continue
+		}
 		arranged = append(arranged, placed{c, slices.Contains(l.Wide, c.ID)})
 	}
 	writeJSON(w, struct {
@@ -495,24 +503,95 @@ func (s *server) reload(w http.ResponseWriter) bool {
 	return true
 }
 
+// serveLayoutGet returns the saved layout. The page needs the whole hidden
+// list before it can add to it, and the lists it shows no longer contain
+// those IDs.
+func (s *server) serveLayoutGet(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.cfg.Layout.Get())
+}
+
 // serveLayout saves how the user arranged the console, for the console page
-// only. A list the request leaves out stays as it was.
+// only. A list the request leaves out stays as it was. Reset replaces the
+// whole layout and is not itself stored. A hidden plugin keeps its place in
+// any list the request does send.
 func (s *server) serveLayout(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") != s.cfg.Origin {
 		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
 		return
 	}
+	prev := s.cfg.Layout.Get()
+	// A second copy: decoding the request reuses a slice's backing array, which
+	// would otherwise overwrite the places just read.
 	l := s.cfg.Layout.Get()
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&l); err != nil {
+	req := struct {
+		*layout.Layout
+		Reset bool `json:"reset"`
+	}{Layout: &l}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
 		return
+	}
+	if req.Reset {
+		l = layout.Layout{}
+	} else {
+		l.Sidebar = keepPlace(l.Sidebar, prev.Sidebar, l.Hidden)
+		l.Cards = keepPlace(l.Cards, prev.Cards, l.Hidden)
+		l.Wide = keepPlace(l.Wide, prev.Wide, l.Hidden)
 	}
 	if err := s.cfg.Layout.Set(l); err != nil {
 		log.Printf("layout: %v", err)
 		writeError(w, http.StatusInternalServerError, &card.Error{Code: "layout_failed", Detail: err.Error()})
 		return
 	}
-	writeJSON(w, struct{}{})
+	writeJSON(w, l)
+}
+
+// keepPlace puts hidden IDs back into the places they had in previous.
+// next is the list the page still shows.
+func keepPlace(next, previous, hidden []string) []string {
+	if len(hidden) == 0 {
+		return next
+	}
+	hide := make(map[string]bool, len(hidden))
+	for _, id := range hidden {
+		hide[id] = true
+	}
+	visible := make([]string, 0, len(next))
+	for _, id := range next {
+		if !hide[id] {
+			visible = append(visible, id)
+		}
+	}
+	result := make([]string, 0, len(previous)+len(visible))
+	placed := make(map[string]bool, len(previous)+len(visible))
+	v := 0
+	for _, id := range previous {
+		if hide[id] {
+			if !placed[id] {
+				result = append(result, id)
+				placed[id] = true
+			}
+			continue
+		}
+		if v < len(visible) {
+			id = visible[v]
+			v++
+			if !placed[id] {
+				result = append(result, id)
+				placed[id] = true
+			}
+		}
+	}
+	for ; v < len(visible); v++ {
+		if !placed[visible[v]] {
+			result = append(result, visible[v])
+			placed[visible[v]] = true
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // sameOriginAPI keeps other pages from calling the API. Every port on 127.0.0.1

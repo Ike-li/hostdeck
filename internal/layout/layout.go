@@ -1,5 +1,6 @@
 // Package layout remembers how the user arranged the console: the order of
-// the sidebar, the order of the overview's cards, and which cards are wide.
+// the sidebar, the order of the overview's cards, which cards are wide, and
+// which plugins are hidden.
 package layout
 
 import (
@@ -16,10 +17,13 @@ import (
 
 // Layout lists plugin IDs. The console page saves the IDs it shows, so a
 // plugin that is not loaded keeps its place only until its list is saved again.
+// Hidden IDs stay installed and leave the sidebar and the cards. Saving a
+// list puts those IDs back where they were.
 type Layout struct {
 	Sidebar []string `json:"sidebar,omitempty"`
 	Cards   []string `json:"cards,omitempty"`
 	Wide    []string `json:"wide,omitempty"`
+	Hidden  []string `json:"hidden,omitempty"`
 }
 
 // Store holds the layout and the file it is kept in.
@@ -47,7 +51,7 @@ func Open(file string) (*Store, error) {
 func (s *Store) Get() Layout {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return Layout{slices.Clone(s.l.Sidebar), slices.Clone(s.l.Cards), slices.Clone(s.l.Wide)}
+	return Layout{slices.Clone(s.l.Sidebar), slices.Clone(s.l.Cards), slices.Clone(s.l.Wide), slices.Clone(s.l.Hidden)}
 }
 
 func (s *Store) Set(l Layout) error {

@@ -33,7 +33,10 @@ let clearFailure = null; // why the last clearing failed
 const hiddenSince = new Map(); // plugin id -> when its page was switched away from
 let dragging = false; // whether a sidebar entry or a card is being dragged
 let suppressClick = false; // a click that ends a drag is not an open
-let layoutUndo = null; // the layout lists to post to undo the last move, widen or drag
+let layoutUndo = null; // the layout lists to post to undo the last move, widen, drag, hide or reset
+let layoutEpoch = 0; // a save that answers late must not replace a newer one
+let stored = { sidebar: [], cards: [], wide: [], hidden: [] }; // the layout file, hidden IDs included
+let layoutKnown = false; // a hide before this is known would post only part of the hidden list
 
 // A choice made on this page wins; otherwise the first of the browser's
 // languages that the console has.
@@ -159,6 +162,7 @@ function renderNav() {
     if (d) paintDot(d, p);
     row.querySelector('.move-up').textContent = t('move.up');
     row.querySelector('.move-down').textContent = t('move.down');
+    row.querySelector('.hide').textContent = t('layout.hide');
   });
   placeMoves(nav, '.nav-row');
 }
@@ -181,7 +185,7 @@ function navItem(p) {
     if (p.type === 'proxy') a.append(el('span', 'dot'));
   }
   const moves = el('span', 'nav-moves');
-  moves.append(moveButton('up'), moveButton('down'));
+  moves.append(moveButton('up'), moveButton('down'), hideButton());
   row.append(a, moves);
   return row;
 }
@@ -198,6 +202,47 @@ function moveButton(dir) {
     moveItem(item.closest('#nav') ? 'sidebar' : 'cards', item.dataset.id, dir === 'up' ? -1 : 1, btn);
   });
   return btn;
+}
+
+// hideButton drops a plugin from the sidebar and the cards. It stays installed.
+function hideButton() {
+  const btn = el('button', 'move hide', t('layout.hide'));
+  btn.type = 'button';
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const item = btn.closest('.nav-row, .card');
+    if (!item) return;
+    hideId(item.dataset.id);
+  });
+  return btn;
+}
+
+// hideId saves the whole hidden list. The plugin's place in the order stays.
+function hideId(id) {
+  if (!layoutKnown || stored.hidden.includes(id)) return;
+  const previous = { hidden: stored.hidden.slice() };
+  stored.hidden = [...stored.hidden, id];
+  plugins = plugins.filter((p) => p.id !== id);
+  $('nav').dataset.entries = '';
+  if (overview) {
+    overview.cards = overview.cards.filter((c) => c.id !== id);
+    overview.lang = null;
+  }
+  const leaving = current?.id === id;
+  if (leaving) current = null;
+  render();
+  saveLayout({ hidden: stored.hidden.slice() }, previous).then((ok) => {
+    if (ok && leaving) location.hash = '#/';
+  });
+}
+
+// showId puts a hidden plugin back in the place the layout kept for it.
+async function showId(id) {
+  if (!layoutKnown || !stored.hidden.includes(id)) return;
+  const previous = { hidden: stored.hidden.slice() };
+  stored.hidden = stored.hidden.filter((x) => x !== id);
+  if (!(await saveLayout({ hidden: stored.hidden.slice() }, previous))) return;
+  await reloadShown();
 }
 
 function placeMoves(list, selector) {
@@ -253,8 +298,11 @@ function paintDot(d, p) {
 function renderOverview() {
   document.title = 'hostdeck';
   const cards = overview ? overview.cards : [];
-  $('empty').hidden = !overview || cards.length > 0;
-  if (overview) $('empty').textContent = t('overview.empty', { dir: overview.pluginDir });
+  const noCards = !overview || cards.length === 0;
+  $('empty').hidden = !noCards;
+  if (overview && noCards) {
+    $('empty').textContent = stored.hidden.length ? t('overview.hidden') : t('overview.empty', { dir: overview.pluginDir });
+  }
   // The cards are rebuilt only when they are read or rearranged or the
   // language changes: a periodic render would swallow a click on a card's
   // button that lands while the card is replaced.
@@ -283,7 +331,7 @@ function cardElement(c) {
     render();
   });
   const moves = el('span', 'card-moves');
-  moves.append(moveButton('up'), moveButton('down'));
+  moves.append(moveButton('up'), moveButton('down'), hideButton());
   head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), cardTitle(c), moves, width);
   card.append(head);
   card.addEventListener('click', (e) => {
@@ -387,8 +435,26 @@ function sortable(list, selector, moved) {
 
 const byOrder = (order) => (a, b) => order.indexOf(a.id) - order.indexOf(b.id);
 
+function applyStored(l) {
+  stored = {
+    sidebar: l.sidebar ?? [],
+    cards: l.cards ?? [],
+    wide: l.wide ?? [],
+    hidden: l.hidden ?? [],
+  };
+  layoutKnown = true;
+}
+
 // saveLayout sends the lists of the layout that changed; the others stay.
+// The answer is the whole layout, so the next hide can send every hidden ID.
 async function saveLayout(change, previous) {
+  const epoch = ++layoutEpoch;
+  // The undo is offered before the answer: the page already shows the change,
+  // and a slower answer must not put an older change back in its place.
+  if (previous && JSON.stringify(change) !== JSON.stringify(previous)) {
+    layoutUndo = previous;
+    $('layout-note').hidden = false;
+  }
   try {
     const resp = await fetch('/api/layout', {
       method: 'POST',
@@ -396,13 +462,19 @@ async function saveLayout(change, previous) {
       body: JSON.stringify(change),
     });
     if (!resp.ok) throw new Error(`/api/layout: HTTP ${resp.status}`);
-    if (previous && JSON.stringify(change) !== JSON.stringify(previous)) {
-      layoutUndo = previous;
-      $('layout-note').hidden = false;
-    }
+    const saved = await resp.json();
+    if (epoch !== layoutEpoch) return false;
+    applyStored(saved);
+    return true;
   } catch (e) {
+    if (epoch !== layoutEpoch) return false;
+    if (layoutUndo === previous) {
+      layoutUndo = null;
+      $('layout-note').hidden = true;
+    }
     failure = e.message;
     render();
+    return false;
   }
 }
 
@@ -411,6 +483,7 @@ async function undoLayout() {
   if (!previous) return;
   layoutUndo = null;
   $('layout-note').hidden = true;
+  const hiddenBefore = stored.hidden.slice();
   if (previous.sidebar) {
     plugins.sort(byOrder(previous.sidebar));
     $('nav').dataset.entries = '';
@@ -426,6 +499,40 @@ async function undoLayout() {
   }
   render();
   await saveLayout(previous);
+  if (previous.hidden && JSON.stringify(previous.hidden) !== JSON.stringify(hiddenBefore)) await reloadShown();
+}
+
+// resetLayout clears the order, the widths and what is hidden.
+async function resetLayout() {
+  if (!layoutKnown) return;
+  const previous = {
+    sidebar: stored.sidebar.slice(),
+    cards: stored.cards.slice(),
+    wide: stored.wide.slice(),
+    hidden: stored.hidden.slice(),
+  };
+  if (!previous.sidebar.length && !previous.cards.length && !previous.wide.length && !previous.hidden.length) return;
+  if (!(await saveLayout({ reset: true }, previous))) return;
+  await reloadShown();
+}
+
+// reloadShown reads the sidebar again, and the page that is open.
+async function reloadShown() {
+  await loadPlugins();
+  $('nav').dataset.entries = '';
+  if (catalogOpen) await loadCatalog();
+  if (!current && !catalogOpen) await loadCards();
+  else if (overview) overview.lang = null;
+  render();
+}
+
+async function loadLayout() {
+  try {
+    applyStored(await getJSON('/api/layout'));
+  } catch (e) {
+    layoutKnown = false;
+    failure = e.message;
+  }
 }
 
 function renderService(p) {
@@ -801,6 +908,12 @@ function installedItem(p) {
   const actions = el('div', 'catalog-actions');
   const open = openControl(p);
   if (open) actions.append(open);
+  if (stored.hidden.includes(p.id)) {
+    const show = el('button', 'btn show', t('layout.show'));
+    show.type = 'button';
+    show.addEventListener('click', () => showId(p.id));
+    actions.append(show);
+  }
   const name = pick(p.name);
   const verb = p.disabled ? 'enable' : 'disable';
   actions.append(
@@ -980,6 +1093,7 @@ async function init() {
   document.addEventListener('drop', onDrop);
   $('catalog-search').addEventListener('input', filterCatalog);
   $('layout-undo').addEventListener('click', undoLayout);
+  $('layout-reset').addEventListener('click', resetLayout);
   $('refresh').addEventListener('click', async () => {
     try {
       const resp = await fetch('/api/cards/refresh', { method: 'POST' });
@@ -1017,6 +1131,7 @@ async function init() {
   });
   await setLang(initialLang(), false);
   await loadPlugins();
+  await loadLayout();
   addEventListener('hashchange', route);
   route();
   refreshStatus();
