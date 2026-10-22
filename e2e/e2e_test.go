@@ -682,3 +682,35 @@ func TestASlowCardSaysItIsLoadingAndThenShowsItsValue(t *testing.T) {
 		t.Errorf("value %q, want late", got)
 	}
 }
+
+// A row without thresholds of its own has not been judged, so it does not
+// take the colour of its card.
+func TestARowWithoutThresholdsDoesNotTakeItsCardsColour(t *testing.T) {
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"waiting": 72, "workers": 3}`)
+	}))
+	t.Cleanup(svc.Close)
+	dir := t.TempDir()
+	writePlugin(t, dir, "queue", fmt.Sprintf(`schema: 1
+name: Queue
+card:
+  http: {url: '%s'}
+  value: waiting
+  warn: {above: 50}
+  rows:
+    - {name: Judged, value: waiting, warn: {above: 50}}
+    - {name: Plain, value: workers}
+`, svc.URL))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="queue"] .row`)))
+	dots, err := chromedp.Run(ctx, chromedp.Evaluate[[]string](
+		`[...document.querySelectorAll('.card[data-id="queue"] .row-dot')].map(d => getComputedStyle(d).backgroundColor)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dots) != 2 || dots[0] == dots[1] {
+		t.Errorf("row dots %q: the row without thresholds has the colour of the yellow one", dots)
+	}
+}

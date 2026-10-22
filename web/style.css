@@ -210,8 +210,13 @@ h1 {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--status, var(--line));
+  background: var(--line);
 }
+
+/* Only a row or item with a status of its own is coloured: --status is
+   inherited, and a row without thresholds would take its card's. */
+.row[data-status] .row-dot,
+.detail-item[data-status] .row-dot { background: var(--status); }
 
 .row-name { flex: 1; color: var(--muted); }
 
