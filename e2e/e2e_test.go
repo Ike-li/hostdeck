@@ -742,3 +742,39 @@ func TestAnEmptyOverviewSaysWhichExampleToCopy(t *testing.T) {
 		}
 	}
 }
+
+// A clearing the service's port refuses, here because the token was tampered
+// with, says that it failed instead of looking done.
+func TestARefusedClearingSaysItFailed(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "b", fmt.Sprintf(storagePlugin, "B", storageService(t, "b")))
+	console := startConsole(t, dir)
+	ctx := openBrowser(t, "en-US,en;q=0.9")
+
+	do(t, ctx,
+		chromedp.Navigate(console+"#/b"),
+		chromedp.WaitVisible(chromedp.Search(`//span[@id="service-name" and text()="B"]`)),
+	)
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`
+		const realFetch = window.fetch;
+		window.fetch = async (url, opts) => {
+			const resp = await realFetch(url, opts);
+			if (!String(url).startsWith('/api/clear/')) return resp;
+			const { url: clearURL } = await resp.json();
+			return new Response(JSON.stringify({ url: clearURL.replace(/token=[^&]*/, 'token=forged') }));
+		};
+	`)); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS("#service-clear")))
+	time.Sleep(200 * time.Millisecond)
+	do(t, ctx, chromedp.Click(chromedp.CSS("#service-clear")))
+	note, err := chromedp.Run(ctx, chromedp.Poll[string](
+		`(() => { const n = document.getElementById('clear-note'); return !n.hidden && n.textContent.startsWith('Could not') && n.textContent; })()`,
+		chromedp.WithPollingTimeout(10*time.Second),
+	))
+	if err != nil {
+		t.Fatalf("no failure shown after a refused clearing: %v; note %q", err, text(t, ctx, "#clear-note"))
+	}
+	t.Logf("note: %s", note)
+}

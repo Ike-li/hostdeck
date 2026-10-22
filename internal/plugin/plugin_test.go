@@ -253,6 +253,8 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 		{"schema: 1\nname: Demo\ncard: {exec: {}}\n", "card.exec.command"},
 		{"schema: 1\nname: Demo\ncard: {exec: {command: [sh, card.sh]}, value: status}\n", "card.value"},
 		{"schema: 1\nname: Demo\ncard: {http: {}, value: status}\n", "card.http.url"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: '127.0.0.1:8080/health'}, value: status}\n", "card.http.url"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: 'ftp://127.0.0.1/x'}, value: status}\n", "card.http.url"},
 		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}}\n", "card.value"},
 		{"schema: 1\nname: {fr: Démo}\n" + card, `"fr"`},
 		{"schema: 1\nname: Demo\ncard: {interval: soon, http: {url: 'http://127.0.0.1:3000/'}, value: v}\n", "card.interval"},

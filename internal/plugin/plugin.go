@@ -353,6 +353,11 @@ func (m manifest) validate() error {
 	if err := checkEnv("card.http.url", c.HTTP.URL); err != nil {
 		return err
 	}
+	// Checked with the references left unfilled, so that no value reaches
+	// the message.
+	if checkURL("card.http.url", envRef.ReplaceAllString(c.HTTP.URL, "env")) != nil {
+		return fmt.Errorf("card.http.url must be an http or https URL, not %q", c.HTTP.URL)
+	}
 	for name, v := range c.HTTP.Headers {
 		if err := checkEnv("card.http.headers."+name, v); err != nil {
 			return err

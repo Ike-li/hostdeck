@@ -57,11 +57,11 @@ function pick(text) {
 }
 
 // An error from the backend is worded here from its code; an unknown code
-// shows the backend's own detail.
+// shows the backend's own detail, or the code when there is none.
 function explain(error) {
   if (error.code === 'reported') return pick(error.text);
   const key = `error.${error.code}`;
-  return key in dict ? t(key, { detail: error.detail }) : error.detail;
+  return key in dict ? t(key, { detail: error.detail }) : error.detail ?? error.code;
 }
 
 async function getJSON(url) {
@@ -378,6 +378,24 @@ function disarmClear() {
   clearArmed = null;
 }
 
+// cleared opens url in frame and says whether the page there confirmed the
+// clearing. A refusal loads too, so loading alone does not say so.
+const cleared = (frame, url) =>
+  new Promise((resolve) => {
+    let timer;
+    const done = (ok) => {
+      removeEventListener('message', onMessage);
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const onMessage = (e) => {
+      if (e.source === frame.contentWindow && e.data === 'hostdeck:cleared') done(true);
+    };
+    addEventListener('message', onMessage);
+    frame.addEventListener('load', () => (timer = setTimeout(() => done(false), 2000)), { once: true });
+    frame.src = url;
+  });
+
 const navigated = (frame, src) =>
   new Promise((resolve) => {
     frame.addEventListener('load', resolve, { once: true });
@@ -401,9 +419,10 @@ async function clearService(p) {
     const helper = el('iframe');
     helper.hidden = true;
     document.body.append(helper);
-    await navigated(helper, url);
+    const ok = await cleared(helper, url);
     helper.remove();
     if (frame) frame.contentWindow.history.back();
+    if (!ok) throw new Error(t('service.clear.unconfirmed'));
   } catch (e) {
     clearFailure = e.message;
   }

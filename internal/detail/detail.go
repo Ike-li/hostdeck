@@ -13,13 +13,13 @@ import (
 	"github.com/Ike-li/hostdeck/internal/run"
 )
 
-const (
-	// ReadTimeout bounds the detail command. Windows PowerShell can take many
-	// seconds to start for the first time.
-	ReadTimeout = 30 * time.Second
-	// ActTimeout bounds an action; restarting something takes longer.
-	ActTimeout = 30 * time.Second
-)
+// ReadTimeout bounds the detail command. Windows PowerShell can take many
+// seconds to start for the first time.
+const ReadTimeout = 30 * time.Second
+
+// ActTimeout bounds an action, which runs to the end even when the page that
+// asked for it goes away. Tests shorten it.
+var ActTimeout = 30 * time.Second
 
 // View is a detail page as the page receives it.
 type View struct {
@@ -69,10 +69,10 @@ func Read(ctx context.Context, p plugin.Plugin) View {
 
 func check(items []Item) error {
 	var ids []string
-	for _, it := range items {
+	for i, it := range items {
 		switch {
 		case it.ID == "":
-			return fmt.Errorf("item %q has no id", it.Name.All)
+			return fmt.Errorf("item %d has no id", i+1)
 		case slices.Contains(ids, it.ID):
 			return fmt.Errorf("two items have the id %q", it.ID)
 		case !card.ValidStatus(it.Status):
@@ -104,7 +104,9 @@ func Act(ctx context.Context, p plugin.Plugin, item, action string) (plugin.Text
 	case !v.offers(item, action):
 		return plugin.Text{}, &card.Error{Code: "not_offered", Detail: fmt.Sprintf("%s on %s", action, item)}
 	}
-	ctx, cancel := context.WithTimeout(ctx, ActTimeout)
+	// The page may be reloaded or closed while the action runs, and an action
+	// such as a restart, stopped halfway, could leave a service down.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ActTimeout)
 	defer cancel()
 	out, err := run.Output(ctx, p.Dir, append(slices.Clone(p.Actions.Exec.Args()), action, item))
 	if err != nil {

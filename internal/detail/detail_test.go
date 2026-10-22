@@ -15,7 +15,8 @@ import (
 
 // With HOSTDECK_FAKE_DETAIL set, the test binary plays a plugin's commands:
 // "print <text>", "act <file> <text> <action> <item>", which records the
-// action in file and prints text, "fail" and "hang".
+// action in file and prints text, "slow-act", which notes in file.started
+// that it started and records the action a second later, "fail" and "hang".
 func TestMain(m *testing.M) {
 	if os.Getenv("HOSTDECK_FAKE_DETAIL") == "" {
 		os.Exit(m.Run())
@@ -23,6 +24,10 @@ func TestMain(m *testing.M) {
 	switch args := os.Args[1:]; args[0] {
 	case "print":
 		fmt.Print(args[1])
+	case "slow-act":
+		os.WriteFile(args[1]+".started", nil, 0o644)
+		time.Sleep(time.Second)
+		os.WriteFile(args[1], []byte(args[3]+" "+args[4]), 0o644)
 	case "act":
 		os.WriteFile(args[1], []byte(args[3]+" "+args[4]), 0o644)
 		fmt.Print(args[2])
@@ -79,7 +84,7 @@ func TestADetailListsTheItemsItsCommandPrints(t *testing.T) {
 func TestABrokenDetailSaysWhy(t *testing.T) {
 	for _, tc := range []struct{ printed, code, mention string }{
 		{`{"items": [{"id": "a", "name": "A", "status": "purple"}]}`, "command_output", "purple"},
-		{`{"items": [{"name": "A"}]}`, "command_output", "id"},
+		{`{"items": [{"id": "a", "name": "A"}, {"name": {"en": "B"}}]}`, "command_output", "item 2 has no id"},
 		{`{"items": [{"id": "a", "name": "A"}, {"id": "a", "name": "B"}]}`, "command_output", `"a"`},
 		{`{"items": [{"id": "a", "name": "A", "actions": [{"label": "Go"}]}]}`, "command_output", "action"},
 		{`{"error": "no services"}`, "reported", ""},
@@ -141,9 +146,32 @@ func TestAFailingOrHungActionSaysWhy(t *testing.T) {
 	}
 
 	p.Actions.Exec.Command = []string{os.Args[0], "hang"}
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	if _, err := Act(ctx, p, "svc", "restart"); err == nil || err.Code != "command_timeout" {
+	defer func(was time.Duration) { ActTimeout = was }(ActTimeout)
+	ActTimeout = 500 * time.Millisecond
+	if _, err := Act(context.Background(), p, "svc", "restart"); err == nil || err.Code != "command_timeout" {
 		t.Errorf("hung action: %+v", err)
+	}
+}
+
+// The page asking for an action may be closed or reloaded while the action
+// runs; a restart stopped halfway could leave the service down.
+func TestAnActionFinishesWhenItsRequestGoesAway(t *testing.T) {
+	p, ran := fakePlugin(t, items, "")
+	p.Actions.Exec.Command[1] = "slow-act"
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for {
+			if _, err := os.Stat(ran + ".started"); err == nil {
+				cancel()
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	Act(ctx, p, "svc", "restart")
+
+	if got, err := os.ReadFile(ran); err != nil || string(got) != "restart svc" {
+		t.Errorf("the action did not finish: %q, %v", got, err)
 	}
 }

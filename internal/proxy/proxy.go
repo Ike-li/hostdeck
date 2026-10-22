@@ -3,9 +3,9 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
-	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -56,7 +56,7 @@ func New(target *url.URL, consoleOrigin string, redeem func(token string) bool) 
 	}
 	return local.Only(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == ClearPath {
-			clearSiteData(w, r, redeem)
+			clearSiteData(w, r, redeem, consoleOrigin)
 			return
 		}
 		rp.ServeHTTP(w, r)
@@ -67,8 +67,10 @@ func New(target *url.URL, consoleOrigin string, redeem func(token string) bool) 
 // service's origin. Cookies stay: the browser keeps them per host, not per
 // port, so clearing them would sign the user out of every service. A token
 // from the console is required, because every other page on 127.0.0.1 is the
-// same site and could otherwise wipe a service's data with a link.
-func clearSiteData(w http.ResponseWriter, r *http.Request, redeem func(string) bool) {
+// same site and could otherwise wipe a service's data with a link. The page
+// tells the console that it cleared: a refusal also loads, so loading alone
+// does not say so.
+func clearSiteData(w http.ResponseWriter, r *http.Request, redeem func(string) bool, consoleOrigin string) {
 	if r.Method != http.MethodGet || !redeem(r.URL.Query().Get("token")) {
 		http.Error(w, "clearing needs a token from the console", http.StatusForbidden)
 		return
@@ -76,7 +78,8 @@ func clearSiteData(w http.ResponseWriter, r *http.Request, redeem func(string) b
 	w.Header().Set("Clear-Site-Data", `"cache", "storage"`)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, "<!doctype html><title>Cleared</title>")
+	origin, _ := json.Marshal(consoleOrigin)
+	fmt.Fprintf(w, "<!doctype html><title>Cleared</title><script>parent.postMessage('hostdeck:cleared', %s)</script>", origin)
 }
 
 func dropDirective(policy, name string) string {
