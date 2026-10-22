@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -28,5 +30,33 @@ func TestTheFolderComesFromTheFlagThenTheEnvironment(t *testing.T) {
 	}
 	if got, _ := configDir(""); got != "env-dir" {
 		t.Errorf("without --dir: got %q, want env-dir", got)
+	}
+}
+
+// exampleAt makes <dir>/examples/disk/plugin.yaml.
+func exampleAt(t *testing.T, dir string) string {
+	t.Helper()
+	examples := filepath.Join(dir, "examples")
+	if err := os.MkdirAll(filepath.Join(examples, "disk"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(examples, "disk", "plugin.yaml"), []byte("schema: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return examples
+}
+
+func TestTheExamplesNextToTheProgramComeBeforeTheWorkingDirectorys(t *testing.T) {
+	programDir, workDir := t.TempDir(), t.TempDir()
+	if got := examplesDir(programDir, workDir); got != "" {
+		t.Errorf("no examples anywhere: got %q, want none", got)
+	}
+	inWorkDir := exampleAt(t, workDir)
+	if got := examplesDir(programDir, workDir); got != inWorkDir {
+		t.Errorf("examples in the working directory: got %q, want %q", got, inWorkDir)
+	}
+	nextToProgram := exampleAt(t, programDir)
+	if got := examplesDir(programDir, workDir); got != nextToProgram {
+		t.Errorf("examples in both: got %q, want the ones next to the program, %q", got, nextToProgram)
 	}
 }

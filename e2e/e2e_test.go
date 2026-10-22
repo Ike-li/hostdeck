@@ -63,7 +63,15 @@ var consoleURL = regexp.MustCompile(`^hostdeck: (http://127\.0\.0\.1:\d+)`)
 // the console's URL. What hostdeck logged is shown if the test fails.
 func startConsole(t *testing.T, dir string) string {
 	t.Helper()
+	return startConsoleIn(t, dir, "")
+}
+
+// startConsoleIn is startConsole with hostdeck's working directory set to
+// workDir, as when it is started with go run from there.
+func startConsoleIn(t *testing.T, dir, workDir string) string {
+	t.Helper()
 	cmd := exec.Command(binary, "--addr", "127.0.0.1:0", "--dir", dir)
+	cmd.Dir = workDir
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -712,5 +720,25 @@ card:
 	}
 	if len(dots) != 2 || dots[0] == dots[1] {
 		t.Errorf("row dots %q: the row without thresholds has the colour of the yellow one", dots)
+	}
+}
+
+// Started from the source folder, hostdeck finds the examples there and says
+// which one to copy where, and that it reads plugins only when it starts.
+func TestAnEmptyOverviewSaysWhichExampleToCopy(t *testing.T) {
+	root, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	url := startConsoleIn(t, dir, root)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS("#empty")))
+	got := text(t, ctx, "#empty")
+	for _, want := range []string{filepath.Join(dir, "plugins"), filepath.Join(root, "examples"), "disk", "重启"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("empty overview %q does not mention %q", got, want)
+		}
 	}
 }

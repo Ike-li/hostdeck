@@ -30,6 +30,8 @@ type Config struct {
 	Plugins   []plugin.Plugin
 	Broken    []plugin.Broken // shown as error cards
 	PluginDir string
+	// ExamplesDir is where the example plugins are, if hostdeck found them.
+	ExamplesDir string
 	// Served holds, by plugin ID, where each embedded service is served.
 	Served map[string]Served
 	Tokens *onetime.Tokens
@@ -152,9 +154,10 @@ func (cfg Config) serveCards(cache *card.Cache) http.HandlerFunc {
 			cards = append(cards, card.View{ID: b.ID, Name: plugin.Text{All: b.ID}, Error: &card.Error{Code: "bad_manifest", Detail: b.Err.Error()}})
 		}
 		writeJSON(w, struct {
-			PluginDir string      `json:"pluginDir"`
-			Cards     []card.View `json:"cards"`
-		}{cfg.PluginDir, cards})
+			PluginDir   string      `json:"pluginDir"`
+			ExamplesDir string      `json:"examplesDir,omitempty"`
+			Cards       []card.View `json:"cards"`
+		}{cfg.PluginDir, cfg.ExamplesDir, cards})
 	}
 }
 

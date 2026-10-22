@@ -62,15 +62,37 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	var programDir string
+	if exe, err := os.Executable(); err == nil {
+		if exe, err := filepath.EvalSymlinks(exe); err == nil {
+			programDir = filepath.Dir(exe)
+		}
+	}
+	workDir, _ := os.Getwd()
 	log.Printf("hostdeck: http://%s/ (%d plugins in %s)", ln.Addr(), len(plugins), pluginDir)
 	return http.Serve(ln, console.Handler(console.Config{
-		Origin:    fmt.Sprintf("http://127.0.0.1:%d", consolePort),
-		Plugins:   plugins,
-		Broken:    broken,
-		PluginDir: pluginDir,
-		Served:    served,
-		Tokens:    tokens,
+		Origin:      fmt.Sprintf("http://127.0.0.1:%d", consolePort),
+		Plugins:     plugins,
+		Broken:      broken,
+		PluginDir:   pluginDir,
+		ExamplesDir: examplesDir(programDir, workDir),
+		Served:      served,
+		Tokens:      tokens,
 	}))
+}
+
+// examplesDir is the examples folder that came with hostdeck: next to the
+// program when it is unpacked from a release archive, else in the working
+// directory when it runs from source. It is "" when neither holds the disk
+// example, which the empty overview suggests copying.
+func examplesDir(programDir, workDir string) string {
+	for _, dir := range []string{programDir, workDir} {
+		examples := filepath.Join(dir, "examples")
+		if _, err := os.Stat(filepath.Join(examples, "disk", "plugin.yaml")); err == nil {
+			return examples
+		}
+	}
+	return ""
 }
 
 // serveProxies re-serves each plugin's proxied page on a port of its own, from

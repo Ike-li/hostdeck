@@ -172,7 +172,10 @@ function renderOverview() {
   document.title = 'hostdeck';
   const cards = overview ? overview.cards : [];
   $('empty').hidden = !overview || cards.length > 0;
-  if (overview) $('empty').textContent = t('overview.empty', { dir: overview.pluginDir });
+  if (overview) {
+    const { pluginDir: dir, examplesDir: examples } = overview;
+    $('empty').textContent = examples ? t('overview.empty.examples', { dir, examples }) : t('overview.empty', { dir });
+  }
   $('cards').replaceChildren(...cards.map(cardElement));
 }
 

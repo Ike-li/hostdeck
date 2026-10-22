@@ -1,0 +1,31 @@
+version: 2
+
+project_name: hostdeck
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos: [darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: [-s -w]
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    wrap_in_directory: true
+    # The examples sit next to the program, where hostdeck looks for them to
+    # suggest one on an empty overview.
+    files:
+      - README.md
+      - README.zh-CN.md
+      - LICENSE
+      - examples/*/*
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  draft: true

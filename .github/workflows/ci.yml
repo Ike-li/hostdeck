@@ -39,3 +39,33 @@ jobs:
             export HOSTDECK_BROWSER='/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
           fi
           go test -count=1 ./e2e/
+
+  # Builds the release archives without publishing them, and checks that each
+  # carries the examples next to the program.
+  archives:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: v2.18.2
+          args: release --snapshot --clean
+      - name: the archives carry the examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          archives=(dist/*.tar.gz dist/*.zip)
+          if [ "${#archives[@]}" -ne 4 ]; then echo "want 4 archives, got: ${archives[*]}"; exit 1; fi
+          for a in "${archives[@]}"; do
+            case "$a" in
+              *.zip) list=$(unzip -Z1 "$a") ;;
+              *) list=$(tar -tzf "$a") ;;
+            esac
+            for want in '/hostdeck(\.exe)?' /LICENSE /examples/disk/plugin.yaml /examples/disk/card.ps1 /examples/grafana/plugin.yaml; do
+              grep -qE -- "^[^/]+$want\$" <<<"$list" || { echo "$a has no $want"; exit 1; }
+            done
+            if grep -q examples_test.go <<<"$list"; then echo "$a carries examples_test.go"; exit 1; fi
+          done
