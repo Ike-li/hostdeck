@@ -5,5 +5,10 @@
   "overview.title": "总览",
   "overview.empty": "还没有卡片。把插件文件夹放进 {dir}。",
   "error.backend": "连不上 hostdeck 后端：{detail}",
-  "error.fetch_failed": "取不到数值：{detail}"
+  "error.fetch_failed": "取不到数值：{detail}",
+  "service.reload": "刷新",
+  "service.open": "新标签打开",
+  "status.up": "在线",
+  "status.down": "没有响应",
+  "error.port_unavailable": "这个服务没拿到自己的端口：{detail}"
 }

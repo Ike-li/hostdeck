@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,7 +28,15 @@ type Plugin struct {
 	ID   string `yaml:"-"`
 	Name Text   `yaml:"name"`
 	Icon string `yaml:"icon"`
+	Page *Page  `yaml:"page"`
 	Card *Card  `yaml:"card"`
+}
+
+// Page is what the plugin's sidebar entry opens: Proxy is a local web UI that
+// the console embeds, Link opens in a new tab.
+type Page struct {
+	Proxy string `yaml:"proxy"`
+	Link  string `yaml:"link"`
 }
 
 // Card is shown on the overview. Value is a gjson path into the JSON that
@@ -134,14 +143,43 @@ func (m manifest) validate() error {
 		return fmt.Errorf("schema %d is not one this hostdeck reads; it reads schema: %d", m.Schema, Schema)
 	case m.Name.IsZero():
 		return errors.New("name is required")
-	case m.Card == nil:
-		return errors.New("card is required")
+	case m.Page == nil && m.Card == nil:
+		return errors.New("page or card is required")
+	}
+	if m.Page != nil {
+		if err := m.Page.validate(); err != nil {
+			return err
+		}
+	}
+	if m.Card == nil {
+		return nil
+	}
+	switch {
 	case m.Card.HTTP == nil:
 		return errors.New("card.http is required")
 	case m.Card.HTTP.URL == "":
 		return errors.New("card.http.url is required")
 	case m.Card.Value == "":
 		return errors.New("card.value is required")
+	}
+	return nil
+}
+
+func (pg *Page) validate() error {
+	switch {
+	case (pg.Proxy == "") == (pg.Link == ""):
+		return errors.New("page needs exactly one of page.proxy or page.link")
+	case pg.Proxy != "":
+		return checkURL("page.proxy", pg.Proxy)
+	default:
+		return checkURL("page.link", pg.Link)
+	}
+}
+
+func checkURL(field, s string) error {
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("%s must be an http or https URL, not %q", field, s)
 	}
 	return nil
 }

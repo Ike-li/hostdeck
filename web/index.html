@@ -12,19 +12,32 @@
 <div class="app">
   <aside class="sidebar">
     <a class="brand" href="#/">hostdeck</a>
-    <nav data-i18n-label="nav.label">
-      <a class="nav-item active" href="#/" data-i18n="nav.overview"></a>
-    </nav>
+    <nav id="nav" data-i18n-label="nav.label"></nav>
     <div class="lang" role="group" data-i18n-label="lang.label">
       <button type="button" data-lang="en" lang="en">English</button>
       <button type="button" data-lang="zh-CN" lang="zh-CN">简体中文</button>
     </div>
   </aside>
   <main>
-    <h1 data-i18n="overview.title"></h1>
     <p id="banner" class="banner" hidden></p>
-    <p id="empty" class="empty" hidden></p>
-    <div id="cards" class="cards"></div>
+    <section id="overview" class="overview">
+      <h1 data-i18n="overview.title"></h1>
+      <p id="empty" class="empty" hidden></p>
+      <div id="cards" class="cards"></div>
+    </section>
+    <section id="service" class="service" hidden>
+      <header class="service-bar">
+        <span class="service-title">
+          <span id="service-icon" class="icon"></span>
+          <span id="service-name"></span>
+          <span id="service-dot" class="dot"></span>
+        </span>
+        <button id="service-reload" class="btn" type="button" data-i18n="service.reload"></button>
+        <a id="service-open" class="btn" target="_blank" rel="noopener" data-i18n="service.open"></a>
+      </header>
+      <p id="service-error" class="banner" hidden></p>
+      <div id="frames" class="frames"></div>
+    </section>
   </main>
 </div>
 </body>

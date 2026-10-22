@@ -1,5 +1,7 @@
 const LANGS = ['en', 'zh-CN'];
 const LANG_KEY = 'hostdeck.lang';
+const STATUS_EVERY = 15_000;
+const IDLE_RELEASE = 10 * 60_000; // a page switched away from this long is unloaded, and loads again on its next visit
 
 const $ = (id) => document.getElementById(id);
 
@@ -12,8 +14,13 @@ function el(tag, className, text) {
 
 let lang = 'en';
 let dict = {};
+let plugins = []; // the sidebar entries
+let status = {}; // plugin id -> up | down
+let current = null; // the open sidebar entry, or null on the overview
 let overview = null; // the last answer of /api/cards
-let failure = null; // why /api/cards could not be read
+let failure = null; // why the backend could not be read
+const frames = new Map(); // plugin id -> iframe, kept so each page keeps its state
+const hiddenSince = new Map(); // plugin id -> when its page was switched away from
 
 // A choice made on this page wins; otherwise the first of the browser's
 // languages that the console has.
@@ -43,9 +50,21 @@ function pick(text) {
   return text[lang] ?? text.en ?? Object.values(text)[0] ?? '';
 }
 
+// An error from the backend is worded here from its code; an unknown code
+// shows the backend's own detail.
+function explain(error) {
+  const key = `error.${error.code}`;
+  return key in dict ? t(key, { detail: error.detail }) : error.detail;
+}
+
+async function getJSON(url) {
+  const resp = await fetch(url, { cache: 'no-store' });
+  if (!resp.ok) throw new Error(`${url}: HTTP ${resp.status}`);
+  return resp.json();
+}
+
 async function setLang(next, remember) {
-  const resp = await fetch(`/i18n/${next}.json`);
-  dict = await resp.json();
+  dict = await getJSON(`/i18n/${next}.json`);
   lang = next;
   document.documentElement.lang = next;
   if (remember) {
@@ -58,6 +77,24 @@ async function setLang(next, remember) {
   render();
 }
 
+// The address names the open entry: #/<id>. Anything else, a malformed
+// address included, is the overview.
+function route() {
+  let id = '';
+  try {
+    id = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
+  } catch {
+    // a malformed escape: show the overview
+  }
+  current = plugins.find((p) => p.id === id && p.type === 'proxy') || null;
+  for (const frameId of frames.keys()) {
+    if (current && frameId === current.id) hiddenSince.delete(frameId);
+    else if (!hiddenSince.has(frameId)) hiddenSince.set(frameId, Date.now());
+  }
+  if (!current) loadCards();
+  render();
+}
+
 function render() {
   for (const e of document.querySelectorAll('[data-i18n]')) e.textContent = t(e.dataset.i18n);
   for (const e of document.querySelectorAll('[data-i18n-label]')) e.setAttribute('aria-label', t(e.dataset.i18nLabel));
@@ -66,6 +103,52 @@ function render() {
   $('banner').hidden = !failure;
   if (failure) $('banner').textContent = t('error.backend', { detail: failure });
 
+  renderNav();
+  $('overview').hidden = !!current;
+  $('service').hidden = !current;
+  if (current) renderService(current);
+  else renderOverview();
+}
+
+function renderNav() {
+  const nav = $('nav');
+  const overviewItem = el('a', 'nav-item', t('nav.overview'));
+  overviewItem.href = '#/';
+  overviewItem.classList.toggle('active', !current);
+  nav.replaceChildren(overviewItem, ...plugins.map(navItem));
+}
+
+function navItem(p) {
+  const a = el('a', 'nav-item');
+  a.dataset.id = p.id;
+  a.append(el('span', 'icon', iconOf(p)), el('span', 'nav-name', pick(p.name)));
+  if (p.type === 'link') {
+    a.href = p.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.append(el('span', 'nav-ext', '↗'));
+  } else {
+    a.href = `#/${encodeURIComponent(p.id)}`;
+    a.classList.toggle('active', current?.id === p.id);
+    a.append(dot(p));
+  }
+  return a;
+}
+
+const iconOf = (p) => p.icon || pick(p.name).slice(0, 1);
+
+function dot(p) {
+  const d = el('span', 'dot');
+  const s = p.error ? 'down' : status[p.id];
+  if (s) {
+    d.dataset.status = s;
+    d.title = t(`status.${s}`);
+  }
+  return d;
+}
+
+function renderOverview() {
+  document.title = 'hostdeck';
   const cards = overview ? overview.cards : [];
   $('empty').hidden = !overview || cards.length > 0;
   if (overview) $('empty').textContent = t('overview.empty', { dir: overview.pluginDir });
@@ -76,12 +159,11 @@ function cardElement(c) {
   const card = el('article', 'card');
   card.dataset.id = c.id;
   const head = el('header', 'card-head');
-  head.append(el('span', 'card-icon', c.icon || pick(c.name).slice(0, 1)), el('h2', 'card-name', pick(c.name)));
+  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), el('h2', 'card-name', pick(c.name)));
   card.append(head);
   if (c.error) {
     card.dataset.status = 'error';
-    const key = `error.${c.error.code}`;
-    card.append(el('p', 'card-error', key in dict ? t(key, { detail: c.error.detail }) : c.error.detail));
+    card.append(el('p', 'card-error', explain(c.error)));
     return card;
   }
   const big = el('div', 'card-big');
@@ -90,11 +172,43 @@ function cardElement(c) {
   return card;
 }
 
+function renderService(p) {
+  document.title = `${pick(p.name)} · hostdeck`;
+  $('service-icon').textContent = iconOf(p);
+  $('service-name').textContent = pick(p.name);
+  $('service-dot').replaceWith(Object.assign(dot(p), { id: 'service-dot' }));
+  $('service-error').hidden = !p.error;
+  $('service-reload').hidden = $('service-open').hidden = !!p.error;
+  if (p.error) {
+    $('service-error').textContent = explain(p.error);
+  } else {
+    $('service-open').href = p.url;
+    if (!frames.has(p.id)) {
+      const frame = el('iframe', 'frame');
+      frame.title = pick(p.name);
+      frame.allow = 'clipboard-read; clipboard-write; fullscreen';
+      frame.src = p.url;
+      $('frames').append(frame);
+      frames.set(p.id, frame);
+    }
+  }
+  for (const [id, f] of frames) f.hidden = id !== p.id || !!p.error;
+}
+
+// Removing an iframe frees its memory and closes its connections; the next
+// visit builds a fresh one.
+function releaseIdleFrames() {
+  for (const [id, since] of hiddenSince) {
+    if (Date.now() - since < IDLE_RELEASE) continue;
+    frames.get(id).remove();
+    frames.delete(id);
+    hiddenSince.delete(id);
+  }
+}
+
 async function loadCards() {
   try {
-    const resp = await fetch('/api/cards', { cache: 'no-store' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    overview = await resp.json();
+    overview = await getJSON('/api/cards');
     failure = null;
   } catch (e) {
     failure = e.message;
@@ -102,8 +216,35 @@ async function loadCards() {
   render();
 }
 
-for (const b of document.querySelectorAll('[data-lang]')) {
-  b.addEventListener('click', () => setLang(b.dataset.lang, true));
+async function refreshStatus() {
+  if (document.hidden) return;
+  try {
+    status = await getJSON('/api/status');
+  } catch {
+    return; // the banner of the next failed request says why
+  }
+  render();
 }
-await setLang(initialLang(), false);
-await loadCards();
+
+async function init() {
+  for (const b of document.querySelectorAll('[data-lang]')) {
+    b.addEventListener('click', () => setLang(b.dataset.lang, true));
+  }
+  $('service-reload').addEventListener('click', () => {
+    if (current && frames.has(current.id)) frames.get(current.id).src = current.url;
+  });
+  await setLang(initialLang(), false);
+  try {
+    plugins = await getJSON('/api/plugins');
+  } catch (e) {
+    failure = e.message;
+  }
+  addEventListener('hashchange', route);
+  route();
+  refreshStatus();
+  setInterval(refreshStatus, STATUS_EVERY);
+  setInterval(releaseIdleFrames, 60_000);
+  document.addEventListener('visibilitychange', refreshStatus);
+}
+
+await init();

@@ -7,6 +7,7 @@ package e2e
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,7 +51,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-var consoleURL = regexp.MustCompile(`http://127\.0\.0\.1:\d+`)
+var consoleURL = regexp.MustCompile(`^hostdeck: (http://127\.0\.0\.1:\d+)`)
 
 // startConsole runs hostdeck on a free port with dir as its folder and returns
 // the console's URL. What hostdeck logged is shown if the test fails.
@@ -82,9 +83,9 @@ func startConsole(t *testing.T, dir string) string {
 			mu.Lock()
 			logged.WriteString(sc.Text() + "\n")
 			mu.Unlock()
-			if url := consoleURL.FindString(sc.Text()); url != "" {
+			if m := consoleURL.FindStringSubmatch(sc.Text()); m != nil {
 				select {
-				case found <- url:
+				case found <- m[1]:
 				default:
 				}
 			}
@@ -222,5 +223,149 @@ func TestABrowserInEnglishGetsEnglish(t *testing.T) {
 	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(".card-value")))
 	if title, label := text(t, ctx, "h1"), text(t, ctx, ".card-label"); title != "Overview" || label != "Database" {
 		t.Errorf("title %q, label %q; want Overview, Database", title, label)
+	}
+}
+
+const servicePage = `<!doctype html><title>Service</title><h1 id="svc">Hello from the service</h1>`
+
+// framingRefusingService answers like a web UI that forbids every page to frame it.
+func framingRefusingService(t *testing.T) string {
+	t.Helper()
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, servicePage)
+	}))
+	t.Cleanup(svc.Close)
+	return svc.URL
+}
+
+// page serves html on a port of its own.
+func page(t *testing.T, html string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, html)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+const proxyPlugin = `schema: 1
+name: Service
+icon: S
+page:
+  proxy: %s/
+`
+
+// tryFrameText waits up to wait for the element css inside the iframe frameCSS
+// and returns its text. A frame that is still navigating is tried again.
+func tryFrameText(ctx context.Context, frameCSS, css string, wait time.Duration) (string, bool) {
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) {
+		nodes, err := chromedp.Run(ctx, chromedp.Nodes(chromedp.CSS(frameCSS)))
+		if err != nil || len(nodes) == 0 {
+			continue
+		}
+		text, err := chromedp.Run(ctx, chromedp.Poll[string](
+			fmt.Sprintf("document.querySelector(%q)?.textContent", css),
+			chromedp.WithPollingInFrame(nodes[0]),
+			chromedp.WithPollingTimeout(time.Second),
+		))
+		if err == nil {
+			return text, true
+		}
+	}
+	return "", false
+}
+
+func attrs(t *testing.T, ctx context.Context, css string) map[string]string {
+	t.Helper()
+	a, err := chromedp.Run(ctx, chromedp.Attributes(chromedp.CSS(css)))
+	if err != nil {
+		t.Fatalf("attributes of %s: %v", css, err)
+	}
+	return a
+}
+
+// sidebarURL asks the console where the sidebar entry id opens.
+func sidebarURL(t *testing.T, console, id string) string {
+	t.Helper()
+	resp, err := http.Get(console + "/api/plugins")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var entries []struct{ ID, URL string }
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.ID == id {
+			return e.URL
+		}
+	}
+	t.Fatalf("no sidebar entry %s", id)
+	return ""
+}
+
+func TestAServiceThatForbidsFramingOpensInsideTheConsole(t *testing.T) {
+	dir := t.TempDir()
+	svc := framingRefusingService(t)
+	writePlugin(t, dir, "svc", fmt.Sprintf(proxyPlugin, svc))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en-US,en;q=0.9")
+
+	do(t, ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(chromedp.CSS(`.nav-item[data-id="svc"]`)),
+		chromedp.WaitVisible(chromedp.CSS("#frames iframe")),
+	)
+	if got, ok := tryFrameText(ctx, "#frames iframe", "#svc", 15*time.Second); !ok || got != "Hello from the service" {
+		t.Errorf("inside the console: %q, %v; want the service's page", got, ok)
+	}
+	src, open := attrs(t, ctx, "#frames iframe")["src"], attrs(t, ctx, "#service-open")["href"]
+	if src != open || !strings.HasPrefix(src, "http://127.0.0.1:") || src == svc+"/" {
+		t.Errorf("frame %q, new tab %q; want both on the service's own forwarding port, not %s", src, open, svc)
+	}
+}
+
+func TestOnlyTheConsoleMayFrameAnEmbeddedService(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "svc", fmt.Sprintf(proxyPlugin, framingRefusingService(t)))
+	served := sidebarURL(t, startConsole(t, dir), "svc")
+	// Another page on 127.0.0.1 frames the service and, to show that its
+	// frames can be read at all, a page that allows framing.
+	other := page(t, fmt.Sprintf(`<iframe id="served" src="%s"></iframe><iframe id="plain" src="%s"></iframe>`, served, page(t, servicePage)))
+	ctx := openBrowser(t, "en-US,en;q=0.9")
+
+	do(t, ctx, chromedp.Navigate(other))
+	if _, ok := tryFrameText(ctx, "#plain", "#svc", 15*time.Second); !ok {
+		t.Fatal("could not read a frame that allows framing, so the check below means nothing")
+	}
+	if got, ok := tryFrameText(ctx, "#served", "#svc", 3*time.Second); ok {
+		t.Errorf("another page on 127.0.0.1 framed the service and saw %q", got)
+	}
+}
+
+func TestAMalformedAddressShowsTheOverview(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "svc", fmt.Sprintf(proxyPlugin, framingRefusingService(t)))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en-US,en;q=0.9")
+
+	for _, hash := range []string{"#/%E0%A4%A", "#/no-such-plugin"} {
+		do(t, ctx,
+			chromedp.Navigate("about:blank"),
+			chromedp.Navigate(url+"/"+hash),
+			chromedp.WaitReady(chromedp.CSS(`.nav-item[data-id="svc"]`)),
+		)
+		if title := text(t, ctx, "#overview h1"); title != "Overview" {
+			t.Errorf("%s: overview title %q, want Overview", hash, title)
+		}
+		if _, hidden := attrs(t, ctx, "#service")["hidden"]; !hidden {
+			t.Errorf("%s: the service view is showing", hash)
+		}
 	}
 }

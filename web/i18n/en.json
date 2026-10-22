@@ -5,5 +5,10 @@
   "overview.title": "Overview",
   "overview.empty": "No cards yet. Put plugin folders in {dir}.",
   "error.backend": "Cannot reach the hostdeck backend: {detail}",
-  "error.fetch_failed": "Could not get the value: {detail}"
+  "error.fetch_failed": "Could not get the value: {detail}",
+  "service.reload": "Reload",
+  "service.open": "Open in new tab",
+  "status.up": "Answering",
+  "status.down": "Not answering",
+  "error.port_unavailable": "This service has no port of its own: {detail}"
 }

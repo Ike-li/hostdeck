@@ -53,6 +53,23 @@ card:
 	}
 }
 
+func TestPagePluginsLoadWithoutACard(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "grafana", "schema: 1\nname: Grafana\npage: {proxy: 'http://127.0.0.1:3000/grafana/'}\n")
+	writePlugin(t, root, "wiki", "schema: 1\nname: Wiki\npage: {link: 'https://wiki.example/'}\n")
+	plugins, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Plugin{
+		{ID: "grafana", Name: Text{All: "Grafana"}, Page: &Page{Proxy: "http://127.0.0.1:3000/grafana/"}},
+		{ID: "wiki", Name: Text{All: "Wiki"}, Page: &Page{Link: "https://wiki.example/"}},
+	}
+	if !reflect.DeepEqual(plugins, want) {
+		t.Errorf("got %+v, want %+v", plugins, want)
+	}
+}
+
 func TestAnUnknownFieldIsReportedWithFileLineAndName(t *testing.T) {
 	root := t.TempDir()
 	path := writePlugin(t, root, "demo", `schema: 1
@@ -83,7 +100,11 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 		{"name: Demo\n" + card, "schema"},
 		{"schema: 2\nname: Demo\n" + card, "schema 2"},
 		{"schema: 1\n" + card, "name"},
-		{"schema: 1\nname: Demo\n", "card"},
+		{"schema: 1\nname: Demo\n", "page or card"},
+		{"schema: 1\nname: Demo\npage: {}\n", "page.proxy or page.link"},
+		{"schema: 1\nname: Demo\npage: {proxy: 'http://127.0.0.1:3000/', link: 'http://127.0.0.1:3000/'}\n", "page.proxy or page.link"},
+		{"schema: 1\nname: Demo\npage: {proxy: '127.0.0.1:3000'}\n", "page.proxy"},
+		{"schema: 1\nname: Demo\npage: {link: 'ftp://files.example/'}\n", "page.link"},
 		{"schema: 1\nname: Demo\ncard: {value: status}\n", "card.http"},
 		{"schema: 1\nname: Demo\ncard: {http: {}, value: status}\n", "card.http.url"},
 		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}}\n", "card.value"},

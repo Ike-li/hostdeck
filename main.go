@@ -8,11 +8,14 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 
 	"github.com/Ike-li/hostdeck/internal/console"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/ports"
+	"github.com/Ike-li/hostdeck/internal/proxy"
 )
 
 func main() {
@@ -48,8 +51,51 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	consolePort := ln.Addr().(*net.TCPAddr).Port
+	served, err := serveProxies(plugins, filepath.Join(dir, "ports.json"), consolePort)
+	if err != nil {
+		return err
+	}
 	log.Printf("hostdeck: http://%s/ (%d plugins in %s)", ln.Addr(), len(plugins), pluginDir)
-	return http.Serve(ln, console.Handler(plugins, pluginDir))
+	return http.Serve(ln, console.Handler(console.Config{Plugins: plugins, PluginDir: pluginDir, Served: served}))
+}
+
+// serveProxies re-serves each plugin's proxied page on a port of its own, from
+// the port after the console's up, and says where the browser finds each one.
+func serveProxies(plugins []plugin.Plugin, portsFile string, consolePort int) (map[string]console.Served, error) {
+	var ids []string
+	for _, p := range plugins {
+		if p.Page != nil && p.Page.Proxy != "" {
+			ids = append(ids, p.ID)
+		}
+	}
+	opened, err := ports.Listen(portsFile, ids, consolePort+1)
+	if err != nil {
+		return nil, err
+	}
+	consoleOrigin := fmt.Sprintf("http://127.0.0.1:%d", consolePort)
+	served := make(map[string]console.Served, len(ids))
+	for _, p := range plugins {
+		o, ok := opened[p.ID]
+		if !ok {
+			continue
+		}
+		if o.Err != nil {
+			log.Printf("%s: %v", p.ID, o.Err)
+			served[p.ID] = console.Served{Err: o.Err}
+			continue
+		}
+		target, err := url.Parse(p.Page.Proxy)
+		if err != nil {
+			return nil, err
+		}
+		served[p.ID] = console.Served{URL: fmt.Sprintf("http://127.0.0.1:%d%s", o.Port, target.RequestURI())}
+		log.Printf("%s: http://127.0.0.1:%d/ -> %s", p.ID, o.Port, p.Page.Proxy)
+		go func() {
+			log.Printf("%s: %v", p.ID, http.Serve(o.Listener, proxy.New(target, consoleOrigin)))
+		}()
+	}
+	return served, nil
 }
 
 // checkAddr allows 127.0.0.1 only. Anything else either reaches beyond this
