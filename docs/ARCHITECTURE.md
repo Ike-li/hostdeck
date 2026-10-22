@@ -48,7 +48,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 
 | Package | What it does |
 | --- | --- |
-| `main` | Flags, the folder, startup, and starting one proxy per embedded service. |
+| `main` | Flags, the folder, startup, and one proxy per embedded service, started and stopped as the plugins change. |
 | `internal/plugin` | Reads and checks `plugin.yaml`: unknown fields are errors with their line. Holds the types every other package uses: `Text` (one string, or one per language), `Scalar`, thresholds, `${env:NAME}` expansion. |
 | `internal/card` | Turns a plugin's card into what the overview shows. `http` cards: GET, pick values with gjson paths, colour them with thresholds, hide secrets in errors. `exec` cards: run the program and read the card it prints. `Cache` keeps each card for its interval and answers "pending" when a card takes longer than the overview waits. |
 | `internal/detail` | Runs a plugin's detail program and its actions. Before an action runs, the detail is read again, and the action must still be offered for that item. |
@@ -57,6 +57,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache address itself. |
 | `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |
 | `internal/layout` | Remembers in `layout.json` the order of the sidebar and of the cards, and which cards are wide. |
+| `internal/atomicfile` | Writes `layout.json` and `ports.json` whole or not at all: a temporary file renamed over the old one. On Windows, a rename refused because another program has the file open is tried again for up to 2 s. |
 | `internal/local` | Lets through only requests addressed to `127.0.0.1`; `localhost` is redirected there. |
 | `internal/onetime` | One-time tokens for clearing a service's cache. |
 | `internal/catalog` | For the plugins page: lists the plugins built into hostdeck and copies one into the plugins folder; lists the installed plugins and disables or enables one by renaming its folder. |
@@ -114,7 +115,7 @@ Plugins themselves are trusted: they are folders you put there, and they run wit
 
 ## Platforms
 
-Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `dir_windows.go`) and how process trees end (`internal/run/tree_unix.go`, `tree_windows.go`). Windows PowerShell 5.1 can take many seconds to start the first time. This is why cards may come back pending, and why detail programs get 30 s.
+Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `dir_windows.go`) how process trees end (`internal/run/tree_unix.go`, `tree_windows.go`), and how a file is replaced (`internal/atomicfile/replace_unix.go`, `replace_windows.go`). Windows PowerShell 5.1 can take many seconds to start the first time. This is why cards may come back pending, and why detail programs get 30 s.
 
 ## Tests and CI
 

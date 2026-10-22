@@ -48,7 +48,7 @@ flowchart LR
 
 | 包 | 做什么 |
 | --- | --- |
-| `main` | 命令行参数、文件夹、启动，以及给每个内嵌服务开一个代理。 |
+| `main` | 命令行参数、文件夹、启动，以及给每个内嵌服务开一个代理，插件变化时随之启停。 |
 | `internal/plugin` | 读取并检查 `plugin.yaml`：未知字段报错并给出行号。也定义其他包共用的类型：`Text`（一个字符串，或每种语言一个）、`Scalar`、阈值，以及 `${env:NAME}` 的展开。 |
 | `internal/card` | 把插件的卡片变成总览上显示的样子。`http` 卡片：发 GET 请求，用 gjson 路径取值，按阈值上色，报错里隐去令牌。`exec` 卡片：运行程序，读取它打印的卡片。`Cache` 按间隔保留每张卡片；超过总览等待时间还没读完的，先返回「读取中」。 |
 | `internal/detail` | 运行插件的详情程序和操作。执行操作前会重新读一次详情，这个操作仍然出现在那个条目上才执行。 |
@@ -57,6 +57,7 @@ flowchart LR
 | `internal/proxy` | 在单独的端口上重新提供一个本机网页界面，让控制台可以把它嵌进来。清除缓存的地址由它自己应答。 |
 | `internal/ports` | 给每个内嵌服务分配转发端口，并记在 `ports.json` 里。 |
 | `internal/layout` | 把侧栏和卡片的顺序、哪些卡片加宽，记在 `layout.json` 里。 |
+| `internal/atomicfile` | 写 `layout.json` 和 `ports.json` 时要么整份写成，要么不动：先写临时文件，再改名覆盖旧文件。Windows 上别的程序开着这个文件时改名会被拒绝，这时最多重试 2 秒。 |
 | `internal/local` | 只放行发往 `127.0.0.1` 的请求；发往 `localhost` 的重定向过去。 |
 | `internal/onetime` | 清除服务缓存用的一次性令牌。 |
 | `internal/catalog` | 供插件页使用：列出 hostdeck 自带的插件，并把其中一个复制到插件文件夹；列出已安装的插件，并通过给文件夹改名来停用或启用。 |
@@ -114,7 +115,7 @@ flowchart LR
 
 ## 平台
 
-平台相关的代码用 build tag 分开：默认文件夹（`dir_unix.go`、`dir_windows.go`），以及结束进程树的方式（`internal/run/tree_unix.go`、`tree_windows.go`）。Windows PowerShell 5.1 第一次启动可能要好几秒，所以卡片可能先显示「读取中」，详情程序的时限也定为 30 秒。
+平台相关的代码用 build tag 分开：默认文件夹（`dir_unix.go`、`dir_windows.go`），结束进程树的方式（`internal/run/tree_unix.go`、`tree_windows.go`），以及替换文件的方式（`internal/atomicfile/replace_unix.go`、`replace_windows.go`）。Windows PowerShell 5.1 第一次启动可能要好几秒，所以卡片可能先显示「读取中」，详情程序的时限也定为 30 秒。
 
 ## 测试和 CI
 
