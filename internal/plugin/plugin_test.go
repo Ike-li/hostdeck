@@ -95,6 +95,31 @@ card:
 	}
 }
 
+func TestADetailPageWithActionsLoads(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "disk", `schema: 1
+name: Disk
+detail:
+  exec: {command: [sh, detail.sh]}
+actions:
+  exec: {command: [sh, action.sh], windows: [powershell, -File, action.ps1]}
+`)
+	plugins, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Plugin{{
+		ID:      "disk",
+		Dir:     filepath.Join(root, "disk"),
+		Name:    Text{All: "Disk"},
+		Detail:  &Detail{Exec: &Exec{Command: []string{"sh", "detail.sh"}}},
+		Actions: &Actions{Exec: &Exec{Command: []string{"sh", "action.sh"}, Windows: []string{"powershell", "-File", "action.ps1"}}},
+	}}
+	if !reflect.DeepEqual(plugins, want) {
+		t.Errorf("got %+v, want %+v", plugins, want)
+	}
+}
+
 func TestAnUnknownFieldIsReportedWithFileLineAndName(t *testing.T) {
 	root := t.TempDir()
 	path := writePlugin(t, root, "demo", `schema: 1
@@ -125,7 +150,12 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 		{"name: Demo\n" + card, "schema"},
 		{"schema: 2\nname: Demo\n" + card, "schema 2"},
 		{"schema: 1\n" + card, "name"},
-		{"schema: 1\nname: Demo\n", "page or card"},
+		{"schema: 1\nname: Demo\n", "page, detail or card"},
+		{"schema: 1\nname: Demo\npage: {link: 'https://wiki.example/'}\ndetail: {exec: {command: [sh, d.sh]}}\n", "page or detail"},
+		{"schema: 1\nname: Demo\ndetail: {}\n", "detail.exec.command"},
+		{"schema: 1\nname: Demo\ndetail: {exec: {}}\n", "detail.exec.command"},
+		{"schema: 1\nname: Demo\npage: {link: 'https://wiki.example/'}\nactions: {exec: {command: [sh, a.sh]}}\n", "actions"},
+		{"schema: 1\nname: Demo\ndetail: {exec: {command: [sh, d.sh]}}\nactions: {exec: {}}\n", "actions.exec.command"},
 		{"schema: 1\nname: Demo\npage: {}\n", "page.proxy or page.link"},
 		{"schema: 1\nname: Demo\npage: {proxy: 'http://127.0.0.1:3000/', link: 'http://127.0.0.1:3000/'}\n", "page.proxy or page.link"},
 		{"schema: 1\nname: Demo\npage: {proxy: '127.0.0.1:3000'}\n", "page.proxy"},

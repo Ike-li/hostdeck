@@ -2,14 +2,11 @@
 package card
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"runtime"
 	"slices"
 
 	"github.com/tidwall/gjson"
@@ -94,61 +91,44 @@ func fetchValue(ctx context.Context, c *plugin.Card) (string, error) {
 
 // printed is what an exec card's command prints.
 type printed struct {
-	Status string      `json:"status"`
-	Value  scalar      `json:"value"`
-	Label  plugin.Text `json:"label"`
+	Status string        `json:"status"`
+	Value  plugin.Scalar `json:"value"`
+	Label  plugin.Text   `json:"label"`
 	Rows   []struct {
-		Name   plugin.Text `json:"name"`
-		Value  scalar      `json:"value"`
-		Status string      `json:"status"`
+		Name   plugin.Text   `json:"name"`
+		Value  plugin.Scalar `json:"value"`
+		Status string        `json:"status"`
 	} `json:"rows"`
 	Error plugin.Text `json:"error"`
 }
 
-// scalar is a value printed as a string or as a number.
-type scalar string
-
-func (s *scalar) UnmarshalJSON(data []byte) error {
-	var str string
-	if json.Unmarshal(data, &str) == nil {
-		*s = scalar(str)
-		return nil
-	}
-	*s = scalar(data)
-	return nil
-}
-
 var statuses = []string{"", "ok", "warn", "error"}
 
-// bom is what Windows PowerShell may put before its output.
-var bom = []byte("\ufeff")
+// ValidStatus says whether a plugin may print status.
+func ValidStatus(status string) bool { return slices.Contains(statuses, status) }
 
-// runCard runs the card's command in the plugin's folder and shows what it
-// prints. The command for Windows, when the manifest has one, runs there.
-func runCard(ctx context.Context, p plugin.Plugin) View {
-	v := View{ID: p.ID, Name: p.Name, Icon: p.Icon}
-	command := p.Card.Exec.Command
-	if runtime.GOOS == "windows" && len(p.Card.Exec.Windows) > 0 {
-		command = p.Card.Exec.Windows
-	}
-	out, err := run.Output(ctx, p.Dir, command)
+// CommandError says why running a plugin's command under ctx failed.
+func CommandError(ctx context.Context, err error) *Error {
 	var exit *run.ExitError
+	var output *run.OutputError
 	switch {
 	case ctx.Err() != nil:
-		v.Error = &Error{Code: "command_timeout"}
+		return &Error{Code: "command_timeout"}
 	case errors.As(err, &exit):
-		v.Error = &Error{Code: "command_exit", Detail: exit.Error()}
-	case err != nil:
-		v.Error = &Error{Code: "command_start", Detail: err.Error()}
+		return &Error{Code: "command_exit", Detail: exit.Error()}
+	case errors.As(err, &output):
+		return &Error{Code: "command_output", Detail: output.Error()}
 	}
-	if err != nil {
-		return v
-	}
+	return &Error{Code: "command_start", Detail: err.Error()}
+}
+
+// runCard runs the card's command in the plugin's folder and shows what it
+// prints.
+func runCard(ctx context.Context, p plugin.Plugin) View {
+	v := View{ID: p.ID, Name: p.Name, Icon: p.Icon}
 	var pr printed
-	dec := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(out, bom)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&pr); err != nil {
-		v.Error = &Error{Code: "command_output", Detail: err.Error()}
+	if err := run.JSON(ctx, p.Dir, p.Card.Exec.Args(), &pr); err != nil {
+		v.Error = CommandError(ctx, err)
 		return v
 	}
 	if !pr.Error.IsZero() {
@@ -167,11 +147,11 @@ func runCard(ctx context.Context, p plugin.Plugin) View {
 }
 
 func unknownStatus(pr printed) (string, bool) {
-	if !slices.Contains(statuses, pr.Status) {
+	if !ValidStatus(pr.Status) {
 		return pr.Status, true
 	}
 	for _, r := range pr.Rows {
-		if !slices.Contains(statuses, r.Status) {
+		if !ValidStatus(r.Status) {
 			return r.Status, true
 		}
 	}

@@ -22,5 +22,12 @@
   "error.command_timeout": "The command did not finish in time",
   "error.command_exit": "The command failed: {detail}",
   "error.command_start": "The command could not start: {detail}",
-  "error.command_output": "The command did not print a card: {detail}"
+  "error.command_output": "The command did not print a card: {detail}",
+  "detail.empty": "No items.",
+  "detail.log": "Last lines of the log",
+  "action.confirm": "Confirm {label}?",
+  "action.running": "Running…",
+  "action.done": "{label}: done for {name}",
+  "action.interrupted": "The request was cut off. If the action restarts hostdeck itself, that is expected: reload the page in a few seconds.",
+  "error.not_offered": "The plugin no longer offers this action on this item. The list is read again."
 }

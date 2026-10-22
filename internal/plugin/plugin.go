@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -25,12 +26,26 @@ var languages = []string{"en", "zh-CN"}
 
 // Plugin is one folder under the plugin root; the folder name is its ID.
 type Plugin struct {
-	ID   string `yaml:"-"`
-	Dir  string `yaml:"-"` // the plugin's folder, where its commands run
-	Name Text   `yaml:"name"`
-	Icon string `yaml:"icon"`
-	Page *Page  `yaml:"page"`
-	Card *Card  `yaml:"card"`
+	ID      string   `yaml:"-"`
+	Dir     string   `yaml:"-"` // the plugin's folder, where its commands run
+	Name    Text     `yaml:"name"`
+	Icon    string   `yaml:"icon"`
+	Page    *Page    `yaml:"page"`
+	Detail  *Detail  `yaml:"detail"`
+	Actions *Actions `yaml:"actions"`
+	Card    *Card    `yaml:"card"`
+}
+
+// Detail is a sidebar entry that the console draws itself, from the items its
+// command prints.
+type Detail struct {
+	Exec *Exec `yaml:"exec"`
+}
+
+// Actions run on items of the detail page. The command gets the action's ID
+// and the item's ID as its last two arguments.
+type Actions struct {
+	Exec *Exec `yaml:"exec"`
 }
 
 // Page is what the plugin's sidebar entry opens: Proxy is a local web UI that
@@ -55,6 +70,27 @@ type Card struct {
 type Exec struct {
 	Command []string `yaml:"command"`
 	Windows []string `yaml:"windows"`
+}
+
+// Args is the command to run on this machine.
+func (e Exec) Args() []string {
+	if runtime.GOOS == "windows" && len(e.Windows) > 0 {
+		return e.Windows
+	}
+	return e.Command
+}
+
+// Scalar is a value that a plugin's command prints as a string or a number.
+type Scalar string
+
+func (s *Scalar) UnmarshalJSON(data []byte) error {
+	var str string
+	if json.Unmarshal(data, &str) == nil {
+		*s = Scalar(str)
+		return nil
+	}
+	*s = Scalar(data)
+	return nil
 }
 
 type HTTP struct {
@@ -163,8 +199,16 @@ func (m manifest) validate() error {
 		return fmt.Errorf("schema %d is not one this hostdeck reads; it reads schema: %d", m.Schema, Schema)
 	case m.Name.IsZero():
 		return errors.New("name is required")
-	case m.Page == nil && m.Card == nil:
-		return errors.New("page or card is required")
+	case m.Page == nil && m.Detail == nil && m.Card == nil:
+		return errors.New("page, detail or card is required")
+	case m.Page != nil && m.Detail != nil:
+		return errors.New("a plugin has one sidebar entry: page or detail, not both")
+	case m.Detail != nil && (m.Detail.Exec == nil || len(m.Detail.Exec.Command) == 0):
+		return errors.New("detail.exec.command is required")
+	case m.Actions != nil && m.Detail == nil:
+		return errors.New("actions act on the items of a detail page, and this plugin has no detail")
+	case m.Actions != nil && (m.Actions.Exec == nil || len(m.Actions.Exec.Command) == 0):
+		return errors.New("actions.exec.command is required")
 	}
 	if m.Page != nil {
 		if err := m.Page.validate(); err != nil {

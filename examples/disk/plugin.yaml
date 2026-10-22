@@ -4,3 +4,11 @@ card:
   exec:
     command: [sh, card.sh]
     windows: [powershell, -NoProfile, -NonInteractive, -ExecutionPolicy, Bypass, -File, card.ps1]
+detail:
+  exec:
+    command: [sh, detail.sh]
+    windows: [powershell, -NoProfile, -NonInteractive, -ExecutionPolicy, Bypass, -File, detail.ps1]
+actions:
+  exec:
+    command: [sh, action.sh]
+    windows: [powershell, -NoProfile, -NonInteractive, -ExecutionPolicy, Bypass, -File, action.ps1]

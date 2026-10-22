@@ -5,6 +5,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -62,6 +63,34 @@ func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
 		return nil, &ExitError{Code: exitErr.ExitCode(), LastLine: lastLine(stderr.String())}
 	}
 	return nil, err
+}
+
+// OutputError is a command whose output is not the JSON it should print.
+type OutputError struct{ Err error }
+
+func (e *OutputError) Error() string { return e.Err.Error() }
+
+// bom is what Windows PowerShell may print before its output.
+var bom = []byte("\ufeff")
+
+// JSON runs command like Output and decodes what it prints into v. Fields
+// that v does not have are an error, so a typo in a plugin shows up.
+func JSON(ctx context.Context, dir string, command []string, v any) error {
+	out, err := Output(ctx, dir, command)
+	if err != nil {
+		return err
+	}
+	return Decode(out, v)
+}
+
+// Decode decodes a command's output into v as JSON does.
+func Decode(out []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(out, bom)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return &OutputError{err}
+	}
+	return nil
 }
 
 // capped keeps the first limit bytes written to it and drops the rest.

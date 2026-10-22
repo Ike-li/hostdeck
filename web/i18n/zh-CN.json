@@ -22,5 +22,12 @@
   "error.command_timeout": "命令没有按时结束",
   "error.command_exit": "命令出错：{detail}",
   "error.command_start": "命令启动不了：{detail}",
-  "error.command_output": "命令输出的不是卡片：{detail}"
+  "error.command_output": "命令输出的不是卡片：{detail}",
+  "detail.empty": "没有条目。",
+  "detail.log": "日志最后几行",
+  "action.confirm": "确认{label}？",
+  "action.running": "执行中…",
+  "action.done": "{name}：{label}完成",
+  "action.interrupted": "请求中断了。如果这个操作重启的是 hostdeck 自己，这是正常的，过几秒刷新页面即可。",
+  "error.not_offered": "插件现在不再对这个条目提供这个操作，列表会重新读取。"
 }

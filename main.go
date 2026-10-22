@@ -60,7 +60,13 @@ func run(args []string) error {
 		return err
 	}
 	log.Printf("hostdeck: http://%s/ (%d plugins in %s)", ln.Addr(), len(plugins), pluginDir)
-	return http.Serve(ln, console.Handler(console.Config{Plugins: plugins, PluginDir: pluginDir, Served: served, Tokens: tokens}))
+	return http.Serve(ln, console.Handler(console.Config{
+		Origin:    fmt.Sprintf("http://127.0.0.1:%d", consolePort),
+		Plugins:   plugins,
+		PluginDir: pluginDir,
+		Served:    served,
+		Tokens:    tokens,
+	}))
 }
 
 // serveProxies re-serves each plugin's proxied page on a port of its own, from

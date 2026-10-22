@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/card"
+	"github.com/Ike-li/hostdeck/internal/detail"
 	"github.com/Ike-li/hostdeck/internal/local"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
@@ -23,6 +25,8 @@ import (
 const cardTimeout = 10 * time.Second
 
 type Config struct {
+	// Origin is the console page's own origin, the only one that may run actions.
+	Origin    string
 	Plugins   []plugin.Plugin
 	PluginDir string
 	// Served holds, by plugin ID, where each embedded service is served.
@@ -43,6 +47,8 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/status", cfg.serveStatus)
 	mux.HandleFunc("GET /api/cards", cfg.serveCards)
 	mux.HandleFunc("POST /api/clear/{id}", cfg.serveClear)
+	mux.HandleFunc("GET /api/detail/{id}", cfg.serveDetail)
+	mux.HandleFunc("POST /api/action/{id}", cfg.serveAction)
 	return local.Only(sameOriginAPI(noFraming(mux)))
 }
 
@@ -51,7 +57,7 @@ type entry struct {
 	ID    string      `json:"id"`
 	Name  plugin.Text `json:"name"`
 	Icon  string      `json:"icon,omitempty"`
-	Type  string      `json:"type"` // proxy | link
+	Type  string      `json:"type"` // proxy | link | detail
 	URL   string      `json:"url,omitempty"`
 	Error *card.Error `json:"error,omitempty"`
 }
@@ -59,10 +65,15 @@ type entry struct {
 func (cfg Config) servePlugins(w http.ResponseWriter, r *http.Request) {
 	entries := []entry{}
 	for _, p := range cfg.Plugins {
-		if p.Page == nil {
+		e := entry{ID: p.ID, Name: p.Name, Icon: p.Icon}
+		switch {
+		case p.Detail != nil:
+			e.Type = "detail"
+			entries = append(entries, e)
+			continue
+		case p.Page == nil:
 			continue
 		}
-		e := entry{ID: p.ID, Name: p.Name, Icon: p.Icon}
 		if p.Page.Link != "" {
 			e.Type, e.URL = "link", p.Page.Link
 		} else {
@@ -147,9 +158,7 @@ func (cfg Config) serveClear(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s, ok := cfg.Served[id]
 	if !ok || s.Err != nil {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]card.Error{"error": {Code: "not_embedded"}})
+		writeError(w, http.StatusNotFound, &card.Error{Code: "not_embedded"})
 		return
 	}
 	served, err := url.Parse(s.URL)
@@ -164,6 +173,56 @@ func (cfg Config) serveClear(w http.ResponseWriter, r *http.Request) {
 		RawQuery: url.Values{"token": {cfg.Tokens.Issue(id)}}.Encode(),
 	}
 	writeJSON(w, map[string]string{"url": clear.String()})
+}
+
+func (cfg Config) plugin(id string) (plugin.Plugin, bool) {
+	i := slices.IndexFunc(cfg.Plugins, func(p plugin.Plugin) bool { return p.ID == id })
+	if i < 0 {
+		return plugin.Plugin{}, false
+	}
+	return cfg.Plugins[i], true
+}
+
+func (cfg Config) serveDetail(w http.ResponseWriter, r *http.Request) {
+	p, ok := cfg.plugin(r.PathValue("id"))
+	if !ok || p.Detail == nil {
+		writeError(w, http.StatusNotFound, &card.Error{Code: "no_detail"})
+		return
+	}
+	writeJSON(w, detail.Read(r.Context(), p))
+}
+
+// serveAction runs an action that the console page asked for. Every other
+// page on 127.0.0.1, embedded services included, is turned away by its Origin.
+func (cfg Config) serveAction(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	p, ok := cfg.plugin(r.PathValue("id"))
+	if !ok || p.Actions == nil {
+		writeError(w, http.StatusNotFound, &card.Error{Code: "no_actions"})
+		return
+	}
+	var req struct {
+		Item   string `json:"item"`
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
+		return
+	}
+	message, err := detail.Act(r.Context(), p, req.Item, req.Action)
+	switch {
+	case err != nil && err.Code == "not_offered":
+		writeError(w, http.StatusNotFound, err)
+	case err != nil:
+		writeError(w, http.StatusBadGateway, err)
+	default:
+		writeJSON(w, struct {
+			Message plugin.Text `json:"message,omitzero"`
+		}{message})
+	}
 }
 
 // sameOriginAPI keeps other pages from calling the API. Every port on 127.0.0.1
@@ -195,6 +254,12 @@ func noFraming(next http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-src http://127.0.0.1:*; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func writeError(w http.ResponseWriter, status int, e *card.Error) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]*card.Error{"error": e})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

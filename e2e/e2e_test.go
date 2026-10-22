@@ -34,6 +34,10 @@ import (
 var binary string
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "fake-plugin" {
+		fakePlugin(os.Args[2:])
+		return
+	}
 	dir, err := os.MkdirTemp("", "hostdeck-e2e")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -590,5 +594,68 @@ func TestTheDiskExampleShowsItsStatusAndRows(t *testing.T) {
 	}
 	if row := text(t, ctx, card+" .row-name"); row != "已用" {
 		t.Errorf("row %q, want 已用", row)
+	}
+}
+
+// fakePlugin is the test binary playing a plugin's commands, for hostdeck to
+// run: "detail" prints one item with a restart action, and "action" records
+// its arguments in $HOSTDECK_E2E_RAN and prints a message.
+func fakePlugin(args []string) {
+	switch args[0] {
+	case "detail":
+		fmt.Print(`{"items": [{"id": "svc", "name": {"en": "Service", "zh-CN": "服务"}, "status": "ok",
+			"fields": [{"name": "PID", "value": 4242}], "log": "started",
+			"actions": [{"id": "restart", "label": {"en": "Restart", "zh-CN": "重启"}}]}]}`)
+	case "action":
+		os.WriteFile(os.Getenv("HOSTDECK_E2E_RAN"), []byte(strings.Join(args[1:], " ")), 0o644)
+		fmt.Print(`{"message": {"en": "Restarted", "zh-CN": "已重启"}}`)
+	}
+}
+
+const fakeDetailPlugin = `schema: 1
+name: {en: Services, zh-CN: 服务列表}
+detail:
+  exec: {command: ['%[1]s', fake-plugin, detail]}
+actions:
+  exec: {command: ['%[1]s', fake-plugin, action]}
+`
+
+func TestAnActionRunsOnTheSecondClickAndNotOnADoubleClick(t *testing.T) {
+	ran := filepath.Join(t.TempDir(), "ran")
+	t.Setenv("HOSTDECK_E2E_RAN", ran)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writePlugin(t, dir, "svc", fmt.Sprintf(fakeDetailPlugin, exe))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	const button = ".detail-item button.action"
+	do(t, ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(chromedp.CSS(`.nav-item[data-id="svc"]`)),
+		chromedp.WaitVisible(chromedp.CSS(button)),
+	)
+	if name, pid := text(t, ctx, ".detail-item .detail-name"), text(t, ctx, ".detail-item .detail-fields dd"); name != "服务" || pid != "4242" {
+		t.Errorf("item %q with PID %q, want 服务 and 4242", name, pid)
+	}
+
+	doubleClick(t, ctx, button)
+	time.Sleep(time.Second)
+	if _, err := os.Stat(ran); err == nil {
+		t.Fatal("a double-click ran the action")
+	}
+	if label := text(t, ctx, button); label != "确认重启？" {
+		t.Errorf("after the first click the button says %q, want it asking to confirm", label)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)), chromedp.WaitVisible(chromedp.CSS(".detail-note")))
+	if note := text(t, ctx, ".detail-note"); note != "已重启" {
+		t.Errorf("note %q, want the plugin's message", note)
+	}
+	if got, _ := os.ReadFile(ran); string(got) != "restart svc" {
+		t.Errorf("the action command got %q, want restart svc", got)
 	}
 }

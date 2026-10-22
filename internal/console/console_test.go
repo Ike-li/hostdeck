@@ -130,6 +130,7 @@ func TestPluginsSayWhereEachSidebarEntryOpens(t *testing.T) {
 		{ID: "stuck", Name: plugin.Text{All: "Stuck"}, Page: &plugin.Page{Proxy: "http://127.0.0.1:3001/"}},
 		{ID: "wiki", Name: plugin.Text{ByLang: map[string]string{"en": "Wiki", "zh-CN": "维基"}}, Page: &plugin.Page{Link: "https://wiki.example/"}},
 		{ID: "cardonly", Name: plugin.Text{All: "Card only"}, Card: &plugin.Card{HTTP: &plugin.HTTP{URL: "http://127.0.0.1:3002/"}, Value: "v"}},
+		{ID: "disks", Name: plugin.Text{All: "Disks"}, Detail: &plugin.Detail{Exec: &plugin.Exec{Command: []string{"sh", "detail.sh"}}}},
 	}
 	served := map[string]Served{
 		"grafana": {URL: "http://127.0.0.1:4679/grafana/"},
@@ -142,7 +143,8 @@ func TestPluginsSayWhereEachSidebarEntryOpens(t *testing.T) {
 		{"id": "grafana", "name": "Grafana", "icon": "G", "type": "proxy", "url": "http://127.0.0.1:4679/grafana/"},
 		{"id": "stuck", "name": "Stuck", "type": "proxy",
 		 "error": {"code": "port_unavailable", "detail": "port 4680, which stuck keeps, is in use by another program"}},
-		{"id": "wiki", "name": {"en": "Wiki", "zh-CN": "维基"}, "type": "link", "url": "https://wiki.example/"}
+		{"id": "wiki", "name": {"en": "Wiki", "zh-CN": "维基"}, "type": "link", "url": "https://wiki.example/"},
+		{"id": "disks", "name": "Disks", "type": "detail"}
 	]`)
 	if got := decodeJSON(t, resp); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -206,5 +208,70 @@ func TestClearingIsOfferedForEmbeddedServicesOnly(t *testing.T) {
 		if resp := post(h, "http://127.0.0.1:4678/api/clear/"+id); resp.StatusCode != http.StatusNotFound {
 			t.Errorf("%s: status %d, want 404", id, resp.StatusCode)
 		}
+	}
+}
+
+// detailPlugin has a detail page and actions whose commands do not exist: a
+// request that gets as far as running them answers 502.
+func detailPlugin(t *testing.T) plugin.Plugin {
+	missing := []string{t.TempDir() + "/no-such-program"}
+	return plugin.Plugin{
+		ID:      "disks",
+		Dir:     t.TempDir(),
+		Name:    plugin.Text{All: "Disks"},
+		Detail:  &plugin.Detail{Exec: &plugin.Exec{Command: missing}},
+		Actions: &plugin.Actions{Exec: &plugin.Exec{Command: missing}},
+	}
+}
+
+func postAction(h http.Handler, id string, header map[string]string, body string) *http.Response {
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4678/api/action/"+id, strings.NewReader(body))
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w.Result()
+}
+
+func TestActionsAreTakenFromTheConsolePageOnly(t *testing.T) {
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", Plugins: []plugin.Plugin{detailPlugin(t)}})
+	const body = `{"item": "a", "action": "open"}`
+	for _, tc := range []struct {
+		name   string
+		header map[string]string
+		want   int
+	}{
+		{"an embedded service's page", map[string]string{"Origin": "http://127.0.0.1:4679", "Sec-Fetch-Site": "same-site"}, http.StatusForbidden},
+		{"a page claiming same-origin with another Origin", map[string]string{"Origin": "http://127.0.0.1:4679", "Sec-Fetch-Site": "same-origin"}, http.StatusForbidden},
+		{"a program without an Origin", nil, http.StatusForbidden},
+		{"the console page", map[string]string{"Origin": "http://127.0.0.1:4678", "Sec-Fetch-Site": "same-origin"}, http.StatusBadGateway},
+	} {
+		if resp := postAction(h, "disks", tc.header, body); resp.StatusCode != tc.want {
+			t.Errorf("%s: status %d, want %d", tc.name, resp.StatusCode, tc.want)
+		}
+	}
+}
+
+func TestDetailAndActionsAnswerOnlyForPluginsThatHaveThem(t *testing.T) {
+	withDetail := detailPlugin(t)
+	withoutActions := detailPlugin(t)
+	withoutActions.ID, withoutActions.Actions = "plain", nil
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", Plugins: []plugin.Plugin{withDetail, withoutActions}})
+	console := map[string]string{"Origin": "http://127.0.0.1:4678", "Sec-Fetch-Site": "same-origin"}
+
+	if resp := get(h, "http://127.0.0.1:4678/api/detail/nothing", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("detail of a plugin without one: status %d, want 404", resp.StatusCode)
+	}
+	if resp := postAction(h, "plain", console, `{"item": "a", "action": "open"}`); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("action of a plugin without actions: status %d, want 404", resp.StatusCode)
+	}
+	if resp := postAction(h, "disks", console, `not json`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("action with a broken body: status %d, want 400", resp.StatusCode)
+	}
+	var got struct{ Error struct{ Code string } }
+	json.NewDecoder(get(h, "http://127.0.0.1:4678/api/detail/disks", nil).Body).Decode(&got)
+	if got.Error.Code != "command_start" {
+		t.Errorf("detail whose command is missing: error %q, want command_start", got.Error.Code)
 	}
 }

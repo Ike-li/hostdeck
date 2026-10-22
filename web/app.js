@@ -20,7 +20,7 @@ let status = {}; // plugin id -> up | down
 let current = null; // the open sidebar entry, or null on the overview
 let overview = null; // the last answer of /api/cards
 let failure = null; // why the backend could not be read
-const frames = new Map(); // plugin id -> iframe, kept so each page keeps its state
+const frames = new Map(); // plugin id -> its iframe or detail view, kept so each page keeps its state
 let clearArmed = null; // the timer while the clear button waits for its second click
 let clearing = false;
 let clearFailure = null; // why the last clearing failed
@@ -91,7 +91,7 @@ function route() {
   } catch {
     // a malformed escape: show the overview
   }
-  current = plugins.find((p) => p.id === id && p.type === 'proxy') || null;
+  current = plugins.find((p) => p.id === id && p.type !== 'link') || null;
   disarmClear();
   clearFailure = null;
   for (const frameId of frames.keys()) {
@@ -151,7 +151,7 @@ function navItem(p) {
     a.append(el('span', 'nav-ext', '↗'));
   } else {
     a.href = `#/${encodeURIComponent(p.id)}`;
-    a.append(el('span', 'dot'));
+    if (p.type === 'proxy') a.append(el('span', 'dot'));
   }
   return a;
 }
@@ -209,8 +209,10 @@ function renderService(p) {
   $('service-icon').textContent = iconOf(p);
   $('service-name').textContent = pick(p.name);
   paintDot($('service-dot'), p);
+  $('service-dot').hidden = p.type !== 'proxy';
   $('service-error').hidden = !p.error;
-  $('service-reload').hidden = $('service-open').hidden = $('service-clear').hidden = !!p.error;
+  $('service-reload').hidden = !!p.error;
+  $('service-open').hidden = $('service-clear').hidden = !!p.error || p.type === 'detail';
   const clear = $('service-clear');
   clear.textContent = t(clearing ? 'service.clearing' : clearArmed ? 'service.clear.confirm' : 'service.clear');
   clear.classList.toggle('armed', !!clearArmed);
@@ -220,6 +222,18 @@ function renderService(p) {
   note.textContent = clearArmed ? t('service.clear.explain') : clearFailure ? t('error.clear_failed', { detail: clearFailure }) : '';
   if (p.error) {
     $('service-error').textContent = explain(p.error);
+  } else if (p.type === 'detail') {
+    let view = frames.get(p.id);
+    if (!view) {
+      view = el('div', 'frame detail-view');
+      view.append(el('p', 'detail-note'), el('div', 'detail-list'));
+      view.firstChild.hidden = true;
+      $('frames').append(view);
+      frames.set(p.id, view);
+      loadDetail(p, view);
+    } else if (view.data && view.lang !== lang) {
+      renderDetail(p, view);
+    }
   } else {
     $('service-open').href = p.url;
     if (!frames.has(p.id)) {
@@ -232,6 +246,104 @@ function renderService(p) {
     }
   }
   for (const [id, f] of frames) f.hidden = id !== p.id || !!p.error;
+}
+
+// A detail page is drawn here from the items its plugin's command prints. It
+// is rebuilt only when it is loaded or the language changes, so that a
+// periodic render does not reset an action button waiting for its second click.
+async function loadDetail(p, view) {
+  try {
+    view.data = await getJSON(`/api/detail/${encodeURIComponent(p.id)}`);
+  } catch (e) {
+    view.data = { error: { code: 'backend', detail: e.message } };
+  }
+  renderDetail(p, view);
+}
+
+function renderDetail(p, view) {
+  view.lang = lang;
+  const { items, error } = view.data;
+  const list = view.querySelector('.detail-list');
+  if (error) {
+    list.replaceChildren(el('p', 'banner', explain(error)));
+  } else if (!items?.length) {
+    list.replaceChildren(el('p', 'empty', t('detail.empty')));
+  } else {
+    list.replaceChildren(...items.map((item) => detailItem(p, item, view)));
+  }
+}
+
+function detailItem(p, item, view) {
+  const section = el('section', 'detail-item');
+  if (item.status) section.dataset.status = item.status;
+  const head = el('header', 'detail-head');
+  head.append(el('span', 'row-dot'), el('h3', 'detail-name', pick(item.name)), el('span', 'detail-value', item.value ?? ''));
+  for (const action of item.actions || []) head.append(actionButton(p, item, action, view));
+  section.append(head);
+  if (item.fields?.length) {
+    const fields = el('dl', 'detail-fields');
+    for (const f of item.fields) fields.append(el('dt', null, pick(f.name)), el('dd', null, f.value));
+    section.append(fields);
+  }
+  if (item.log) {
+    const log = el('details', 'detail-log');
+    log.append(el('summary', null, t('detail.log')), el('pre', null, item.log));
+    section.append(log);
+  }
+  return section;
+}
+
+// An action needs two clicks: the first only arms the button for a few
+// seconds. A double-click is one gesture, so its second click does not confirm.
+function actionButton(p, item, action, view) {
+  const label = pick(action.label);
+  const btn = el('button', 'btn action', label);
+  btn.type = 'button';
+  let armed = null;
+  btn.addEventListener('click', async (e) => {
+    if (e.detail > 1 || btn.disabled) return;
+    if (!armed) {
+      btn.textContent = t('action.confirm', { label });
+      btn.classList.add('armed');
+      armed = setTimeout(() => {
+        armed = null;
+        btn.textContent = label;
+        btn.classList.remove('armed');
+      }, ARMED_FOR);
+      return;
+    }
+    clearTimeout(armed);
+    armed = null;
+    btn.classList.remove('armed');
+    btn.disabled = true;
+    btn.textContent = t('action.running');
+    let note;
+    try {
+      const resp = await fetch(`/api/action/${encodeURIComponent(p.id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item: item.id, action: action.id }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw body.error || { code: '', detail: `HTTP ${resp.status}` };
+      note = body.message ? pick(body.message) : t('action.done', { label, name: pick(item.name) });
+    } catch (err) {
+      note = err instanceof TypeError ? t('action.interrupted') : explain(err);
+    }
+    showNote(view, note);
+    setTimeout(() => loadDetail(p, view), 1500);
+  });
+  return btn;
+}
+
+function showNote(view, text) {
+  const note = view.querySelector('.detail-note');
+  note.textContent = text;
+  note.hidden = false;
+  clearTimeout(note.timer);
+  note.timer = setTimeout(() => {
+    note.hidden = true;
+  }, 8000);
 }
 
 // Clearing needs two clicks: the first arms the button and says what clearing
@@ -326,7 +438,9 @@ async function init() {
   }
   $('service-clear').addEventListener('click', onClearClick);
   $('service-reload').addEventListener('click', () => {
-    if (current && frames.has(current.id)) frames.get(current.id).src = current.url;
+    if (!current || !frames.has(current.id)) return;
+    if (current.type === 'detail') loadDetail(current, frames.get(current.id));
+    else frames.get(current.id).src = current.url;
   });
   await setLang(initialLang(), false);
   try {
