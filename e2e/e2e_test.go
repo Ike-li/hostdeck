@@ -1977,3 +1977,68 @@ func TestThePluginsPageAddsALinkWithoutEmbeddingIt(t *testing.T) {
 		t.Fatalf("plugin.yaml is:\n%s", file)
 	}
 }
+
+// The plugins page moves a plugin to the trash with one click and purges it
+// from there on a second click. A double-click does not purge. Restoring
+// puts the folder back.
+func TestThePluginsPageMovesAPluginToTheTrashAndPurgesItFromThere(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "meter", "schema: 1\nname: Meter\npage: {link: 'https://example.com/notes'}\n")
+	writePlugin(t, dir, "keep", "schema: 1\nname: Keep\npage: {link: 'https://example.com/keep'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	const card = `#catalog-installed .catalog-item[data-id="meter"]`
+	const trashBtn = card + ` button.trash`
+	const trashed = `#catalog-trash .catalog-item[data-id="meter"]`
+	const purge = trashed + ` button.purge`
+
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(trashBtn)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(trashBtn)))
+	gone(t, ctx, `.nav-item[data-id="meter"]`)
+	gone(t, ctx, card)
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(trashed)), chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="keep"]`)))
+	if note := text(t, ctx, "#catalog-note"); !strings.Contains(note, "Meter") {
+		t.Errorf("after trashing, the note is %q", note)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plugins", "meter")); !os.IsNotExist(err) {
+		t.Fatalf("meter is still installed: %v", err)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(trashed+` button.restore`)))
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="meter"]`)), chromedp.WaitVisible(chromedp.CSS(trashBtn)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#catalog-trash').hidden`)); err != nil {
+		t.Fatalf("the trash is still shown: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plugins", "meter", "plugin.yaml")); err != nil {
+		t.Fatalf("meter was not restored: %v", err)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(trashBtn)))
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(purge)))
+	doubleClick(t, ctx, purge)
+	time.Sleep(1500 * time.Millisecond)
+	entries, err := os.ReadDir(filepath.Join(dir, "plugins", ".trash"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("a double-click purged the plugin: %v, entries %v", err, entries)
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector(%q)?.textContent === "清除"`, purge))); err != nil {
+		t.Fatalf("waiting for purge to disarm: %v; it says %q", err, text(t, ctx, purge))
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(purge)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector(%q)?.textContent === "再点一次清除"`, purge))); err != nil {
+		t.Fatalf("waiting for the second click: %v; it says %q", err, text(t, ctx, purge))
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(purge)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#catalog-trash').hidden`)); err != nil {
+		t.Fatalf("the trash is still shown after purging: %v", err)
+	}
+	gone(t, ctx, `.nav-item[data-id="meter"]`)
+	if _, err := os.Stat(filepath.Join(dir, "plugins", ".trash", entries[0].Name())); !os.IsNotExist(err) {
+		t.Fatalf("the trash folder is still there: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plugins", "keep", "plugin.yaml")); err != nil {
+		t.Fatalf("purge removed a plugin that was not in the trash: %v", err)
+	}
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="keep"]`)))
+}

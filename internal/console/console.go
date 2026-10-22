@@ -111,6 +111,9 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/pages", s.serveAddPage)
 	mux.HandleFunc("POST /api/plugins/{id}/disable", s.serveRename(catalog.Disable))
 	mux.HandleFunc("POST /api/plugins/{id}/enable", s.serveRename(catalog.Enable))
+	mux.HandleFunc("POST /api/plugins/{id}/trash", s.serveTrash)
+	mux.HandleFunc("POST /api/trash/{folder}/restore", s.serveTrashEntry(catalog.Restore))
+	mux.HandleFunc("POST /api/trash/{folder}/purge", s.serveTrashEntry(catalog.Purge))
 	mux.HandleFunc("POST /api/plugins/{id}/page", s.serveEditPage)
 	mux.HandleFunc("GET /api/layout", s.serveLayoutGet)
 	mux.HandleFunc("POST /api/layout", s.serveLayout)
@@ -336,8 +339,12 @@ func (s *server) serveCatalog(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		var builtIn []catalog.Entry
 		builtIn, err = catalog.List(s.cfg.BuiltIn, s.cfg.PluginDir)
+		var trashed []catalog.Trashed
 		if err == nil {
-			s.writeCatalog(w, installed, builtIn)
+			trashed, err = catalog.TrashedPlugins(s.cfg.PluginDir)
+		}
+		if err == nil {
+			s.writeCatalog(w, installed, builtIn, trashed)
 			return
 		}
 	}
@@ -376,7 +383,7 @@ func portError(err error) *card.Error {
 	return &card.Error{Code: "port_unavailable", Detail: err.Error()}
 }
 
-func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin, builtIn []catalog.Entry) {
+func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin, builtIn []catalog.Entry, trashed []catalog.Trashed) {
 	type listed struct {
 		catalog.Plugin
 		Loaded bool        `json:"loaded"`
@@ -384,10 +391,11 @@ func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin,
 		Error  *card.Error `json:"error,omitempty"`
 	}
 	listing := struct {
-		PluginDir string          `json:"pluginDir"`
-		Installed []listed        `json:"installed"`
-		Available []catalog.Entry `json:"available"`
-	}{s.cfg.PluginDir, []listed{}, []catalog.Entry{}}
+		PluginDir string            `json:"pluginDir"`
+		Installed []listed          `json:"installed"`
+		Available []catalog.Entry   `json:"available"`
+		Trash     []catalog.Trashed `json:"trash"`
+	}{s.cfg.PluginDir, []listed{}, []catalog.Entry{}, trashed}
 	for _, p := range installed {
 		_, loaded := s.plugin(p.ID)
 		var problem *card.Error
@@ -515,6 +523,55 @@ func (s *server) serveEditPage(w http.ResponseWriter, r *http.Request) {
 	case !s.reload(w):
 	default:
 		writeJSON(w, struct{}{})
+	}
+}
+
+// serveTrash moves a plugin into the trash, for the console page only, and
+// stops serving it. The folder name comes back so the page can restore it.
+func (s *server) serveTrash(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	s.changing.Lock()
+	defer s.changing.Unlock()
+	folder, err := catalog.Trash(s.cfg.PluginDir, r.PathValue("id"))
+	switch {
+	case errors.Is(err, catalog.ErrUnknown):
+		writeError(w, http.StatusNotFound, &card.Error{Code: "not_installed"})
+	case errors.Is(err, catalog.ErrTaken):
+		writeError(w, http.StatusConflict, &card.Error{Code: "name_taken"})
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "trash_failed", Detail: err.Error()})
+	case !s.reload(w):
+	default:
+		writeJSON(w, struct {
+			Folder string `json:"folder"`
+		}{folder})
+	}
+}
+
+// serveTrashEntry restores or purges one folder in the trash, for the console
+// page only. Purge deletes that folder and nothing else.
+func (s *server) serveTrashEntry(act func(pluginDir, folder string) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != s.cfg.Origin {
+			writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+			return
+		}
+		s.changing.Lock()
+		defer s.changing.Unlock()
+		switch err := act(s.cfg.PluginDir, r.PathValue("folder")); {
+		case errors.Is(err, catalog.ErrUnknown):
+			writeError(w, http.StatusNotFound, &card.Error{Code: "not_installed"})
+		case errors.Is(err, catalog.ErrTaken):
+			writeError(w, http.StatusConflict, &card.Error{Code: "name_taken"})
+		case err != nil:
+			writeError(w, http.StatusInternalServerError, &card.Error{Code: "trash_failed", Detail: err.Error()})
+		case !s.reload(w):
+		default:
+			writeJSON(w, struct{}{})
+		}
 	}
 }
 

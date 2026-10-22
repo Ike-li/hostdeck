@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -527,4 +528,126 @@ func rename(pluginDir, from, to string) error {
 // hidden, and no separator on any platform.
 func plainName(id string) bool {
 	return id != "" && !strings.HasPrefix(id, ".") && !strings.ContainsAny(id, `/\`)
+}
+
+// trashStamp is the suffix of a folder in plugins/.trash. It cannot be
+// confused with a plugin id, which is the part before it.
+var trashStamp = regexp.MustCompile(`^(.+)-(\d{8}T\d{6}\.\d{9}Z)$`)
+
+// Trashed is one plugin sitting in plugins/.trash. Folder is the name to
+// restore or purge. ID is the plugin it will be again.
+type Trashed struct {
+	ID     string      `json:"id"`
+	Folder string      `json:"folder"`
+	Name   plugin.Text `json:"name"`
+}
+
+// Trash moves the plugin folder id, or its disabled name, into
+// plugins/.trash/<id>-<timestamp>. Loading skips that directory.
+func Trash(pluginDir, id string) (string, error) {
+	if !plainName(id) {
+		return "", ErrUnknown
+	}
+	from := id
+	info, err := os.Lstat(filepath.Join(pluginDir, from))
+	if err != nil || !info.IsDir() {
+		from = "." + id
+		info, err = os.Lstat(filepath.Join(pluginDir, from))
+		if err != nil || !info.IsDir() {
+			return "", ErrUnknown
+		}
+	}
+	trash := filepath.Join(pluginDir, ".trash")
+	if err := os.MkdirAll(trash, 0o755); err != nil {
+		return "", err
+	}
+	folder := id + "-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	if _, err := os.Lstat(filepath.Join(trash, folder)); err == nil {
+		return "", ErrTaken
+	}
+	if err := os.Rename(filepath.Join(pluginDir, from), filepath.Join(trash, folder)); err != nil {
+		return "", err
+	}
+	return folder, nil
+}
+
+// Restore moves a folder out of plugins/.trash back to its plugin id.
+// The folder must be a direct child of .trash. An id that is already there,
+// enabled or disabled, is left untouched.
+func Restore(pluginDir, folder string) error {
+	path, err := trashEntry(pluginDir, folder)
+	if err != nil {
+		return err
+	}
+	m := trashStamp.FindStringSubmatch(folder)
+	if m == nil || !plainName(m[1]) {
+		return ErrUnknown
+	}
+	if present(pluginDir, m[1]) {
+		return ErrTaken
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() {
+		return ErrUnknown
+	}
+	return os.Rename(path, filepath.Join(pluginDir, m[1]))
+}
+
+// Purge deletes one direct child of plugins/.trash and nothing outside it.
+func Purge(pluginDir, folder string) error {
+	path, err := trashEntry(pluginDir, folder)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() {
+		return ErrUnknown
+	}
+	return os.RemoveAll(path)
+}
+
+// TrashedPlugins lists the plugins in plugins/.trash.
+func TrashedPlugins(pluginDir string) ([]Trashed, error) {
+	dirs, err := os.ReadDir(filepath.Join(pluginDir, ".trash"))
+	if os.IsNotExist(err) {
+		return []Trashed{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []Trashed
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		m := trashStamp.FindStringSubmatch(d.Name())
+		if m == nil || !plainName(m[1]) {
+			continue
+		}
+		var about about
+		data, err := os.ReadFile(filepath.Join(pluginDir, ".trash", d.Name(), "plugin.yaml"))
+		if err != nil || yaml.Unmarshal(data, &about) != nil || about.Name.IsZero() {
+			about.Name = plugin.Text{All: m[1]}
+		}
+		out = append(out, Trashed{ID: m[1], Folder: d.Name(), Name: about.Name})
+	}
+	slices.SortFunc(out, func(a, b Trashed) int { return strings.Compare(a.Folder, b.Folder) })
+	if out == nil {
+		out = []Trashed{}
+	}
+	return out, nil
+}
+
+// trashEntry is pluginDir/.trash/folder when folder cannot escape that directory.
+func trashEntry(pluginDir, folder string) (string, error) {
+	if folder == "" || folder != filepath.Base(folder) || strings.Contains(folder, "..") {
+		return "", ErrUnknown
+	}
+	root := filepath.Join(pluginDir, ".trash")
+	path := filepath.Join(root, folder)
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", ErrUnknown
+	}
+	return path, nil
 }

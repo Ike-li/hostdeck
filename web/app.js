@@ -721,6 +721,9 @@ function renderCatalog(loaded) {
     return [section];
   });
   $('catalog-installed').replaceChildren(...(groups.length ? groups : [el('p', 'empty', t('catalog.none'))]));
+  const trashed = catalog.trash ?? [];
+  $('catalog-trash').hidden = trashed.length === 0;
+  $('catalog-trash-list').replaceChildren(...trashed.map(trashItem));
   $('catalog-available-heading').hidden = !catalog.available.length;
   $('catalog-available').replaceChildren(...[...catalog.available].sort(byName).map(availableItem));
   placeCatalogNote();
@@ -749,6 +752,11 @@ function filterCatalog() {
   }
   const available = [...document.querySelectorAll('#catalog-available .catalog-item')];
   if (available.length) $('catalog-available-heading').hidden = available.every((card) => card.hidden);
+  const trash = $('catalog-trash');
+  if (trash) {
+    const items = [...trash.querySelectorAll('.catalog-item')];
+    trash.hidden = items.length === 0 || items.every((card) => card.hidden);
+  }
 }
 
 // parkCatalogNote lifts the result out of a card before that card is rebuilt.
@@ -801,31 +809,45 @@ function openControl(p) {
   return a;
 }
 
-// catalogButton posts to url on a second click, says how it went with
-// noteOf(the answer), and reads the page and the sidebar again.
+// postCatalog posts to url, says how it went with noteOf(the answer), and
+// reads the page and the sidebar again.
+async function postCatalog(btn, url, noteOf, id) {
+  btn.disabled = true;
+  btn.textContent = t('catalog.working');
+  let note;
+  try {
+    const resp = await fetch(url, { method: 'POST' });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw body.error || { code: '', detail: `HTTP ${resp.status}` };
+    note = noteOf(body);
+  } catch (err) {
+    note = explain(err);
+  }
+  catalogNoteFor = id;
+  const n = $('catalog-note');
+  n.textContent = note;
+  n.hidden = false;
+  await loadPlugins();
+  render();
+  refreshStatus();
+  loadCatalog();
+}
+
+// catalogButton posts to url on a second click. A double-click does not.
 function catalogButton(label, armedText, url, noteOf, id) {
   const btn = el('button', 'btn', label);
   btn.type = 'button';
-  twoClicks(btn, armedText, async () => {
-    btn.disabled = true;
-    btn.textContent = t('catalog.working');
-    let note;
-    try {
-      const resp = await fetch(url, { method: 'POST' });
-      const body = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw body.error || { code: '', detail: `HTTP ${resp.status}` };
-      note = noteOf(body);
-    } catch (err) {
-      note = explain(err);
-    }
-    catalogNoteFor = id;
-    const n = $('catalog-note');
-    n.textContent = note;
-    n.hidden = false;
-    await loadPlugins();
-    render();
-    refreshStatus();
-    loadCatalog();
+  twoClicks(btn, armedText, () => postCatalog(btn, url, noteOf, id));
+  return btn;
+}
+
+// catalogOnce posts to url on one click. A double-click is one gesture.
+function catalogOnce(label, url, noteOf, id) {
+  const btn = el('button', 'btn', label);
+  btn.type = 'button';
+  btn.addEventListener('click', (e) => {
+    if (e.detail > 1 || btn.disabled) return;
+    postCatalog(btn, url, noteOf, id);
   });
   return btn;
 }
@@ -928,7 +950,41 @@ function installedItem(p) {
       p.id,
     ),
   );
+  const trash = catalogOnce(
+    t('catalog.trash'),
+    `/api/plugins/${encodeURIComponent(p.id)}/trash`,
+    () => t('catalog.trashed.note', { name }),
+    p.id,
+  );
+  trash.classList.add('trash');
+  actions.append(trash);
   item.append(actions, pageEdit(p));
+  return item;
+}
+
+// trashItem is one folder in the trash: restore puts it back enabled, and
+// purge deletes it on a second click.
+function trashItem(p) {
+  const item = catalogCard(p);
+  const name = pick(p.name);
+  const actions = el('div', 'catalog-actions');
+  const restore = catalogOnce(
+    t('catalog.restore'),
+    `/api/trash/${encodeURIComponent(p.folder)}/restore`,
+    () => t('catalog.restored.note', { name }),
+    p.id,
+  );
+  restore.classList.add('restore');
+  const purge = catalogButton(
+    t('catalog.purge'),
+    t('catalog.purge.confirm'),
+    `/api/trash/${encodeURIComponent(p.folder)}/purge`,
+    () => t('catalog.purged.note', { name }),
+    p.id,
+  );
+  purge.classList.add('purge');
+  actions.append(restore, purge);
+  item.append(actions);
   return item;
 }
 

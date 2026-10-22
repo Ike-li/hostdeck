@@ -100,5 +100,14 @@
   "page.link": "Link",
   "page.card": "Card address",
   "page.save": "Save",
-  "page.saved": "Saved."
+  "page.saved": "Saved.",
+  "catalog.trash": "Move to trash",
+  "catalog.trashed": "Trash",
+  "catalog.restore": "Restore",
+  "catalog.purge": "Purge",
+  "catalog.purge.confirm": "Click again to purge",
+  "catalog.trashed.note": "Moved {name} to the trash.",
+  "catalog.restored.note": "Restored {name}.",
+  "catalog.purged.note": "Purged {name}.",
+  "error.trash_failed": "Could not update the trash: {detail}"
 }

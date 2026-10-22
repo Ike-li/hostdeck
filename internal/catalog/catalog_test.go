@@ -325,3 +325,108 @@ func TestOnlyPagesOnThisMachineOrTheLocalNetworkAreAdded(t *testing.T) {
 		t.Errorf("the plugins folder holds %d entries, want only the 4 local pages", len(entries))
 	}
 }
+
+// Trashing moves a plugin into plugins/.trash, which loading skips. Purge
+// deletes only a folder inside that directory. Restore puts the plugin back.
+func TestTrashingAPluginMovesItWhereLoadingSkipsItAndPurgeDeletesOnlyThere(t *testing.T) {
+	pluginDir := t.TempDir()
+	writeFolder(t, pluginDir, "meter", "schema: 1\nname: Meter\npage:\n  link: https://example.com/notes\n")
+	writeFolder(t, pluginDir, "keep", "schema: 1\nname: Keep\npage:\n  link: https://example.com/keep\n")
+	writeFolder(t, pluginDir, ".off", "schema: 1\nname: Off\n")
+
+	for _, id := range []string{"..", "../keep", `keep\x`, ".meter", "nope"} {
+		if _, err := Trash(pluginDir, id); !errors.Is(err, ErrUnknown) {
+			t.Errorf("Trash(%q): %v, want ErrUnknown", id, err)
+		}
+	}
+	folder, err := Trash(pluginDir, "meter")
+	if err != nil || !strings.HasPrefix(folder, "meter-") {
+		t.Fatalf("Trash(meter): folder %q, %v", folder, err)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "meter")); !os.IsNotExist(err) {
+		t.Fatalf("meter is still in the plugins folder: %v", err)
+	}
+	trashed := filepath.Join(pluginDir, ".trash", folder, "plugin.yaml")
+	if !strings.Contains(readText(t, trashed), "https://example.com/notes") {
+		t.Fatalf("the trashed manifest is not the plugin")
+	}
+	loaded, broken, err := plugin.Load(pluginDir)
+	if err != nil || len(broken) != 0 || len(loaded) != 1 || loaded[0].ID != "keep" {
+		t.Fatalf("loaded after trash: %v %v %v, want only keep", loaded, broken, err)
+	}
+	installed, err := Installed(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range installed {
+		if p.ID == "meter" || p.ID == "trash" {
+			t.Errorf("installed lists %s", p.ID)
+		}
+	}
+	listed, err := TrashedPlugins(pluginDir)
+	if err != nil || len(listed) != 1 || listed[0].ID != "meter" || listed[0].Folder != folder || listed[0].Name.All != "Meter" {
+		t.Fatalf("trash list: %+v, %v", listed, err)
+	}
+
+	off, err := Trash(pluginDir, "off")
+	if err != nil || !strings.HasPrefix(off, "off-") {
+		t.Fatalf("Trash(off): folder %q, %v", off, err)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".off")); !os.IsNotExist(err) {
+		t.Fatalf("the disabled folder is still there: %v", err)
+	}
+
+	for _, name := range []string{"..", "../keep", `..\keep`, folder + "/../../keep"} {
+		if err := Purge(pluginDir, name); !errors.Is(err, ErrUnknown) {
+			t.Errorf("Purge(%q): %v, want ErrUnknown", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "keep", "plugin.yaml")); err != nil {
+		t.Fatalf("a refused purge touched keep: %v", err)
+	}
+	if err := Restore(pluginDir, folder); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readText(t, filepath.Join(pluginDir, "meter", "plugin.yaml")), "example.com") {
+		t.Fatal("restore did not put meter back")
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash", folder)); !os.IsNotExist(err) {
+		t.Fatalf("the trash folder remains: %v", err)
+	}
+	if err := Restore(pluginDir, off); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "off", "plugin.yaml")); err != nil {
+		t.Fatalf("a disabled plugin did not come back enabled: %v", err)
+	}
+	if err := Purge(pluginDir, off); !errors.Is(err, ErrUnknown) {
+		t.Errorf("purging a restored folder: %v, want ErrUnknown", err)
+	}
+
+	again, err := Trash(pluginDir, "keep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFolder(t, pluginDir, "keep", "schema: 1\nname: Keep\npage:\n  link: https://example.com/keep\n")
+	if err := Restore(pluginDir, again); !errors.Is(err, ErrTaken) {
+		t.Fatalf("restore onto an existing folder: %v, want ErrTaken", err)
+	}
+	if err := Purge(pluginDir, again); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash", again)); !os.IsNotExist(err) {
+		t.Fatalf("purge left %s: %v", again, err)
+	}
+	if !strings.Contains(readText(t, filepath.Join(pluginDir, "keep", "plugin.yaml")), "Keep") {
+		t.Fatal("purge deleted the plugin that was not in the trash")
+	}
+}
+
+func readText(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}

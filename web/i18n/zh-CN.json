@@ -100,5 +100,14 @@
   "page.link": "链接",
   "page.card": "卡片地址",
   "page.save": "保存",
-  "page.saved": "已保存。"
+  "page.saved": "已保存。",
+  "catalog.trash": "移入回收区",
+  "catalog.trashed": "回收区",
+  "catalog.restore": "放回",
+  "catalog.purge": "清除",
+  "catalog.purge.confirm": "再点一次清除",
+  "catalog.trashed.note": "已把 {name} 移入回收区。",
+  "catalog.restored.note": "已放回 {name}。",
+  "catalog.purged.note": "已清除 {name}。",
+  "error.trash_failed": "没能改动回收区：{detail}"
 }

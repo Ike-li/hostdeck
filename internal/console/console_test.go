@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -1219,6 +1220,192 @@ func TestAddingALinkDoesNotRequireItToBeLocalAndWritesNoCommand(t *testing.T) {
 	if !strings.Contains(got, "http://127.0.0.1:9/here") || strings.Contains(got, "proxy") {
 		t.Fatalf("a local link was not stored as a link:\n%s", got)
 	}
+}
+
+// Moving a plugin to the trash takes it out of the sidebar. Restoring puts
+// the folder back, enabled. Purging deletes only that trash folder. The
+// remembered forwarding port stays in ports.json.
+func TestMovingAPluginToTheTrashDropsItUntilItIsRestoredOrPurged(t *testing.T) {
+	root := t.TempDir()
+	pluginDir := filepath.Join(root, "plugins")
+	writeManifest(t, pluginDir, "meter", "schema: 1\nname: Meter\npage:\n  link: https://example.com/notes\n")
+	writeManifest(t, pluginDir, "keep", "schema: 1\nname: Keep\npage:\n  link: https://example.com/keep\n")
+	writeManifest(t, pluginDir, ".off", "schema: 1\nname: Off\npage:\n  link: https://example.com/off\n")
+	portsFile := filepath.Join(root, "ports.json")
+	const ports = "{\"meter\": 4679}\n"
+	if err := os.WriteFile(portsFile, []byte(ports), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reload := reloadFrom(pluginDir)
+	loaded, err := reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Plugins: loaded.Plugins, Reload: reload})
+	sidebar := func() []string {
+		t.Helper()
+		return ids(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body, "#.id")
+	}
+	portsSame := func() {
+		t.Helper()
+		if got := readFile(t, portsFile); got != ports {
+			t.Errorf("ports.json is %s, want it unchanged", got)
+		}
+	}
+	catalog := func() string {
+		t.Helper()
+		return string(mustRead(t, get(h, "http://127.0.0.1:4678/api/catalog", nil).Body))
+	}
+
+	for name, header := range fromOtherPage {
+		if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/meter/trash", header); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "meter", "plugin.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash")); !os.IsNotExist(err) {
+		t.Fatalf("a refused request created the trash: %v", err)
+	}
+	portsSame()
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/nope/trash", fromConsole); resp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("unknown plugin: %d %s, want 404", resp.StatusCode, body)
+	}
+
+	resp := postFrom(h, "http://127.0.0.1:4678/api/plugins/meter/trash", fromConsole)
+	body, _ := io.ReadAll(resp.Body)
+	folder := gjson.GetBytes(body, "folder").String()
+	if resp.StatusCode != http.StatusOK || !regexp.MustCompile(`^meter-\d{8}T\d{6}\.\d{9}Z$`).MatchString(folder) {
+		t.Fatalf("trashing: %d %s", resp.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "meter")); !os.IsNotExist(err) {
+		t.Fatalf("meter is still installed: %v", err)
+	}
+	if got := readFile(t, filepath.Join(pluginDir, ".trash", folder, "plugin.yaml")); !strings.Contains(got, "https://example.com/notes") {
+		t.Errorf("trashed manifest is %s", got)
+	}
+	if got, want := sidebar(), []string{"keep"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sidebar after trash %v, want %v", got, want)
+	}
+	listed := catalog()
+	if gjson.Get(listed, `installed.#(id=="meter")`).Exists() {
+		t.Errorf("catalog still lists meter: %s", listed)
+	}
+	if gjson.Get(listed, "trash.#").Int() != 1 || gjson.Get(listed, "trash.0.id").String() != "meter" || gjson.Get(listed, "trash.0.folder").String() != folder || gjson.Get(listed, "trash.0.name").String() != "Meter" {
+		t.Errorf("catalog trash is %s, want meter in %s", gjson.Get(listed, "trash").Raw, folder)
+	}
+	portsSame()
+
+	for name, header := range fromOtherPage {
+		if resp := postFrom(h, "http://127.0.0.1:4678/api/trash/"+folder+"/restore", header); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("restore from %s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash", folder, "plugin.yaml")); err != nil {
+		t.Fatal("a refused restore moved the trash folder")
+	}
+
+	writeManifest(t, pluginDir, "meter", "schema: 1\nname: Other\npage:\n  link: https://example.com/other\n")
+	resp = postFrom(h, "http://127.0.0.1:4678/api/trash/"+folder+"/restore", fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusConflict || gjson.GetBytes(body, "error.code").String() != "name_taken" {
+		t.Fatalf("restore over an existing folder: %d %s, want 409 name_taken", resp.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash", folder, "plugin.yaml")); err != nil {
+		t.Fatal("a refused restore removed the trash folder")
+	}
+	if got := readFile(t, filepath.Join(pluginDir, "meter", "plugin.yaml")); !strings.Contains(got, "https://example.com/other") {
+		t.Errorf("the folder already there was changed: %s", got)
+	}
+	if err := os.RemoveAll(filepath.Join(pluginDir, "meter")); err != nil {
+		t.Fatal(err)
+	}
+
+	resp = postFrom(h, "http://127.0.0.1:4678/api/trash/"+folder+"/restore", fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("restore: %d %s", resp.StatusCode, body)
+	}
+	if got := readFile(t, filepath.Join(pluginDir, "meter", "plugin.yaml")); !strings.Contains(got, "https://example.com/notes") {
+		t.Errorf("restored manifest is %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash", folder)); !os.IsNotExist(err) {
+		t.Fatalf("restored folder is still in the trash: %v", err)
+	}
+	if got, want := sidebar(), []string{"keep", "meter"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sidebar after restore %v, want %v", got, want)
+	}
+
+	resp = postFrom(h, "http://127.0.0.1:4678/api/plugins/off/trash", fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	offFolder := gjson.GetBytes(body, "folder").String()
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(offFolder, "off-") {
+		t.Fatalf("trashing a disabled plugin: %d %s", resp.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".off")); !os.IsNotExist(err) {
+		t.Fatalf(".off is still there: %v", err)
+	}
+	resp = postFrom(h, "http://127.0.0.1:4678/api/trash/"+offFolder+"/restore", fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("restoring a plugin that was disabled: %d %s", resp.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "off", "plugin.yaml")); err != nil {
+		t.Fatalf("it did not come back enabled: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".off")); !os.IsNotExist(err) {
+		t.Fatalf("the disabled folder is still there: %v", err)
+	}
+	if got, want := sidebar(), []string{"keep", "meter", "off"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sidebar after restoring a disabled plugin %v, want %v", got, want)
+	}
+
+	resp = postFrom(h, "http://127.0.0.1:4678/api/plugins/keep/trash", fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	keepFolder := gjson.GetBytes(body, "folder").String()
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(keepFolder, "keep-") {
+		t.Fatalf("trashing keep: %d %s", resp.StatusCode, body)
+	}
+	for name, header := range fromOtherPage {
+		if resp := postFrom(h, "http://127.0.0.1:4678/api/trash/"+keepFolder+"/purge", header); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("purge from %s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash", keepFolder, "plugin.yaml")); err != nil {
+		t.Fatal("a refused purge deleted the trash folder")
+	}
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/trash/meter-..-x/purge", fromConsole); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("purge of a name containing ..: status %d, want 404", resp.StatusCode)
+	}
+	if resp := postFrom(h, "http://127.0.0.1:4678/api/trash/no-such/restore", fromConsole); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("restore of a missing folder: status %d, want 404", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash", keepFolder, "plugin.yaml")); err != nil {
+		t.Fatal("a refused purge deleted keep")
+	}
+	resp = postFrom(h, "http://127.0.0.1:4678/api/trash/"+keepFolder+"/purge", fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("purge: %d %s", resp.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, ".trash", keepFolder)); !os.IsNotExist(err) {
+		t.Fatalf("purged folder is still there: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "meter", "plugin.yaml")); err != nil {
+		t.Fatal("purge removed a plugin that was not in the trash")
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "off", "plugin.yaml")); err != nil {
+		t.Fatal("purge removed a plugin that was not in the trash")
+	}
+	if got, want := sidebar(), []string{"meter", "off"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sidebar after purge %v, want %v", got, want)
+	}
+	if gjson.Get(catalog(), "trash.#").Int() != 0 {
+		t.Errorf("catalog still lists trash: %s", catalog())
+	}
+	portsSame()
 }
 
 // readFile reads path and closes it. A handle kept open until the test ends
