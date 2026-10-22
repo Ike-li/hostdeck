@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -59,8 +62,8 @@ func TestTheDiskExampleShowsTheFreeSpaceOfThisMachine(t *testing.T) {
 	if zh := v.Label.ByLang["zh-CN"]; !strings.HasPrefix(zh, "可用") {
 		t.Errorf("Chinese label %q, want it to start with 可用", zh)
 	}
-	if len(v.Rows) != 1 || v.Rows[0].Name.ByLang["zh-CN"] != "已用" || !strings.HasSuffix(v.Rows[0].Value, "%") {
-		t.Errorf("rows %+v, want one row saying how much is used", v.Rows)
+	if len(v.Rows) == 0 || v.Rows[0].Name.IsZero() || !strings.HasSuffix(v.Rows[0].Value, "%") {
+		t.Errorf("rows %+v, want the home folder's disk first, saying how much is used", v.Rows)
 	}
 }
 
@@ -87,6 +90,88 @@ func TestTheDiskExampleListsTheHomeFoldersDiskWithAnOpenAction(t *testing.T) {
 	}
 	if len(home.Actions) != 1 || home.Actions[0].ID != "open" {
 		t.Errorf("actions %+v, want open", home.Actions)
+	}
+}
+
+// dfOnAMac is what df -Pkl printed on a Mac with an internal disk holding
+// Macintosh HD and PublishTmp, and an external one holding Storage and a Time
+// Machine volume, whose name ends in a space, with its backups mounted.
+const dfOnAMac = `Filesystem                                                  1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s3s1                                                482797652  13335040 204695268     7%    /
+/dev/disk3s6                                                  482797652   7340184 204695268     4%    /System/Volumes/VM
+/dev/disk3s4                                                  482797652  10700332 204695268     5%    /System/Volumes/Preboot
+/dev/disk1s2                                                     512000      6164    491832     2%    /System/Volumes/xarts
+/dev/disk3s1                                                  482797652 245039024 204695268    55%    /System/Volumes/Data
+/dev/disk3s7                                                   19531252      1040  19530212     1%    /Volumes/PublishTmp
+/dev/disk7s1                                                  976557744 198252844 275636692    42%    /Volumes/Storage
+/dev/disk7s2                                                  634760868 502465776 132092660    80%    /Volumes/time machine 
+/dev/disk3s5                                                  482797652   1503124 204695268     1%    /Volumes/Recovery
+com.apple.TimeMachine.2026-10-12-000623.backup@/dev/disk7s2   634760868 618332712 132092660    83%    /Volumes/.timemachine/8E158BD0-47E1-4487-B153-E19EDF580519/2026-10-12-000623.backup
+com.apple.TimeMachine.2026-10-22-092516.local@/dev/disk3s1    482797652 237735448 204695268    54%    /Volumes/com.apple.TimeMachine.localsnapshots/Backups.backupdb/Mac/2026-10-22-092516/Macintosh HD - Data
+`
+
+// onAMac puts a df that prints dfOnAMac, and a diskutil that names the data
+// volume, before the real ones.
+func onAMac(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows scripts ask PowerShell, not df")
+	}
+	bin := t.TempDir()
+	df := "#!/bin/sh\n" +
+		"case \"$1\" in -Pkl) cat <<'EOF'\n" + dfOnAMac + "EOF\n" +
+		";; *) printf '%s\\n' \"$(head -n 1 <<'EOF'\n" + dfOnAMac + "EOF\n)\" '/dev/disk3s1 482797652 245039024 204695268 55% /System/Volumes/Data' ;; esac\n"
+	diskutil := "#!/bin/sh\n" +
+		"[ \"$2\" = /System/Volumes/Data ] && echo '   Volume Name:               Macintosh HD - Data'\n"
+	for name, script := range map[string]string{"df": df, "diskutil": diskutil} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestTheDiskCardHasARowForEachVolume(t *testing.T) {
+	onAMac(t)
+
+	v := card.Fetch(context.Background(), load(t, "disk"))
+
+	if v.Error != nil {
+		t.Fatalf("error card: %+v", v.Error)
+	}
+	var got []string
+	for _, r := range v.Rows {
+		got = append(got, r.Name.All+" "+r.Value+" "+r.Status)
+	}
+	want := []string{
+		"Macintosh HD 195 GB · 55% ok",
+		"PublishTmp 19 GB · 1% ok",
+		"Storage 263 GB · 42% ok",
+		"time machine 126 GB · 80% warn",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("rows\n%q\nwant\n%q", got, want)
+	}
+	if v.Value != "195 GB" || v.Status != "warn" {
+		t.Errorf("value %q, status %q; want the home folder's free space and the worst volume's status", v.Value, v.Status)
+	}
+}
+
+func TestTheDiskDetailListsVolumesAndNotBackupsOrRecovery(t *testing.T) {
+	onAMac(t)
+
+	v := detail.Read(context.Background(), load(t, "disk"))
+
+	if v.Error != nil {
+		t.Fatalf("error: %+v", v.Error)
+	}
+	var got []string
+	for _, it := range v.Items {
+		got = append(got, it.ID)
+	}
+	want := []string{"/System/Volumes/Data", "/Volumes/PublishTmp", "/Volumes/Storage", "/Volumes/time machine"}
+	if !slices.Equal(got, want) {
+		t.Errorf("items %q, want %q", got, want)
 	}
 }
 

@@ -115,7 +115,7 @@ flowchart LR
 
 - 每个包都有单元测试，用本机 HTTP 服务和测试程序本身充当假的插件程序。
 - `e2e/` 编译出程序，通过 chromedp 驱动 Chrome 或 Edge：语言、内嵌一个禁止嵌入的服务、清除它的缓存、卡片、操作，以及在插件页添加、停用和启用插件。没有浏览器时跳过这些测试，除非设置了 `HOSTDECK_E2E=1`。
-- `examples/` 的测试在当前机器上运行 disk 示例；Grafana、Syncthing、Ollama 三个示例则用从官方文档抄来的返回来测。
+- `examples/` 的测试在当前机器上运行 disk 示例，再用从一台有两块盘、挂着 Time Machine 备份的 Mac 上抄来的 `df` 输出跑一遍；Grafana、Syncthing、Ollama 三个示例则用从官方文档抄来的返回来测。
 - CI 在 macOS 和 Windows 上跑 gofmt、vet 和全部测试，然后在 Edge 里再跑一遍浏览器测试。另一个任务用 GoReleaser 打快照发布包，检查每个包里都有程序和示例。不会发布任何东西。
 
 ## 还没有的

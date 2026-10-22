@@ -1,6 +1,7 @@
 #!/bin/sh
 # Prints hostdeck's detail page: the disk that holds the home folder and every
 # volume mounted under /Volumes, each with an action that opens it in Finder.
+# Recovery, and Time Machine's backups mounted deeper down, are left out.
 set -eu
 home=$(df -Pk "$HOME" | awk 'NR == 2 { m = $6; for (i = 7; i <= NF; i++) m = m " " $i; print m }')
 df -Pkl | awk -v home="$home" '
@@ -8,7 +9,7 @@ BEGIN { printf "{\"items\": ["; n = 0 }
 NR > 1 {
 	mount = $6
 	for (i = 7; i <= NF; i++) mount = mount " " $i
-	if (mount != home && mount !~ /^\/Volumes\//) next
+	if (mount != home && (mount !~ /^\/Volumes\/[^\/]+$/ || mount == "/Volumes/Recovery")) next
 	used = $5 + 0
 	status = "ok"
 	if (used >= 80) status = "warn"

@@ -1,8 +1,8 @@
 schema: 1
 name: {en: Disk space, zh-CN: 磁盘空间}
 description:
-  en: Free space on the disk that holds your home folder, and a page listing each disk with a button that opens it. Works as it is.
-  zh-CN: 主目录所在磁盘的可用空间，以及列出每块磁盘、可以直接打开的详情页。不用改就能用。
+  en: Free space on the disk that holds your home folder and on each other volume, and a page listing each disk with a button that opens it. Works as it is.
+  zh-CN: 主目录所在磁盘和其他各个卷的可用空间，以及列出每块磁盘、可以直接打开的详情页。不用改就能用。
 card:
   exec:
     command: [sh, card.sh]

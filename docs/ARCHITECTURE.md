@@ -115,7 +115,7 @@ Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `d
 
 - Each package has unit tests that use local HTTP servers and the test binary as a fake plugin program.
 - `e2e/` builds the program and drives Chrome or Edge through chromedp: languages, embedding a service that refuses frames, clearing its cache, cards, actions, and adding, disabling and enabling plugins on the plugins page. Without a browser these tests are skipped, unless `HOSTDECK_E2E=1`.
-- `examples/` tests run the disk example on the machine at hand, and answer the Grafana, Syncthing and Ollama examples with responses copied from their documentation.
+- `examples/` tests run the disk example on the machine at hand, and again on a macOS `df` output copied from a Mac with two disks and Time Machine backups mounted; they answer the Grafana, Syncthing and Ollama examples with responses copied from their documentation.
 - CI runs gofmt, vet and all tests on macOS and Windows, then the browser tests again in Edge. Another job builds the release archives with GoReleaser as a snapshot and checks that each holds the program and the examples. Nothing is published.
 
 ## Not there yet

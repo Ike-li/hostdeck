@@ -592,8 +592,8 @@ func TestTheDiskExampleShowsItsStatusAndRows(t *testing.T) {
 	if pill := text(t, ctx, card+" .pill"); !slices.Contains([]string{"正常", "注意", "异常"}, pill) {
 		t.Errorf("status says %q, want it in Chinese", pill)
 	}
-	if row := text(t, ctx, card+" .row-name"); row != "已用" {
-		t.Errorf("row %q, want 已用", row)
+	if row := text(t, ctx, card+" .row-value"); !strings.HasSuffix(row, "%") {
+		t.Errorf("first row says %q, want how much of the home folder's disk is used", row)
 	}
 }
 
