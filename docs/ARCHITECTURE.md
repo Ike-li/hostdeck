@@ -1,0 +1,115 @@
+# Architecture
+
+[简体中文](ARCHITECTURE.zh-CN.md)
+
+hostdeck is one Go program. It serves a web console on 127.0.0.1, reads plugins from a folder when it starts, and re-serves each embedded web UI on a port of its own. There is no database and no background worker: everything happens when the console page asks.
+
+## The pieces
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    page["Console page<br/>127.0.0.1:4678"]
+    frame["iframe<br/>127.0.0.1:4679"]
+  end
+
+  subgraph hostdeck["hostdeck process"]
+    console["console<br/>page + /api/*"]
+    cache["card cache"]
+    proxy["proxy<br/>one per embedded service"]
+    run["run<br/>commands and their process trees"]
+  end
+
+  svc["Local service<br/>e.g. Grafana :3000"]
+  json["JSON endpoints"]
+  cmd["Plugin programs<br/>sh / PowerShell"]
+  folder[("plugins/&lt;id&gt;/plugin.yaml<br/>ports.json")]
+
+  page -->|"/api/plugins, /api/cards,<br/>/api/detail, /api/action"| console
+  frame --> proxy -->|"same request,<br/>framing headers rewritten"| svc
+  console --> cache -->|"card.http"| json
+  cache -->|"card.exec"| run
+  console -->|"detail, actions"| run --> cmd
+  folder -. "read at start" .-> console
+  folder -. "ports kept" .-> proxy
+```
+
+Startup, in `main.go`:
+
+1. Pick the folder: `--dir`, else `HOSTDECK_DIR`, else `~/.config/hostdeck` on macOS or `%LOCALAPPDATA%\hostdeck` on Windows.
+2. Load every `plugins/<id>/plugin.yaml`. A plugin that does not load is set aside with its error and shown later as an error card; the others load.
+3. Listen on `--addr` (127.0.0.1 only, 4678 by default).
+4. Give each plugin with `page.proxy` a forwarding port, from the console's port + 1 up, remembered in `ports.json` so that it never moves and the browser keeps that service's cookies and storage.
+5. Look for the `examples` folder next to the program, then in the working directory, so an empty overview can suggest one.
+6. Serve.
+
+Plugins are read only at start: after adding or changing one, restart hostdeck.
+
+## Packages
+
+| Package | What it does |
+| --- | --- |
+| `main` | Flags, the folder, startup, and starting one proxy per embedded service. |
+| `internal/plugin` | Reads and checks `plugin.yaml`: unknown fields are errors with their line. Holds the types every other package uses: `Text` (one string, or one per language), `Scalar`, thresholds, `${env:NAME}` expansion. |
+| `internal/card` | Turns a plugin's card into what the overview shows. `http` cards: GET, pick values with gjson paths, colour them with thresholds, hide secrets in errors. `exec` cards: run the program and read the card it prints. `Cache` keeps each card for its interval and answers "pending" when a card takes longer than the overview waits. |
+| `internal/detail` | Runs a plugin's detail program and its actions. Before an action runs, the detail is read again, and the action must still be offered for that item. |
+| `internal/run` | Runs a plugin program in its folder with a deadline, caps its output, and kills everything it started: a process group on macOS, a Job Object on Windows. Decodes the JSON it prints strictly. |
+| `internal/console` | The console's HTTP handler: the page from `web/`, the API, and the checks every request passes. |
+| `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache address itself. |
+| `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |
+| `internal/local` | Lets through only requests addressed to `127.0.0.1`; `localhost` is redirected there. |
+| `internal/onetime` | One-time tokens for clearing a service's cache. |
+| `web` | The console page: `index.html`, `app.js` (plain ES modules, no build step), `style.css`, and `i18n/*.json`. Embedded in the program. |
+
+## Plugins
+
+A plugin is a folder; its folder name is its ID. `plugin.yaml` declares any of:
+
+- **`page`**: a sidebar entry. `proxy` embeds a local web UI through its own forwarding port; `link` opens a URL in a new tab.
+- **`card`**: a card on the overview, either declarative or a program.
+  - `http`: a URL and headers (`${env:NAME}` allowed), a `value` and `rows` given as gjson paths, a `label`, and `warn` / `error` thresholds (`above`, `below`, `equals` or `not`). `interval` says how long a reading is kept (1 minute by default).
+  - `exec`: a command, with a `windows` variant, that prints the card as JSON:
+    `{"status": "ok|warn|error", "value": …, "label": …, "rows": [{"name": …, "value": …, "status": …}]}`, or `{"error": …}`.
+- **`detail`**: a sidebar entry whose page lists items. Its program prints `{"items": [{"id", "name", "status", "value", "fields": [{"name", "value"}], "log", "actions": [{"id", "label"}]}]}`.
+- **`actions`**: the program run for an action on an item, as `<command> <action id> <item id>`. It may print `{"message": …}` or `{"error": …}`.
+
+Text shown to people is a string, or `{en: …, zh-CN: …}`. Programs run in the plugin's folder; on Windows, scripts should be UTF-8 with a BOM and write UTF-8.
+
+## What happens when…
+
+**The overview opens.** `GET /api/cards` asks the card cache for every card at once and waits up to 5 s. A card still within its interval is answered from the cache. Otherwise it is read in the background, for up to 30 s; one that is not back in time is returned as `pending`, with its last value if there is one, and the page asks again 2 s later. A failed reading is not kept, so a service that recovers shows at once.
+
+**An embedded page opens.** The page puts an iframe on `http://127.0.0.1:<forwarding port>/`. The proxy passes each request on with its Host unchanged (some services check that Origin and Host agree) and rewrites only the framing headers of the answer: `X-Frame-Options` is removed, and `frame-ancestors` becomes `'self'` plus the console. The rest of the service's Content-Security-Policy is kept. Each service has its own origin, so services do not share storage. `page.proxy` is meant for services on this machine: the service sees the browser's Host, `127.0.0.1:<forwarding port>`, so one that is told apart from others on a shared server by its name would not be found, and the browser keeps every embedded service's cookies under `127.0.0.1`.
+
+**Clear cache.** The first click arms the button; the second runs it. The page asks `POST /api/clear/<id>` for a one-time token, unloads the service's frame, opens `/.well-known/hostdeck/clear-site-data?token=…` on the service's port in a hidden frame, and goes back. The proxy answers that address itself with `Clear-Site-Data: "cache", "storage"` and a page that tells the console, by `postMessage`, that it cleared; a refused token also loads a page, so without that message the console reports a failure. Cookies are kept, because browsers keep cookies per host, not per port.
+
+**An action runs.** The first click arms the button, and a double click counts as one click. `POST /api/action/<id>` must come from the console's own Origin. The detail program is run again, and the action runs only if it is still offered for that item. Once started, the action runs to its end or its 30 s limit even if the page is closed or reloaded, so that a restart is not stopped halfway.
+
+## Security model
+
+Everything rests on hostdeck being reachable from this machine only.
+
+- It listens on `127.0.0.1` only; any other `--addr` is refused.
+- Every server answers only requests whose Host is `127.0.0.1`. This stops a web page that rebinds its own domain to 127.0.0.1 from reading the console or a service through hostdeck.
+- `/api/` refuses requests from other sites by their `Sec-Fetch-Site` header; a request typed into the address bar may only read. Actions also require the console's Origin. Other ports on 127.0.0.1 count as the same site, which is why the Origin check is needed too.
+- The console cannot be framed (`frame-ancestors 'none'`), and it frames only `http://127.0.0.1:*`. An embedded service may be framed only by itself and the console.
+- Clearing a service's data needs a token from the console, so another local page cannot wipe it with a link.
+- `${env:NAME}` values are sent to the service but replaced by `***` in errors, also when quoted or URL-escaped. A token is never written into `plugin.yaml`.
+- A plugin program cannot outlive its deadline: its whole process tree is ended.
+
+Plugins themselves are trusted: they are folders you put there, and they run with your rights.
+
+## Platforms
+
+Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `dir_windows.go`) and how process trees end (`internal/run/tree_unix.go`, `tree_windows.go`). Windows PowerShell 5.1 can take many seconds to start the first time. This is why cards may come back pending, and why detail programs get 30 s.
+
+## Tests and CI
+
+- Each package has unit tests that use local HTTP servers and the test binary as a fake plugin program.
+- `e2e/` builds the program and drives Chrome or Edge through chromedp: languages, embedding a service that refuses frames, clearing its cache, cards, actions and the empty overview. Without a browser these tests are skipped, unless `HOSTDECK_E2E=1`.
+- `examples/` tests run the disk example on the machine at hand, and answer the Grafana, Syncthing and Ollama examples with responses copied from their documentation.
+- CI runs gofmt, vet and all tests on macOS and Windows, then the browser tests again in Edge. Another job builds the release archives with GoReleaser as a snapshot and checks that each holds the program and the examples. Nothing is published.
+
+## Not there yet
+
+Background checks and notifications (M2), launchd, Windows services, Docker and port views (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.

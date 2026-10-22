@@ -4,7 +4,7 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 
 [简体中文](README.zh-CN.md)
 
-> **Status: design stage.** There is nothing to install yet. This README records what we are building, and what we are deliberately not building.
+> **Status: early, not released.** Most of M0 works and runs from source (see [Run from source](#run-from-source)); there is no release to install yet. This README records what we are building, and what we are deliberately not building.
 
 ## What it will be
 
@@ -77,7 +77,7 @@ go run .
 
 Then open http://127.0.0.1:4678/.
 
-Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1.
+Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. Plugins are read when hostdeck starts, so restart it after adding or changing one. With no plugins yet, the overview suggests an example to copy.
 
 A plugin is a folder holding a `plugin.yaml`. Two small ones:
 
@@ -132,6 +132,10 @@ card:
 Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`examples/`](examples) has complete plugins to copy, including one whose card and detail page come from a script.
 
 The manifest format may still change before the first release.
+
+## How it works
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes the pieces, what happens on each request, and the security model.
 
 ## Platforms
 

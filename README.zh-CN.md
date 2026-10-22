@@ -4,7 +4,7 @@
 
 [English](README.md)
 
-> **状态：设计阶段。** 现在还没有可以安装的东西。这份 README 记的是我们要做什么，以及刻意不做什么。
+> **状态：早期，尚未发布。** M0 的大部分功能已经可以从源码运行（见[从源码运行](#从源码运行)），但还没有可以安装的发布版。这份 README 记的是我们要做什么，以及刻意不做什么。
 
 ## 它会是什么样
 
@@ -77,7 +77,7 @@ go run .
 
 然后在浏览器里打开 http://127.0.0.1:4678/ 。
 
-插件放在 hostdeck 文件夹下的 `plugins/` 里：macOS 上是 `~/.config/hostdeck`，Windows 上是 `%LOCALAPPDATA%\hostdeck`。用 `--dir` 或 `HOSTDECK_DIR` 可以换一个文件夹，用 `--addr` 可以换成 127.0.0.1 上的另一个端口。
+插件放在 hostdeck 文件夹下的 `plugins/` 里：macOS 上是 `~/.config/hostdeck`，Windows 上是 `%LOCALAPPDATA%\hostdeck`。用 `--dir` 或 `HOSTDECK_DIR` 可以换一个文件夹，用 `--addr` 可以换成 127.0.0.1 上的另一个端口。插件只在 hostdeck 启动时读取，增加或修改插件后要重启它。还没有插件时，总览会提示可以复制哪个示例。
 
 一个插件就是一个放着 `plugin.yaml` 的文件夹。两个小例子：
 
@@ -132,6 +132,10 @@ card:
 路径的写法见 [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md)。[`examples/`](examples) 里有可以直接复制的完整插件，其中一个的卡片和详情页由脚本生成。
 
 发布第一个版本之前，清单格式还可能变。
+
+## 工作原理
+
+[docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md) 讲了各个组成部分、每种请求的经过，以及安全模型。
 
 ## 平台
 
