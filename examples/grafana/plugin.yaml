@@ -1,0 +1,12 @@
+# Grafana in the sidebar, and a card saying whether its database answers.
+# Change the port if Grafana does not listen on 3000.
+schema: 1
+name: Grafana
+page:
+  proxy: http://127.0.0.1:3000/
+card:
+  http:
+    url: http://127.0.0.1:3000/api/health
+  value: database
+  label: {en: database, zh-CN: 数据库}
+  error: {not: ok}

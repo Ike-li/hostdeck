@@ -1,0 +1,9 @@
+# A card counting the models Ollama has loaded into memory. Ollama has no web
+# page of its own, so this plugin has no sidebar entry.
+schema: 1
+name: Ollama
+card:
+  http:
+    url: http://127.0.0.1:11434/api/ps
+  value: models.#
+  label: {en: models in memory, zh-CN: 个模型在内存中}
