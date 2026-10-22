@@ -1677,3 +1677,91 @@ func TestThePluginsPageSearchesWhenThereAreMany(t *testing.T) {
 		t.Errorf("search shows %v, want only 目标", got)
 	}
 }
+
+// Sidebar entries and overview cards move up and down from buttons the
+// keyboard can reach. The move is saved at once, and one undo puts it back.
+// Dragging is left as it is.
+func TestSidebarEntriesAndCardsMoveUpAndDownAndTheMoveCanBeUndone(t *testing.T) {
+	dir := t.TempDir()
+	threeLinks(t, dir)
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	const entry = `#nav .nav-item[data-id]`
+	do(t, ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(chromedp.CSS(entry+`[data-id="c"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"]`)),
+	)
+
+	kind, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+		const row = (id) => document.querySelector('#nav .nav-row[data-id="' + id + '"]');
+		const up = row('a')?.querySelector('.move-up');
+		const downA = row('a')?.querySelector('.move-down');
+		const downC = row('c')?.querySelector('.move-down');
+		if (!up || !downA || !downC) return 'missing';
+		if (up.tagName !== 'BUTTON' || up.type !== 'button' || up.closest('a')) return 'inside-link';
+		if (!up.disabled || !downC.disabled || downA.disabled) return 'ends';
+		if (up.tabIndex < 0 || downA.tabIndex < 0) return 'not-tabbable';
+		return 'ok ' + downA.textContent;
+	})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != "ok 下移" {
+		t.Fatalf("sidebar move buttons: %s", kind)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)))
+	if got, want := idsOf(t, ctx, entry), []string{"b", "a", "c"}; !slices.Equal(got, want) {
+		t.Errorf("after moving a down: %v, want %v", got, want)
+	}
+	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
+	if got, want := idsOf(t, ctx, ".card"), []string{"a", "b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("cards %v, want their own order %v", got, want)
+	}
+
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(() => {
+		const note = document.querySelector('#layout-note');
+		const undo = document.querySelector('#layout-undo');
+		return !!note && !note.hidden && note.textContent.includes('布局已保存') && undo && undo.textContent.includes('撤销');
+	})()`)); err != nil {
+		t.Fatalf("no undo for the sidebar move: %v", err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS("#layout-undo")))
+	if got, want := idsOf(t, ctx, entry), []string{"a", "b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("after undo: %v, want %v", got, want)
+	}
+	savedLayout(t, dir, "sidebar", []string{"a", "b", "c"})
+
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"] .move-up`)))
+	cardEnds, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+		const up = document.querySelector('.card[data-id="a"] .move-up');
+		const down = document.querySelector('.card[data-id="c"] .move-down');
+		const mid = document.querySelector('.card[data-id="b"] .move-up');
+		if (!up || !down || !mid) return 'missing';
+		if (up.tagName !== 'BUTTON' || mid.closest('a')) return 'inside-link';
+		if (!up.disabled || !down.disabled || mid.disabled) return 'ends';
+		return 'ok ' + mid.textContent;
+	})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cardEnds != "ok 上移" {
+		t.Fatalf("card move buttons: %s", cardEnds)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="c"] .move-up`)))
+	if got, want := idsOf(t, ctx, ".card"), []string{"a", "c", "b"}; !slices.Equal(got, want) {
+		t.Errorf("after moving c up: %v, want %v", got, want)
+	}
+	savedLayout(t, dir, "cards", []string{"a", "c", "b"})
+	if got, want := idsOf(t, ctx, entry), []string{"a", "b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("sidebar %v, want it left as %v", got, want)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS("#layout-undo")))
+	if got, want := idsOf(t, ctx, ".card"), []string{"a", "b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("after undoing the card move: %v, want %v", got, want)
+	}
+	savedLayout(t, dir, "cards", []string{"a", "b", "c"})
+}

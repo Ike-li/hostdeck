@@ -33,6 +33,7 @@ let clearFailure = null; // why the last clearing failed
 const hiddenSince = new Map(); // plugin id -> when its page was switched away from
 let dragging = false; // whether a sidebar entry or a card is being dragged
 let suppressClick = false; // a click that ends a drag is not an open
+let layoutUndo = null; // the layout lists to post to undo the last move, widen or drag
 
 // A choice made on this page wins; otherwise the first of the browser's
 // languages that the console has.
@@ -148,20 +149,27 @@ function renderNav() {
   overviewItem.classList.toggle('active', !current && !catalogOpen);
   catalogItem.querySelector('.nav-name').textContent = t('nav.catalog');
   catalogItem.classList.toggle('active', catalogOpen);
-  [...nav.children].forEach((a, i) => {
+  [...nav.querySelectorAll('.nav-row')].forEach((row, i) => {
     const p = plugins[i];
+    const a = row.querySelector('.nav-item');
     a.querySelector('.nav-name').textContent = pick(p.name);
     a.querySelector('.icon').textContent = iconOf(p);
     a.classList.toggle('active', current?.id === p.id);
     const d = a.querySelector('.dot');
     if (d) paintDot(d, p);
+    row.querySelector('.move-up').textContent = t('move.up');
+    row.querySelector('.move-down').textContent = t('move.down');
   });
+  placeMoves(nav, '.nav-row');
 }
 
 function navItem(p) {
+  const row = el('div', 'nav-row');
+  row.dataset.id = p.id;
+  row.draggable = true;
   const a = el('a', 'nav-item');
   a.dataset.id = p.id;
-  a.draggable = true;
+  a.draggable = false;
   a.append(el('span', 'icon'), el('span', 'nav-name'));
   if (p.type === 'link') {
     a.href = p.url;
@@ -172,7 +180,65 @@ function navItem(p) {
     a.href = `#/${encodeURIComponent(p.id)}`;
     if (p.type === 'proxy') a.append(el('span', 'dot'));
   }
-  return a;
+  const moves = el('span', 'nav-moves');
+  moves.append(moveButton('up'), moveButton('down'));
+  row.append(a, moves);
+  return row;
+}
+
+// moveButton steps its sidebar row or card by one. The button stays outside
+// the link, so Tab reaches it and activating it does not open the entry.
+function moveButton(dir) {
+  const btn = el('button', `move move-${dir}`, t(dir === 'up' ? 'move.up' : 'move.down'));
+  btn.type = 'button';
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const item = btn.closest('.nav-row, .card');
+    if (!item) return;
+    moveItem(item.closest('#nav') ? 'sidebar' : 'cards', item.dataset.id, dir === 'up' ? -1 : 1, btn);
+  });
+  return btn;
+}
+
+function placeMoves(list, selector) {
+  const items = [...list.querySelectorAll(selector)];
+  items.forEach((item, i) => {
+    const up = item.querySelector('.move-up');
+    const down = item.querySelector('.move-down');
+    if (up) up.disabled = i === 0;
+    if (down) down.disabled = i === items.length - 1;
+  });
+}
+
+function focusMove(item, stay) {
+  const btn = item.querySelector(stay);
+  if (btn && !btn.disabled) btn.focus();
+}
+
+function moveItem(which, id, dir, btn) {
+  const list = which === 'sidebar' ? $('nav') : $('cards');
+  const selector = which === 'sidebar' ? '.nav-row' : '.card';
+  const items = [...list.querySelectorAll(selector)];
+  const i = items.findIndex((item) => item.dataset.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= items.length) return;
+  const item = items[i];
+  const stay = btn.classList.contains('move-up') ? '.move-up' : '.move-down';
+  if (dir > 0) items[j].after(item);
+  else items[j].before(item);
+  const order = [...list.querySelectorAll(selector)].map((node) => node.dataset.id);
+  placeMoves(list, selector);
+  focusMove(item, stay);
+  if (which === 'sidebar') {
+    const previous = plugins.map((p) => p.id);
+    plugins.sort(byOrder(order));
+    $('nav').dataset.entries = JSON.stringify(plugins.map((p) => [p.id, p.type, p.url]));
+    saveLayout({ sidebar: order }, { sidebar: previous });
+    return;
+  }
+  const previous = overview.cards.map((c) => c.id);
+  overview.cards.sort(byOrder(order));
+  saveLayout({ cards: order }, { cards: previous });
 }
 
 const iconOf = (p) => p.icon || pick(p.name).slice(0, 1);
@@ -192,9 +258,13 @@ function renderOverview() {
   // The cards are rebuilt only when they are read or rearranged or the
   // language changes: a periodic render would swallow a click on a card's
   // button that lands while the card is replaced.
-  if (!overview || overview.lang === lang) return;
+  if (!overview || overview.lang === lang) {
+    placeMoves($('cards'), '.card');
+    return;
+  }
   overview.lang = lang;
   $('cards').replaceChildren(...cards.map(cardElement));
+  placeMoves($('cards'), '.card');
 }
 
 function cardElement(c) {
@@ -206,12 +276,15 @@ function cardElement(c) {
   const width = el('button', 'card-width', t(c.wide ? 'card.narrow' : 'card.widen'));
   width.type = 'button';
   width.addEventListener('click', () => {
+    const previous = overview.cards.filter((x) => x.wide).map((x) => x.id);
     c.wide = !c.wide;
     overview.lang = null;
-    saveLayout({ wide: overview.cards.filter((x) => x.wide).map((x) => x.id) });
+    saveLayout({ wide: overview.cards.filter((x) => x.wide).map((x) => x.id) }, { wide: previous });
     render();
   });
-  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), cardTitle(c), width);
+  const moves = el('span', 'card-moves');
+  moves.append(moveButton('up'), moveButton('down'));
+  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), cardTitle(c), moves, width);
   card.append(head);
   card.addEventListener('click', (e) => {
     if (suppressClick || e.target.closest('button, a, summary')) return;
@@ -274,9 +347,12 @@ function cardTitle(c) {
 // new order. Once one is dropped, moved gets the IDs in the order they ended in.
 function sortable(list, selector, moved) {
   let dragged = null;
+  let before = null;
   list.addEventListener('dragstart', (e) => {
+    if (e.target.closest('button')) return;
     dragged = e.target.closest(selector);
     if (!dragged) return;
+    before = [...list.querySelectorAll(selector)].map((item) => item.dataset.id);
     dragging = true;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', dragged.dataset.id);
@@ -304,14 +380,15 @@ function sortable(list, selector, moved) {
     setTimeout(() => {
       suppressClick = false;
     }, 0);
-    moved([...list.querySelectorAll(selector)].map((item) => item.dataset.id));
+    const order = [...list.querySelectorAll(selector)].map((item) => item.dataset.id);
+    moved(order, before);
   });
 }
 
 const byOrder = (order) => (a, b) => order.indexOf(a.id) - order.indexOf(b.id);
 
 // saveLayout sends the lists of the layout that changed; the others stay.
-async function saveLayout(change) {
+async function saveLayout(change, previous) {
   try {
     const resp = await fetch('/api/layout', {
       method: 'POST',
@@ -319,10 +396,36 @@ async function saveLayout(change) {
       body: JSON.stringify(change),
     });
     if (!resp.ok) throw new Error(`/api/layout: HTTP ${resp.status}`);
+    if (previous && JSON.stringify(change) !== JSON.stringify(previous)) {
+      layoutUndo = previous;
+      $('layout-note').hidden = false;
+    }
   } catch (e) {
     failure = e.message;
     render();
   }
+}
+
+async function undoLayout() {
+  const previous = layoutUndo;
+  if (!previous) return;
+  layoutUndo = null;
+  $('layout-note').hidden = true;
+  if (previous.sidebar) {
+    plugins.sort(byOrder(previous.sidebar));
+    $('nav').dataset.entries = '';
+  }
+  if (overview && previous.cards) {
+    overview.cards.sort(byOrder(previous.cards));
+    overview.lang = null;
+  }
+  if (overview && previous.wide) {
+    const wide = new Set(previous.wide);
+    for (const c of overview.cards) c.wide = wide.has(c.id);
+    overview.lang = null;
+  }
+  render();
+  await saveLayout(previous);
 }
 
 function renderService(p) {
@@ -876,6 +979,7 @@ async function init() {
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('drop', onDrop);
   $('catalog-search').addEventListener('input', filterCatalog);
+  $('layout-undo').addEventListener('click', undoLayout);
   $('refresh').addEventListener('click', async () => {
     try {
       const resp = await fetch('/api/cards/refresh', { method: 'POST' });
@@ -895,13 +999,16 @@ async function init() {
     document.querySelector('.app').classList.remove('nav-open');
     $('menu').setAttribute('aria-expanded', 'false');
   });
-  sortable($('nav'), '.nav-item[data-id]', (order) => {
+  sortable($('nav'), '.nav-row', (order, previous) => {
     plugins.sort(byOrder(order));
-    saveLayout({ sidebar: order });
+    $('nav').dataset.entries = JSON.stringify(plugins.map((p) => [p.id, p.type, p.url]));
+    placeMoves($('nav'), '.nav-row');
+    saveLayout({ sidebar: order }, { sidebar: previous });
   });
-  sortable($('cards'), '.card', (order) => {
+  sortable($('cards'), '.card', (order, previous) => {
     overview.cards.sort(byOrder(order));
-    saveLayout({ cards: order });
+    placeMoves($('cards'), '.card');
+    saveLayout({ cards: order }, { cards: previous });
   });
   $('service-reload').addEventListener('click', () => {
     if (!current || !frames.has(current.id)) return;

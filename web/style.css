@@ -98,6 +98,37 @@ nav {
   overflow-y: auto;
 }
 
+.nav-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+/* Over the end of the row, and only while it can be used: the name keeps its width. */
+.nav-moves {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  background: var(--panel);
+  border-radius: 4px;
+}
+
+.nav-row:hover .nav-moves,
+.nav-row:focus-within .nav-moves { opacity: 1; }
+
+.nav-row:hover .nav-item,
+.nav-row:focus-within .nav-item { padding-right: 76px; }
+
+.nav-row .nav-item {
+  flex: 1;
+  min-width: 0;
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -308,6 +339,50 @@ h1 {
   font-weight: 600;
 }
 
+/* Over the end of the title, and only while they can be used. They stay put, so a click does not land on the title. */
+.card-moves {
+  position: absolute;
+  top: 0;
+  right: 3.4em;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  background: var(--panel);
+  border-radius: 4px;
+}
+
+.card:hover .card-moves,
+.card:focus-within .card-moves { opacity: 1; }
+
+.card:hover .card-name,
+.card:focus-within .card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card:hover .card-head,
+.card:focus-within .card-head { padding-right: 8.4em; }
+
+.move {
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.7;
+  cursor: pointer;
+}
+
+.move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .card-name a {
   color: inherit;
   text-decoration: none;
@@ -343,6 +418,10 @@ h1 {
 @media (hover: none) {
   .card-width { opacity: 1; }
   .card .pill { margin-right: 3.2em; }
+  .nav-moves, .card-moves { opacity: 1; }
+  .nav-row .nav-item { padding-right: 76px; }
+  .card-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-head { padding-right: 8.4em; }
 }
 
 .card-big {
