@@ -10,6 +10,8 @@ import (
 	"net"
 	"os"
 	"strconv"
+
+	"github.com/Ike-li/hostdeck/internal/atomicfile"
 )
 
 // Opened is a service's forwarding port. Err says why it could not be opened;
@@ -88,14 +90,10 @@ func listen(port int) (net.Listener, error) {
 	return net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 }
 
-// save writes a temporary file and renames it, so a crash never leaves half a file.
 func save(file string, kept map[string]int) error {
 	data, err := json.MarshalIndent(kept, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(file+".tmp", data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(file+".tmp", file)
+	return atomicfile.Write(file, data)
 }

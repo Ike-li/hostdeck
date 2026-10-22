@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -448,6 +449,7 @@ func (s *server) serveLayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.cfg.Layout.Set(l); err != nil {
+		log.Printf("layout: %v", err)
 		writeError(w, http.StatusInternalServerError, &card.Error{Code: "layout_failed", Detail: err.Error()})
 		return
 	}

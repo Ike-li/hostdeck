@@ -73,7 +73,6 @@ Left for S8, the last M0 slice:
 
 Known problems:
 
-- `TestCardsAreDraggedAndWidenedAndStaySo` fails now and then on Windows CI: after the click on 恢复, `layout.json` still has the card wide. Not investigated; rerunning the failed job has passed so far.
 - Never tried by hand: Windows at all, `examples/disk/card.ps1`, dragging a real address from the browser, LAN host names such as `nas.local`.
 - An embedded page's host is checked to be local only when it is added; a name that later resolves to the internet is still proxied.
 

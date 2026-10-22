@@ -10,6 +10,8 @@ import (
 	"os"
 	"slices"
 	"sync"
+
+	"github.com/Ike-li/hostdeck/internal/atomicfile"
 )
 
 // Layout lists plugin IDs. The console page saves the IDs it shows, so a
@@ -48,7 +50,6 @@ func (s *Store) Get() Layout {
 	return Layout{slices.Clone(s.l.Sidebar), slices.Clone(s.l.Cards), slices.Clone(s.l.Wide)}
 }
 
-// Set writes a temporary file and renames it, so a crash never leaves half a file.
 func (s *Store) Set(l Layout) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -56,10 +57,7 @@ func (s *Store) Set(l Layout) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.file+".tmp", data, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(s.file+".tmp", s.file); err != nil {
+	if err := atomicfile.Write(s.file, data); err != nil {
 		return err
 	}
 	s.l = l
