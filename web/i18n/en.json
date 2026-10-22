@@ -29,5 +29,8 @@
   "action.running": "Running…",
   "action.done": "{label}: done for {name}",
   "action.interrupted": "The request was cut off. If the action restarts hostdeck itself, that is expected: reload the page in a few seconds.",
-  "error.not_offered": "The plugin no longer offers this action on this item. The list is read again."
+  "error.not_offered": "The plugin no longer offers this action on this item. The list is read again.",
+  "loading": "Loading…",
+  "error.threshold": "A threshold does not fit the value: {detail}",
+  "error.bad_manifest": "This plugin's plugin.yaml has a problem: {detail}"
 }

@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	// ReadTimeout bounds the detail command, as the overview bounds cards.
-	ReadTimeout = 10 * time.Second
+	// ReadTimeout bounds the detail command. Windows PowerShell can take many
+	// seconds to start for the first time.
+	ReadTimeout = 30 * time.Second
 	// ActTimeout bounds an action; restarting something takes longer.
 	ActTimeout = 30 * time.Second
 )

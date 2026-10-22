@@ -659,3 +659,26 @@ func TestAnActionRunsOnTheSecondClickAndNotOnADoubleClick(t *testing.T) {
 		t.Errorf("the action command got %q, want restart svc", got)
 	}
 }
+
+// The overview waits 5 s for its cards; this one takes longer.
+func TestASlowCardSaysItIsLoadingAndThenShowsItsValue(t *testing.T) {
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(6 * time.Second)
+		io.WriteString(w, `{"v": "late"}`)
+	}))
+	t.Cleanup(svc.Close)
+	dir := t.TempDir()
+	writePlugin(t, dir, "slow", fmt.Sprintf("schema: 1\nname: Slow\ncard:\n  http: {url: '%s'}\n  value: v\n", svc.URL))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+
+	const card = `.card[data-id="slow"]`
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(card+" .card-pending")))
+	if got := text(t, ctx, card+" .card-pending"); got != "读取中…" {
+		t.Errorf("while loading: %q", got)
+	}
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(card+" .card-value")))
+	if got := text(t, ctx, card+" .card-value"); got != "late" {
+		t.Errorf("value %q, want late", got)
+	}
+}

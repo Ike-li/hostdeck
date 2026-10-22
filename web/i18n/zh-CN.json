@@ -29,5 +29,8 @@
   "action.running": "执行中…",
   "action.done": "{name}：{label}完成",
   "action.interrupted": "请求中断了。如果这个操作重启的是 hostdeck 自己，这是正常的，过几秒刷新页面即可。",
-  "error.not_offered": "插件现在不再对这个条目提供这个操作，列表会重新读取。"
+  "error.not_offered": "插件现在不再对这个条目提供这个操作，列表会重新读取。",
+  "loading": "读取中…",
+  "error.threshold": "阈值和数值对不上：{detail}",
+  "error.bad_manifest": "这个插件的 plugin.yaml 有问题：{detail}"
 }

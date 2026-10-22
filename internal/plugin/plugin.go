@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -55,14 +56,67 @@ type Page struct {
 	Link  string `yaml:"link"`
 }
 
+// DefaultInterval is how long a card's value is kept when the manifest says
+// nothing.
+const DefaultInterval = Duration(time.Minute)
+
 // Card is shown on the overview. A card either asks a URL, and Value is a
 // gjson path into the JSON it returns, or runs a command that prints the
-// whole card.
+// whole card. Its value is kept for Interval before it is asked again.
 type Card struct {
-	HTTP  *HTTP  `yaml:"http"`
-	Exec  *Exec  `yaml:"exec"`
-	Value string `yaml:"value"`
-	Label Text   `yaml:"label"`
+	Interval Duration   `yaml:"interval"`
+	HTTP     *HTTP      `yaml:"http"`
+	Exec     *Exec      `yaml:"exec"`
+	Value    string     `yaml:"value"`
+	Label    Text       `yaml:"label"`
+	Warn     *Threshold `yaml:"warn"`
+	Error    *Threshold `yaml:"error"`
+	Rows     []Row      `yaml:"rows"`
+}
+
+// Row is a line under a declarative card's value; Value is a gjson path.
+type Row struct {
+	Name  Text       `yaml:"name"`
+	Value string     `yaml:"value"`
+	Warn  *Threshold `yaml:"warn"`
+	Error *Threshold `yaml:"error"`
+}
+
+// Threshold is the one condition under which a value turns yellow or red:
+// above or below a number, or equal or not equal to a value.
+type Threshold struct {
+	Above  *float64 `yaml:"above"`
+	Below  *float64 `yaml:"below"`
+	Equals *Scalar  `yaml:"equals"`
+	Not    *Scalar  `yaml:"not"`
+}
+
+func (t *Threshold) check(field string) error {
+	if t == nil {
+		return nil
+	}
+	set := 0
+	for _, ok := range []bool{t.Above != nil, t.Below != nil, t.Equals != nil, t.Not != nil} {
+		if ok {
+			set++
+		}
+	}
+	if set != 1 {
+		return fmt.Errorf("%s needs exactly one of above, below, equals or not", field)
+	}
+	return nil
+}
+
+// Duration is written as Go writes durations: 30s, 5m, 1h.
+type Duration time.Duration
+
+func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
+	v, err := time.ParseDuration(n.Value)
+	if err != nil || v <= 0 {
+		return fmt.Errorf("line %d: card.interval must be a duration such as 30s or 5m, not %q", n.Line, n.Value)
+	}
+	*d = Duration(v)
+	return nil
 }
 
 // Exec is a command and its arguments. Windows, when given, replaces Command
@@ -83,6 +137,14 @@ func (e Exec) Args() []string {
 // Scalar is a value that a plugin's command prints as a string or a number.
 type Scalar string
 
+func (s *Scalar) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind != yaml.ScalarNode {
+		return fmt.Errorf("line %d: expected a single value", n.Line)
+	}
+	*s = Scalar(n.Value)
+	return nil
+}
+
 func (s *Scalar) UnmarshalJSON(data []byte) error {
 	var str string
 	if json.Unmarshal(data, &str) == nil {
@@ -93,8 +155,45 @@ func (s *Scalar) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// HTTP is a GET request. URL and the header values may hold ${env:NAME},
+// which Expand fills in, so that a token stays out of the manifest.
 type HTTP struct {
-	URL string `yaml:"url"`
+	URL     string            `yaml:"url"`
+	Headers map[string]string `yaml:"headers"`
+}
+
+var envRef = regexp.MustCompile(`\$\{([^}]*)\}`)
+var envName = regexp.MustCompile(`^env:([A-Za-z_][A-Za-z0-9_]*)$`)
+
+// Expand fills in every ${env:NAME} in s and returns the values it filled in,
+// so that errors can hide them.
+func Expand(s string) (string, []string) {
+	var secrets []string
+	out := envRef.ReplaceAllStringFunc(s, func(ref string) string {
+		m := envName.FindStringSubmatch(envRef.FindStringSubmatch(ref)[1])
+		if m == nil {
+			return ref
+		}
+		v := os.Getenv(m[1])
+		if v != "" {
+			secrets = append(secrets, v)
+		}
+		return v
+	})
+	return out, secrets
+}
+
+func checkEnv(field, s string) error {
+	for _, ref := range envRef.FindAllStringSubmatch(s, -1) {
+		m := envName.FindStringSubmatch(ref[1])
+		if m == nil {
+			return fmt.Errorf("%s: %q must be written ${env:NAME}", field, ref[0])
+		}
+		if _, ok := os.LookupEnv(m[1]); !ok {
+			return fmt.Errorf("%s uses ${env:%s}, which is not set", field, m[1])
+		}
+	}
+	return nil
 }
 
 // Text is shown to people: either one string for every language, or one string
@@ -150,32 +249,47 @@ type manifest struct {
 	Plugin `yaml:",inline"`
 }
 
-// Load reads every folder under root, in name order. A folder whose name starts
-// with a dot is skipped.
-func Load(root string) ([]Plugin, error) {
+// Broken is a plugin folder that did not load. Err names the file and says why.
+type Broken struct {
+	ID  string
+	Err error
+}
+
+// Load reads every folder under root, in name order; a folder whose name
+// starts with a dot is skipped. A folder that does not load is set aside in
+// broken, so one mistake does not stop the others. err is for root itself.
+func Load(root string) (plugins []Plugin, broken []Broken, err error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var plugins []Plugin
 	for _, e := range entries {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		path := filepath.Join(root, e.Name(), "plugin.yaml")
-		data, err := os.ReadFile(path)
+		p, err := load(path)
 		if err != nil {
-			return nil, err
-		}
-		p, err := parse(data)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
+			broken = append(broken, Broken{ID: e.Name(), Err: err})
+			continue
 		}
 		p.ID = e.Name()
 		p.Dir = filepath.Join(root, e.Name())
 		plugins = append(plugins, p)
 	}
-	return plugins, nil
+	return plugins, broken, nil
+}
+
+func load(path string) (Plugin, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Plugin{}, err
+	}
+	p, err := parse(data)
+	if err != nil {
+		return Plugin{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return p, nil
 }
 
 func parse(data []byte) (Plugin, error) {
@@ -187,6 +301,9 @@ func parse(data []byte) (Plugin, error) {
 	}
 	if err := m.validate(); err != nil {
 		return Plugin{}, err
+	}
+	if m.Card != nil && m.Card.Interval == 0 {
+		m.Card.Interval = DefaultInterval
 	}
 	return m.Plugin, nil
 }
@@ -218,17 +335,40 @@ func (m manifest) validate() error {
 	if m.Card == nil {
 		return nil
 	}
-	switch c := m.Card; {
+	c := m.Card
+	switch {
 	case (c.HTTP == nil) == (c.Exec == nil):
 		return errors.New("card needs exactly one of card.http or card.exec")
 	case c.Exec != nil && len(c.Exec.Command) == 0:
 		return errors.New("card.exec.command is required")
-	case c.Exec != nil && (c.Value != "" || !c.Label.IsZero()):
-		return errors.New("card.value and card.label go with card.http; a card.exec command prints its own")
-	case c.HTTP != nil && c.HTTP.URL == "":
+	case c.Exec != nil && (c.Value != "" || !c.Label.IsZero() || c.Warn != nil || c.Error != nil || c.Rows != nil):
+		return errors.New("card.value, card.label, card.warn, card.error and card.rows go with card.http; a card.exec command prints its own")
+	case c.Exec != nil:
+		return nil
+	case c.HTTP.URL == "":
 		return errors.New("card.http.url is required")
-	case c.HTTP != nil && c.Value == "":
+	case c.Value == "":
 		return errors.New("card.value is required")
+	}
+	if err := checkEnv("card.http.url", c.HTTP.URL); err != nil {
+		return err
+	}
+	for name, v := range c.HTTP.Headers {
+		if err := checkEnv("card.http.headers."+name, v); err != nil {
+			return err
+		}
+	}
+	if err := errors.Join(c.Warn.check("card.warn"), c.Error.check("card.error")); err != nil {
+		return err
+	}
+	for i, r := range c.Rows {
+		field := fmt.Sprintf("card.rows[%d]", i)
+		if r.Value == "" {
+			return fmt.Errorf("%s.value is required", field)
+		}
+		if err := errors.Join(r.Warn.check(field+".warn"), r.Error.check(field+".error")); err != nil {
+			return err
+		}
 	}
 	return nil
 }

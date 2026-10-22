@@ -45,9 +45,12 @@ func run(args []string) error {
 	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
 		return err
 	}
-	plugins, err := plugin.Load(pluginDir)
+	plugins, broken, err := plugin.Load(pluginDir)
 	if err != nil {
 		return err
+	}
+	for _, b := range broken {
+		log.Printf("%s: not loaded: %v", b.ID, b.Err)
 	}
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -63,6 +66,7 @@ func run(args []string) error {
 	return http.Serve(ln, console.Handler(console.Config{
 		Origin:    fmt.Sprintf("http://127.0.0.1:%d", consolePort),
 		Plugins:   plugins,
+		Broken:    broken,
 		PluginDir: pluginDir,
 		Served:    served,
 		Tokens:    tokens,

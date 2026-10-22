@@ -16,9 +16,12 @@ import (
 
 func load(t *testing.T, id string) plugin.Plugin {
 	t.Helper()
-	plugins, err := plugin.Load(".")
+	plugins, broken, err := plugin.Load(".")
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, b := range broken {
+		t.Errorf("example %s does not load: %v", b.ID, b.Err)
 	}
 	i := slices.IndexFunc(plugins, func(p plugin.Plugin) bool { return p.ID == id })
 	if i < 0 {

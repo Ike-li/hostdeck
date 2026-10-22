@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writePlugin puts manifest at <root>/<id>/plugin.yaml and returns its path.
@@ -22,6 +23,41 @@ func writePlugin(t *testing.T, root, id, manifest string) string {
 	return path
 }
 
+// loadAll loads root and turns the first plugin that did not load into the
+// error.
+func loadAll(root string) ([]Plugin, error) {
+	plugins, broken, err := Load(root)
+	if err == nil && len(broken) > 0 {
+		err = broken[0].Err
+	}
+	return plugins, err
+}
+
+func TestABrokenPluginIsSetAsideAndTheOthersLoad(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "good", "schema: 1\nname: Good\npage: {link: 'https://wiki.example/'}\n")
+	bad := writePlugin(t, root, "bad", "schema: 1\nname: Bad\npage: {lnk: 'https://wiki.example/'}\n")
+	os.MkdirAll(filepath.Join(root, "empty"), 0o755)
+
+	plugins, broken, err := Load(root)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plugins) != 1 || plugins[0].ID != "good" {
+		t.Errorf("loaded %+v, want only good", plugins)
+	}
+	if len(broken) != 2 || broken[0].ID != "bad" || broken[1].ID != "empty" {
+		t.Fatalf("broken %+v, want bad and empty", broken)
+	}
+	if msg := broken[0].Err.Error(); !strings.Contains(msg, bad) || !strings.Contains(msg, `"lnk"`) {
+		t.Errorf("bad: %q, want its file and the unknown field", msg)
+	}
+	if msg := broken[1].Err.Error(); !strings.Contains(msg, "plugin.yaml") {
+		t.Errorf("empty: %q, want it to say plugin.yaml is missing", msg)
+	}
+}
+
 func TestADeclarativeCardPluginLoads(t *testing.T) {
 	root := t.TempDir()
 	writePlugin(t, root, "demo", `
@@ -34,7 +70,7 @@ card:
   value: database
   label: {en: Database, zh-CN: 数据库}
 `)
-	plugins, err := Load(root)
+	plugins, err := loadAll(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,9 +80,10 @@ card:
 		Name: Text{All: "Demo"},
 		Icon: "D",
 		Card: &Card{
-			HTTP:  &HTTP{URL: "http://127.0.0.1:3000/api/health"},
-			Value: "database",
-			Label: Text{ByLang: map[string]string{"en": "Database", "zh-CN": "数据库"}},
+			Interval: DefaultInterval,
+			HTTP:     &HTTP{URL: "http://127.0.0.1:3000/api/health"},
+			Value:    "database",
+			Label:    Text{ByLang: map[string]string{"en": "Database", "zh-CN": "数据库"}},
 		},
 	}}
 	if !reflect.DeepEqual(plugins, want) {
@@ -54,11 +91,62 @@ card:
 	}
 }
 
+func TestADeclarativeCardWithThresholdsRowsAndSecretsLoads(t *testing.T) {
+	t.Setenv("DEMO_KEY", "k")
+	t.Setenv("DEMO_TOKEN", "t")
+	root := t.TempDir()
+	writePlugin(t, root, "demo", `schema: 1
+name: Demo
+card:
+  interval: 30s
+  http:
+    url: http://127.0.0.1:3000/api/health?key=${env:DEMO_KEY}
+    headers: {Authorization: "Bearer ${env:DEMO_TOKEN}"}
+  value: cpu
+  warn: {above: 80}
+  error: {above: 95}
+  rows:
+    - {name: {en: Database, zh-CN: 数据库}, value: database, error: {not: ok}}
+    - {name: Replicas, value: replicas, error: {equals: 0}}
+`)
+	plugins, err := loadAll(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	above := func(f float64) *float64 { return &f }
+	scalar := func(s Scalar) *Scalar { return &s }
+	want := &Card{
+		Interval: Duration(30 * time.Second),
+		HTTP: &HTTP{
+			URL:     "http://127.0.0.1:3000/api/health?key=${env:DEMO_KEY}",
+			Headers: map[string]string{"Authorization": "Bearer ${env:DEMO_TOKEN}"},
+		},
+		Value: "cpu",
+		Warn:  &Threshold{Above: above(80)},
+		Error: &Threshold{Above: above(95)},
+		Rows: []Row{
+			{Name: Text{ByLang: map[string]string{"en": "Database", "zh-CN": "数据库"}}, Value: "database", Error: &Threshold{Not: scalar("ok")}},
+			{Name: Text{All: "Replicas"}, Value: "replicas", Error: &Threshold{Equals: scalar("0")}},
+		},
+	}
+	if !reflect.DeepEqual(plugins[0].Card, want) {
+		t.Errorf("got %+v, want %+v", plugins[0].Card, want)
+	}
+}
+
+func TestEnvironmentReferencesAreFilledInWithTheirValues(t *testing.T) {
+	t.Setenv("DEMO_TOKEN", "s3cret")
+	got, secrets := Expand("Bearer ${env:DEMO_TOKEN}, again ${env:DEMO_TOKEN}")
+	if got != "Bearer s3cret, again s3cret" || !reflect.DeepEqual(secrets, []string{"s3cret", "s3cret"}) {
+		t.Errorf("got %q and %q", got, secrets)
+	}
+}
+
 func TestPagePluginsLoadWithoutACard(t *testing.T) {
 	root := t.TempDir()
 	writePlugin(t, root, "grafana", "schema: 1\nname: Grafana\npage: {proxy: 'http://127.0.0.1:3000/grafana/'}\n")
 	writePlugin(t, root, "wiki", "schema: 1\nname: Wiki\npage: {link: 'https://wiki.example/'}\n")
-	plugins, err := Load(root)
+	plugins, err := loadAll(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +168,7 @@ card:
     command: [sh, card.sh]
     windows: [powershell, -File, card.ps1]
 `)
-	plugins, err := Load(root)
+	plugins, err := loadAll(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +176,7 @@ card:
 		ID:   "disk",
 		Dir:  filepath.Join(root, "disk"),
 		Name: Text{All: "Disk"},
-		Card: &Card{Exec: &Exec{Command: []string{"sh", "card.sh"}, Windows: []string{"powershell", "-File", "card.ps1"}}},
+		Card: &Card{Interval: DefaultInterval, Exec: &Exec{Command: []string{"sh", "card.sh"}, Windows: []string{"powershell", "-File", "card.ps1"}}},
 	}}
 	if !reflect.DeepEqual(plugins, want) {
 		t.Errorf("got %+v, want %+v", plugins, want)
@@ -104,7 +192,7 @@ detail:
 actions:
   exec: {command: [sh, action.sh], windows: [powershell, -File, action.ps1]}
 `)
-	plugins, err := Load(root)
+	plugins, err := loadAll(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +218,7 @@ card:
     methd: POST
   value: status
 `)
-	_, err := Load(root)
+	_, err := loadAll(root)
 	if err == nil {
 		t.Fatal("loaded a manifest with an unknown field")
 	}
@@ -167,10 +255,19 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 		{"schema: 1\nname: Demo\ncard: {http: {}, value: status}\n", "card.http.url"},
 		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}}\n", "card.value"},
 		{"schema: 1\nname: {fr: Démo}\n" + card, `"fr"`},
+		{"schema: 1\nname: Demo\ncard: {interval: soon, http: {url: 'http://127.0.0.1:3000/'}, value: v}\n", "card.interval"},
+		{"schema: 1\nname: Demo\ncard: {interval: -5s, http: {url: 'http://127.0.0.1:3000/'}, value: v}\n", "card.interval"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}, value: v, warn: {}}\n", "card.warn"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}, value: v, warn: {above: 1, below: 2}}\n", "card.warn"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}, value: v, rows: [{name: X, error: {not: ok}}]}\n", "card.rows[0].value"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}, value: v, rows: [{name: X, value: x, error: {}}]}\n", "card.rows[0].error"},
+		{"schema: 1\nname: Demo\ncard: {exec: {command: [sh, c.sh]}, rows: [{name: X, value: x}]}\n", "card.http"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/?k=${env:HOSTDECK_TEST_UNSET}'}, value: v}\n", "HOSTDECK_TEST_UNSET"},
+		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/', headers: {X-Key: '${KEY}'}}, value: v}\n", "${env:NAME}"},
 	} {
 		root := t.TempDir()
 		path := writePlugin(t, root, "demo", tc.manifest)
-		_, err := Load(root)
+		_, err := loadAll(root)
 		if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.mention) {
 			t.Errorf("manifest %q: err = %v, want one naming %s and %s", tc.manifest, err, path, tc.mention)
 		}

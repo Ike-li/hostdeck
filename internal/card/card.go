@@ -7,7 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/tidwall/gjson"
 
@@ -25,6 +30,9 @@ type View struct {
 	Label  plugin.Text `json:"label,omitzero"`
 	Rows   []Row       `json:"rows,omitempty"`
 	Error  *Error      `json:"error,omitempty"`
+	// Pending says that a fetch is under way; what the card holds, if
+	// anything, is from the fetch before.
+	Pending bool `json:"pending,omitempty"`
 }
 
 type Row struct {
@@ -51,42 +59,136 @@ func Fetch(ctx context.Context, p plugin.Plugin) View {
 	if p.Card.Exec != nil {
 		return runCard(ctx, p)
 	}
-	v := View{ID: p.ID, Name: p.Name, Icon: p.Icon, Label: p.Card.Label}
-	value, err := fetchValue(ctx, p.Card)
+	c := p.Card
+	v := View{ID: p.ID, Name: p.Name, Icon: p.Icon, Label: c.Label}
+	body, err := get(ctx, c.HTTP)
 	if err != nil {
 		v.Error = &Error{Code: "fetch_failed", Detail: err.Error()}
 		return v
 	}
-	v.Value = value
+	value, err := at(body, c.HTTP, c.Value)
+	if err != nil {
+		v.Error = &Error{Code: "fetch_failed", Detail: err.Error()}
+		return v
+	}
+	status, err := statusOf(value, c.Warn, c.Error)
+	if err != nil {
+		v.Error = &Error{Code: "threshold", Detail: fmt.Sprintf("%s: %v", c.Value, err)}
+		return v
+	}
+	v.Value, v.Status = value, status
+	for _, r := range c.Rows {
+		value, err := at(body, c.HTTP, r.Value)
+		if err != nil {
+			return View{ID: p.ID, Name: p.Name, Icon: p.Icon, Error: &Error{Code: "fetch_failed", Detail: err.Error()}}
+		}
+		status, err := statusOf(value, r.Warn, r.Error)
+		if err != nil {
+			return View{ID: p.ID, Name: p.Name, Icon: p.Icon, Error: &Error{Code: "threshold", Detail: fmt.Sprintf("%s: %v", r.Value, err)}}
+		}
+		v.Rows = append(v.Rows, Row{Name: r.Name, Value: value, Status: status})
+	}
 	return v
 }
 
-func fetchValue(ctx context.Context, c *plugin.Card) (string, error) {
-	url := c.HTTP.URL
+// get asks h and returns its JSON. Errors name the URL as the manifest writes
+// it and never hold a value that ${env:NAME} filled in.
+func get(ctx context.Context, h *plugin.HTTP) (body []byte, err error) {
+	url, secrets := plugin.Expand(h.URL)
+	defer func() {
+		if err != nil {
+			err = errors.New(redact(fmt.Sprintf("GET %s: %v", h.URL, err), secrets))
+		}
+	}()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	for name, value := range h.Headers {
+		value, s := plugin.Expand(value)
+		secrets = append(secrets, s...)
+		req.Header.Set(name, value)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		var ue *neturl.Error
+		if errors.As(err, &ue) {
+			return nil, ue.Err // without the URL it would repeat, filled in
+		}
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("GET %s: %s", url, resp.Status)
+		return nil, errors.New(resp.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return "", fmt.Errorf("GET %s: %w", url, err)
+		return nil, err
 	}
 	if !gjson.ValidBytes(body) {
-		return "", fmt.Errorf("GET %s: the response is not JSON", url)
+		return nil, errors.New("the response is not JSON")
 	}
-	r := gjson.GetBytes(body, c.Value)
+	return body, nil
+}
+
+// redact hides each secret in msg, also as Go quotes it and as URLs escape
+// it, the forms in which error messages repeat a URL.
+func redact(msg string, secrets []string) string {
+	for _, s := range secrets {
+		quoted := strconv.Quote(s)
+		for _, form := range []string{s, quoted[1 : len(quoted)-1], neturl.QueryEscape(s), neturl.PathEscape(s)} {
+			msg = strings.ReplaceAll(msg, form, "***")
+		}
+	}
+	return msg
+}
+
+func at(body []byte, h *plugin.HTTP, path string) (string, error) {
+	r := gjson.GetBytes(body, path)
 	if !r.Exists() {
-		return "", fmt.Errorf("GET %s: the response has nothing at %q", url, c.Value)
+		return "", fmt.Errorf("GET %s: the response has nothing at %q", h.URL, path)
 	}
 	return r.String(), nil
+}
+
+// statusOf is "error" or "warn" when value meets that threshold, error first,
+// "ok" when it meets neither, and "" when there are none.
+func statusOf(value string, warn, bad *plugin.Threshold) (string, error) {
+	if warn == nil && bad == nil {
+		return "", nil
+	}
+	for _, c := range []struct {
+		t      *plugin.Threshold
+		status string
+	}{{bad, "error"}, {warn, "warn"}} {
+		hit, err := meets(value, c.t)
+		if err != nil {
+			return "", err
+		}
+		if hit {
+			return c.status, nil
+		}
+	}
+	return "ok", nil
+}
+
+func meets(value string, t *plugin.Threshold) (bool, error) {
+	switch {
+	case t == nil:
+		return false, nil
+	case t.Equals != nil:
+		return value == string(*t.Equals), nil
+	case t.Not != nil:
+		return value != string(*t.Not), nil
+	}
+	n, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return false, fmt.Errorf("%q is not a number, so above and below cannot apply", value)
+	}
+	if t.Above != nil {
+		return n > *t.Above, nil
+	}
+	return n < *t.Below, nil
 }
 
 // printed is what an exec card's command prints.
@@ -156,4 +258,78 @@ func unknownStatus(pr printed) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// FetchTimeout bounds one fetch of a card. Whoever asks may wait less: a card
+// that takes longer comes back pending and arrives on a later request. Windows
+// PowerShell can take many seconds to start for the first time.
+const FetchTimeout = 30 * time.Second
+
+// Cache keeps each card's last view for its interval, so that opening the
+// overview again does not ask every service again.
+type Cache struct {
+	now     func() time.Time
+	mu      sync.Mutex
+	entries map[string]*entry
+}
+
+type entry struct {
+	view    View
+	until   time.Time     // the view is kept until then; a failed fetch is not kept
+	running chan struct{} // closed when the fetch under way ends
+}
+
+func NewCache(now func() time.Time) *Cache {
+	return &Cache{now: now, entries: map[string]*entry{}}
+}
+
+// Get returns the plugin's card: the kept one while its interval lasts, else
+// a new one. If the fetch outlasts ctx, the card comes back pending, with its
+// last value if it has one, and the fetch goes on for the next request.
+func (c *Cache) Get(ctx context.Context, p plugin.Plugin) View {
+	c.mu.Lock()
+	e := c.entries[p.ID]
+	if e == nil {
+		e = &entry{}
+		c.entries[p.ID] = e
+	}
+	if e.running == nil && c.now().Before(e.until) {
+		defer c.mu.Unlock()
+		return e.view
+	}
+	if e.running == nil {
+		e.running = make(chan struct{})
+		go c.fetch(p, e)
+	}
+	running := e.running
+	c.mu.Unlock()
+
+	select {
+	case <-running:
+	case <-ctx.Done():
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v := e.view
+	if e.running != nil {
+		if v.ID == "" {
+			v = View{ID: p.ID, Name: p.Name, Icon: p.Icon}
+		}
+		v.Pending = true
+	}
+	return v
+}
+
+func (c *Cache) fetch(p plugin.Plugin, e *entry) {
+	ctx, cancel := context.WithTimeout(context.Background(), FetchTimeout)
+	defer cancel()
+	v := Fetch(ctx, p)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e.view, e.until = v, time.Time{}
+	if v.Error == nil {
+		e.until = c.now().Add(time.Duration(p.Card.Interval))
+	}
+	close(e.running)
+	e.running = nil
 }

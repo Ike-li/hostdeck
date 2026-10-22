@@ -20,14 +20,15 @@ import (
 	"github.com/Ike-li/hostdeck/web"
 )
 
-// cardTimeout bounds one overview request, so a hung service shows up as an
-// error card instead of an overview that never loads.
-const cardTimeout = 10 * time.Second
+// overviewWait bounds how long the overview waits for its cards. A card that
+// takes longer shows as pending, and the page asks again.
+const overviewWait = 5 * time.Second
 
 type Config struct {
 	// Origin is the console page's own origin, the only one that may run actions.
 	Origin    string
 	Plugins   []plugin.Plugin
+	Broken    []plugin.Broken // shown as error cards
 	PluginDir string
 	// Served holds, by plugin ID, where each embedded service is served.
 	Served map[string]Served
@@ -45,7 +46,7 @@ func Handler(cfg Config) http.Handler {
 	mux.Handle("GET /", http.FileServerFS(web.Files))
 	mux.HandleFunc("GET /api/plugins", cfg.servePlugins)
 	mux.HandleFunc("GET /api/status", cfg.serveStatus)
-	mux.HandleFunc("GET /api/cards", cfg.serveCards)
+	mux.HandleFunc("GET /api/cards", cfg.serveCards(card.NewCache(time.Now)))
 	mux.HandleFunc("POST /api/clear/{id}", cfg.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", cfg.serveDetail)
 	mux.HandleFunc("POST /api/action/{id}", cfg.serveAction)
@@ -131,25 +132,30 @@ func answers(ctx context.Context, url string) bool {
 	return true
 }
 
-func (cfg Config) serveCards(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), cardTimeout)
-	defer cancel()
-	var withCard []plugin.Plugin
-	for _, p := range cfg.Plugins {
-		if p.Card != nil {
-			withCard = append(withCard, p)
+func (cfg Config) serveCards(cache *card.Cache) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), overviewWait)
+		defer cancel()
+		var withCard []plugin.Plugin
+		for _, p := range cfg.Plugins {
+			if p.Card != nil {
+				withCard = append(withCard, p)
+			}
 		}
+		cards := make([]card.View, len(withCard))
+		var wg sync.WaitGroup
+		for i, p := range withCard {
+			wg.Go(func() { cards[i] = cache.Get(ctx, p) })
+		}
+		wg.Wait()
+		for _, b := range cfg.Broken {
+			cards = append(cards, card.View{ID: b.ID, Name: plugin.Text{All: b.ID}, Error: &card.Error{Code: "bad_manifest", Detail: b.Err.Error()}})
+		}
+		writeJSON(w, struct {
+			PluginDir string      `json:"pluginDir"`
+			Cards     []card.View `json:"cards"`
+		}{cfg.PluginDir, cards})
 	}
-	cards := make([]card.View, len(withCard))
-	var wg sync.WaitGroup
-	for i, p := range withCard {
-		wg.Go(func() { cards[i] = card.Fetch(ctx, p) })
-	}
-	wg.Wait()
-	writeJSON(w, struct {
-		PluginDir string      `json:"pluginDir"`
-		Cards     []card.View `json:"cards"`
-	}{cfg.PluginDir, cards})
 }
 
 // serveClear hands out the address at which an embedded service's proxy has

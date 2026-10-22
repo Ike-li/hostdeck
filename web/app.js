@@ -3,6 +3,7 @@ const LANG_KEY = 'hostdeck.lang';
 const STATUS_EVERY = 15_000;
 const IDLE_RELEASE = 10 * 60_000; // a page switched away from this long is unloaded, and loads again on its next visit
 const ARMED_FOR = 4000; // how long a button that needs a second click waits for it
+const PENDING_AGAIN = 2000; // how soon a card still being read is asked for again
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,6 +20,7 @@ let plugins = []; // the sidebar entries
 let status = {}; // plugin id -> up | down
 let current = null; // the open sidebar entry, or null on the overview
 let overview = null; // the last answer of /api/cards
+let cardsTimer = null; // the next /api/cards while a card is pending
 let failure = null; // why the backend could not be read
 const frames = new Map(); // plugin id -> its iframe or detail view, kept so each page keeps its state
 let clearArmed = null; // the timer while the clear button waits for its second click
@@ -99,6 +101,7 @@ function route() {
     else if (!hiddenSince.has(frameId)) hiddenSince.set(frameId, Date.now());
   }
   if (!current) loadCards();
+  else clearTimeout(cardsTimer);
   render();
 }
 
@@ -179,6 +182,7 @@ function cardElement(c) {
   const head = el('header', 'card-head');
   head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), el('h2', 'card-name', pick(c.name)));
   card.append(head);
+  if (c.pending) card.append(el('p', 'card-pending', t('loading')));
   if (c.error) {
     card.dataset.status = 'error';
     card.append(el('p', 'card-error', explain(c.error)));
@@ -188,6 +192,8 @@ function cardElement(c) {
     card.dataset.status = c.status;
     head.append(el('span', 'pill', t(`card.status.${c.status}`)));
   }
+  // A pending card that has never been read has nothing more to show.
+  if (c.pending && !c.status && !c.value) return card;
   const big = el('div', 'card-big');
   big.append(el('span', 'card-value', c.value ?? ''), el('span', 'card-label', pick(c.label)));
   card.append(big);
@@ -228,6 +234,7 @@ function renderService(p) {
       view = el('div', 'frame detail-view');
       view.append(el('p', 'detail-note'), el('div', 'detail-list'));
       view.firstChild.hidden = true;
+      view.lastChild.append(el('p', 'empty', t('loading')));
       $('frames').append(view);
       frames.set(p.id, view);
       loadDetail(p, view);
@@ -412,7 +419,10 @@ function releaseIdleFrames() {
   }
 }
 
+// A card still being read is asked for again shortly, for as long as the
+// overview is shown.
 async function loadCards() {
+  clearTimeout(cardsTimer);
   try {
     overview = await getJSON('/api/cards');
     failure = null;
@@ -420,6 +430,7 @@ async function loadCards() {
     failure = e.message;
   }
   render();
+  if (!current && overview?.cards.some((c) => c.pending)) cardsTimer = setTimeout(loadCards, PENDING_AGAIN);
 }
 
 async function refreshStatus() {

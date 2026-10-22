@@ -241,6 +241,12 @@ h1 {
 
 .card-label { color: var(--muted); }
 
+.card-pending {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .card-error {
   margin: 10px 0 0;
   color: var(--error);

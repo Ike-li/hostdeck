@@ -275,3 +275,16 @@ func TestDetailAndActionsAnswerOnlyForPluginsThatHaveThem(t *testing.T) {
 		t.Errorf("detail whose command is missing: error %q, want command_start", got.Error.Code)
 	}
 }
+
+func TestPluginsThatDidNotLoadShowAsErrorCards(t *testing.T) {
+	broken := []plugin.Broken{{ID: "bad", Err: errors.New(`plugins/bad/plugin.yaml: line 3: unknown field "lnk"`)}}
+
+	resp := get(Handler(Config{Broken: broken, PluginDir: "plugins"}), "http://127.0.0.1:4678/api/cards", nil)
+
+	want := parseJSON(`{"pluginDir": "plugins", "cards": [
+		{"id": "bad", "name": "bad", "error": {"code": "bad_manifest", "detail": "plugins/bad/plugin.yaml: line 3: unknown field \"lnk\""}}
+	]}`)
+	if got := decodeJSON(t, resp); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
