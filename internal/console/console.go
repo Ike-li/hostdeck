@@ -433,7 +433,9 @@ func (s *server) serveAdd(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveAddPage adds a plugin that embeds a web page on this machine or the
-// local network and puts it to use, for the console page only.
+// local network, or, when mode is link, a link that need not be local. It
+// puts the plugin to use, for the console page only. A link's manifest has
+// no command.
 func (s *server) serveAddPage(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") != s.cfg.Origin {
 		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
@@ -442,14 +444,23 @@ func (s *server) serveAddPage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Address string `json:"address"`
 		Name    string `json:"name"`
+		Mode    string `json:"mode"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
 		return
 	}
+	if req.Mode != "" && req.Mode != "proxy" && req.Mode != "link" {
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request"})
+		return
+	}
 	s.changing.Lock()
 	defer s.changing.Unlock()
-	id, err := catalog.AddPage(s.cfg.PluginDir, req.Address, req.Name)
+	add := catalog.AddPage
+	if req.Mode == "link" {
+		add = catalog.AddLink
+	}
+	id, err := add(s.cfg.PluginDir, req.Address, req.Name)
 	switch {
 	case errors.Is(err, catalog.ErrNotWeb):
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "not_web"})

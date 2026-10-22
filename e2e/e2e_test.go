@@ -1949,3 +1949,31 @@ card:
 		t.Fatalf("plugin.yaml is:\n%s", file)
 	}
 }
+
+// The plugins page can add a link to a page anywhere. It is not embedded and
+// the manifest has no command.
+func TestThePluginsPageAddsALinkWithoutEmbeddingIt(t *testing.T) {
+	dir := t.TempDir()
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS("#page-kind")))
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`(() => {
+		document.querySelector('#page-kind').value = 'link';
+		document.querySelector('#page-address').value = 'https://example.com/notes';
+		document.querySelector('#page-name').value = '记事';
+		document.querySelector('#page-form button').click();
+	})()`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#nav .nav-item[data-id="example-com"]')?.getAttribute('href') === 'https://example.com/notes' && document.querySelector('#nav .nav-item[data-id="example-com"]')?.target === '_blank' && document.querySelector('#nav .nav-item[data-id="example-com"] .nav-name')?.textContent === '记事'`)); err != nil {
+		t.Fatalf("the sidebar link: %v; note %q", err, text(t, ctx, "#catalog-note"))
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "plugins", "example-com", "plugin.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := string(data)
+	if !strings.Contains(file, "https://example.com/notes") || strings.Contains(file, "proxy") || strings.Contains(file, "command") || strings.Contains(file, "exec") {
+		t.Fatalf("plugin.yaml is:\n%s", file)
+	}
+}

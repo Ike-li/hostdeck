@@ -19,9 +19,9 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 
 - **Access from other devices** (LAN, phone), login, HTTPS. hostdeck listens on 127.0.0.1 only, and its security model depends on that.
 - **Linux** before v1, a Docker image, multiple users.
-- **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page adds only the plugins built into hostdeck, and plugins that embed a web page on this machine or the local network from its address.
+- **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page adds only the plugins built into hostdeck, plugins that embed a web page on this machine or the local network from its address, and links.
 - **Hundreds of built-in integrations.** Common services are covered by example plugins.
-- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, changing the name, icon or address of a page, disabling or enabling a plugin, and arranging, hiding or resetting the sidebar and the cards.
+- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, and arranging, hiding or resetting the sidebar and the cards.
 - **Electron.**
 
 ## Roadmap
@@ -38,6 +38,7 @@ Each milestone is released on its own.
 - Sidebar entries and cards dragged into the order you like, and cards made two columns wide; kept in `layout.json`
 - A plugin can be hidden from the sidebar and the cards, and the layout can be reset; both can be undone, and both are kept in `layout.json`
 - A page's name, icon or address can be edited; comments and commands in the manifest stay, and an embed address is checked again to be on this machine or the local network
+- A link to any web page can be added; it is not embedded and its manifest has no command
 - Plugin manifest v1: a plugin is a folder whose manifest declares its page, card, detail page and actions
 - Declarative plugins: a URL, which fields of its JSON go on the card, and thresholds for yellow and red
 - External-program plugins: any executable that prints the card as JSON

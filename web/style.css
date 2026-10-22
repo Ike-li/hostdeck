@@ -462,6 +462,16 @@ h1 {
   gap: 8px;
 }
 
+.page-form select {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
 .page-form input {
   flex: 1 1 14em;
   padding: 4px 10px;

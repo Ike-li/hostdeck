@@ -1159,6 +1159,68 @@ card:
 	}
 }
 
+// Adding a link writes page.link and no command. The address need not be local.
+// Leaving mode out still embeds, and still refuses an address on the internet.
+func TestAddingALinkDoesNotRequireItToBeLocalAndWritesNoCommand(t *testing.T) {
+	pluginDir := t.TempDir()
+	reload := reloadFrom(pluginDir)
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: fstest.MapFS{}, Reload: reload})
+	empty := func() {
+		t.Helper()
+		entries, err := os.ReadDir(pluginDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("the plugins folder holds %d entries, want none", len(entries))
+		}
+	}
+
+	for name, header := range fromOtherPage {
+		resp := postJSON(h, "http://127.0.0.1:4678/api/pages", `{"address": "https://example.com/notes", "mode": "link"}`, header)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", name, resp.StatusCode)
+		}
+	}
+	for body, code := range map[string]string{
+		`{"address": "ftp://files.example/a", "mode": "link"}`: "not_web",
+		`{"address": "javascript:alert(1)", "mode": "link"}`:   "not_web",
+		`{"address": "https://example.com/", "mode": "nope"}`:  "bad_request",
+		`{"address": "http://93.184.215.14/"}`:                 "not_local",
+	} {
+		resp := postJSON(h, "http://127.0.0.1:4678/api/pages", body, fromConsole)
+		got, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusBadRequest || gjson.GetBytes(got, "error.code").String() != code {
+			t.Errorf("%s: %d %s, want 400 %s", body, resp.StatusCode, got, code)
+		}
+	}
+	empty()
+
+	resp := postJSON(h, "http://127.0.0.1:4678/api/pages", `{"address": "https://example.com/notes", "name": "Notes", "mode": "link"}`, fromConsole)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || gjson.GetBytes(body, "id").String() != "example-com" {
+		t.Fatalf("adding a link: %d %s, want 200 example-com", resp.StatusCode, body)
+	}
+	got := readFile(t, filepath.Join(pluginDir, "example-com", "plugin.yaml"))
+	if !strings.Contains(got, "https://example.com/notes") || !strings.Contains(got, "Notes") || strings.Contains(got, "proxy") || strings.Contains(got, "command") || strings.Contains(got, "exec") {
+		t.Fatalf("plugin.yaml is:\n%s", got)
+	}
+	listed := string(mustRead(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body))
+	if gjson.Get(listed, `#(id=="example-com").type`).String() != "link" || gjson.Get(listed, `#(id=="example-com").url`).String() != "https://example.com/notes" {
+		t.Fatalf("the sidebar has %s, want a link to the page", listed)
+	}
+
+	resp = postJSON(h, "http://127.0.0.1:4678/api/pages", `{"address": "127.0.0.1:9/here", "mode": "link"}`, fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || gjson.GetBytes(body, "id").String() != "127-0-0-1-9" {
+		t.Fatalf("a local address as a link: %d %s, want 200 127-0-0-1-9", resp.StatusCode, body)
+	}
+	got = readFile(t, filepath.Join(pluginDir, "127-0-0-1-9", "plugin.yaml"))
+	if !strings.Contains(got, "http://127.0.0.1:9/here") || strings.Contains(got, "proxy") {
+		t.Fatalf("a local link was not stored as a link:\n%s", got)
+	}
+}
+
 // readFile reads path and closes it. A handle kept open until the test ends
 // makes Windows refuse to rename a new copy over the file.
 func readFile(t *testing.T, path string) string {

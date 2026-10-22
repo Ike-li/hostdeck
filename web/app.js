@@ -830,17 +830,20 @@ function catalogButton(label, armedText, url, noteOf, id) {
   return btn;
 }
 
-// addPage embeds the web page at address and opens it. If it cannot, the
-// plugins page says why.
-async function addPage(address, name = '') {
+// addPage adds the web page at address and opens it. mode "link" stores a
+// link and need not be local; anything else embeds a page on this machine.
+// If it cannot, the plugins page says why.
+async function addPage(address, name = '', mode = '') {
   catalogNoteFor = null;
   const note = $('catalog-note');
   if (note) $('page-form').before(note);
+  const payload = { address, name };
+  if (mode === 'link') payload.mode = 'link';
   try {
     const resp = await fetch('/api/pages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, name }),
+      body: JSON.stringify(payload),
     });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok) throw body.error || { code: '', detail: `HTTP ${resp.status}` };
@@ -862,7 +865,7 @@ async function onPageSubmit(e) {
   const form = e.target;
   const btn = form.querySelector('button');
   btn.disabled = true;
-  if (await addPage($('page-address').value.trim(), $('page-name').value)) form.reset();
+  if (await addPage($('page-address').value.trim(), $('page-name').value, $('page-kind').value)) form.reset();
   btn.disabled = false;
 }
 

@@ -133,20 +133,42 @@ func place(pluginDir, id string, fill func(dir string) error) error {
 // local network: the proxy sends it 127.0.0.1 as its host, which a site on the
 // internet would not answer to. Without a name, the page is named by its host.
 func AddPage(pluginDir, address, name string) (string, error) {
-	if !strings.Contains(address, "://") {
-		address = "http://" + address
+	return addPage(pluginDir, address, name, true)
+}
+
+// AddLink adds a plugin that opens address in a new tab, and returns its ID.
+// The address may leave out http://. It must be http or https and need not be
+// on this machine. The manifest holds a name and page.link, and no command.
+func AddLink(pluginDir, address, name string) (string, error) {
+	return addPage(pluginDir, address, name, false)
+}
+
+func addPage(pluginDir, address, name string, embed bool) (string, error) {
+	var pageURL string
+	var err error
+	if embed {
+		pageURL, err = localPage(address)
+	} else {
+		if !strings.Contains(address, "://") {
+			address = "http://" + address
+		}
+		pageURL, err = webPage(address)
 	}
-	u, err := url.Parse(address)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(pageURL)
+	if err != nil || u.Hostname() == "" {
 		return "", ErrNotWeb
-	}
-	if !onLocalNetwork(u.Hostname()) {
-		return "", ErrNotLocal
 	}
 	if name = strings.TrimSpace(name); name == "" {
 		name = u.Host
 	}
-	manifest, err := yaml.Marshal(map[string]any{"schema": 1, "name": name, "page": map[string]string{"proxy": u.String()}})
+	key := "proxy"
+	if !embed {
+		key = "link"
+	}
+	manifest, err := yaml.Marshal(map[string]any{"schema": 1, "name": name, "page": map[string]string{key: pageURL}})
 	if err != nil {
 		return "", err
 	}
