@@ -918,7 +918,7 @@ func TestSidebarEntriesAreDraggedIntoAnOrderThatLasts(t *testing.T) {
 	}
 	savedLayout(t, dir, "sidebar", []string{"c", "a", "b"})
 
-	do(t, ctx, chromedp.Reload(), chromedp.WaitVisible(chromedp.CSS(entry)))
+	do(t, ctx, chromedp.Reload(), chromedp.WaitVisible(chromedp.CSS(entry)), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"]`)))
 	if got, want := idsOf(t, ctx, entry), []string{"c", "a", "b"}; !slices.Equal(got, want) {
 		t.Errorf("after reloading: %v, want %v", got, want)
 	}
