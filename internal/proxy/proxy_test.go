@@ -17,6 +17,8 @@ import (
 
 const consoleOrigin = "http://127.0.0.1:4678"
 
+func refuseAll(string) bool { return false }
+
 // serveThroughProxy starts upstream and a proxy in front of it whose target
 // carries path, and returns the proxy's URL.
 func serveThroughProxy(t *testing.T, path string, upstream http.HandlerFunc) string {
@@ -24,7 +26,7 @@ func serveThroughProxy(t *testing.T, path string, upstream http.HandlerFunc) str
 	up := httptest.NewServer(upstream)
 	t.Cleanup(up.Close)
 	target, _ := url.Parse(up.URL + path)
-	proxy := httptest.NewServer(New(target, consoleOrigin))
+	proxy := httptest.NewServer(New(target, consoleOrigin, refuseAll))
 	t.Cleanup(proxy.Close)
 	return proxy.URL
 }
@@ -170,7 +172,7 @@ func TestAnUnreachableServiceGetsAPageInTheBrowsersLanguage(t *testing.T) {
 	closed := httptest.NewServer(http.NotFoundHandler())
 	closed.Close()
 	target, _ := url.Parse(closed.URL)
-	proxy := httptest.NewServer(New(target, consoleOrigin))
+	proxy := httptest.NewServer(New(target, consoleOrigin, refuseAll))
 	defer proxy.Close()
 
 	for lang, want := range map[string]string{"zh-CN,zh;q=0.9": "连不上", "en-US,en;q=0.9": "Cannot reach"} {
@@ -185,5 +187,45 @@ func TestAnUnreachableServiceGetsAPageInTheBrowsersLanguage(t *testing.T) {
 		if resp.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), want) || !strings.Contains(string(body), target.Host) {
 			t.Errorf("%s: status %d, body %q; want 502 saying %s %s", lang, resp.StatusCode, body, want, target.Host)
 		}
+	}
+}
+
+func TestClearingSiteDataTakesAFreshTokenAndNeverReachesTheService(t *testing.T) {
+	var reached atomic.Bool
+	used := false
+	redeem := func(token string) bool {
+		if token == "fresh" && !used {
+			used = true
+			return true
+		}
+		return false
+	}
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached.Store(true) }))
+	defer up.Close()
+	target, _ := url.Parse(up.URL)
+	proxy := httptest.NewServer(New(target, consoleOrigin, redeem))
+	defer proxy.Close()
+
+	resp, err := http.Get(proxy.URL + ClearPath + "?token=fresh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Clear-Site-Data") != `"cache", "storage"` || resp.Header.Get("Cache-Control") != "no-store" {
+		t.Errorf("with a fresh token: status %d, Clear-Site-Data %q, Cache-Control %q", resp.StatusCode, resp.Header.Get("Clear-Site-Data"), resp.Header.Get("Cache-Control"))
+	}
+
+	for _, query := range []string{"?token=fresh", "?token=guess", ""} {
+		resp, err := http.Get(proxy.URL + ClearPath + query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden || resp.Header.Get("Clear-Site-Data") != "" {
+			t.Errorf("%q: status %d, Clear-Site-Data %q; want 403 and nothing cleared", query, resp.StatusCode, resp.Header.Get("Clear-Site-Data"))
+		}
+	}
+	if reached.Load() {
+		t.Error("the service saw a request for the clearing path")
 	}
 }

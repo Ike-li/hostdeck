@@ -249,6 +249,21 @@ h1 {
 
 .btn:hover { border-color: var(--accent); }
 
+.btn.armed {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.btn:disabled { opacity: .6; cursor: default; }
+
+.note {
+  margin: 0;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
 .frames {
   position: relative;
   flex: 1;

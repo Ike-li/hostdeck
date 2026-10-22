@@ -11,8 +11,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Ike-li/hostdeck/internal/console"
+	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/ports"
 	"github.com/Ike-li/hostdeck/internal/proxy"
@@ -52,17 +54,19 @@ func run(args []string) error {
 		return err
 	}
 	consolePort := ln.Addr().(*net.TCPAddr).Port
-	served, err := serveProxies(plugins, filepath.Join(dir, "ports.json"), consolePort)
+	tokens := onetime.New(time.Now)
+	served, err := serveProxies(plugins, filepath.Join(dir, "ports.json"), consolePort, tokens)
 	if err != nil {
 		return err
 	}
 	log.Printf("hostdeck: http://%s/ (%d plugins in %s)", ln.Addr(), len(plugins), pluginDir)
-	return http.Serve(ln, console.Handler(console.Config{Plugins: plugins, PluginDir: pluginDir, Served: served}))
+	return http.Serve(ln, console.Handler(console.Config{Plugins: plugins, PluginDir: pluginDir, Served: served, Tokens: tokens}))
 }
 
 // serveProxies re-serves each plugin's proxied page on a port of its own, from
 // the port after the console's up, and says where the browser finds each one.
-func serveProxies(plugins []plugin.Plugin, portsFile string, consolePort int) (map[string]console.Served, error) {
+// Each proxy clears its service's browser data with a token from tokens.
+func serveProxies(plugins []plugin.Plugin, portsFile string, consolePort int, tokens *onetime.Tokens) (map[string]console.Served, error) {
 	var ids []string
 	for _, p := range plugins {
 		if p.Page != nil && p.Page.Proxy != "" {
@@ -92,7 +96,8 @@ func serveProxies(plugins []plugin.Plugin, portsFile string, consolePort int) (m
 		served[p.ID] = console.Served{URL: fmt.Sprintf("http://127.0.0.1:%d%s", o.Port, target.RequestURI())}
 		log.Printf("%s: http://127.0.0.1:%d/ -> %s", p.ID, o.Port, p.Page.Proxy)
 		go func() {
-			log.Printf("%s: %v", p.ID, http.Serve(o.Listener, proxy.New(target, consoleOrigin)))
+			redeem := func(token string) bool { return tokens.Redeem(p.ID, token) }
+			log.Printf("%s: %v", p.ID, http.Serve(o.Listener, proxy.New(target, consoleOrigin, redeem)))
 		}()
 	}
 	return served, nil

@@ -5,13 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/card"
 	"github.com/Ike-li/hostdeck/internal/local"
+	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/proxy"
 	"github.com/Ike-li/hostdeck/web"
 )
 
@@ -24,6 +27,7 @@ type Config struct {
 	PluginDir string
 	// Served holds, by plugin ID, where each embedded service is served.
 	Served map[string]Served
+	Tokens *onetime.Tokens
 }
 
 // Served is where the browser finds an embedded service, or why it cannot.
@@ -38,6 +42,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/plugins", cfg.servePlugins)
 	mux.HandleFunc("GET /api/status", cfg.serveStatus)
 	mux.HandleFunc("GET /api/cards", cfg.serveCards)
+	mux.HandleFunc("POST /api/clear/{id}", cfg.serveClear)
 	return local.Only(sameOriginAPI(noFraming(mux)))
 }
 
@@ -134,6 +139,31 @@ func (cfg Config) serveCards(w http.ResponseWriter, r *http.Request) {
 		PluginDir string      `json:"pluginDir"`
 		Cards     []card.View `json:"cards"`
 	}{cfg.PluginDir, cards})
+}
+
+// serveClear hands out the address at which an embedded service's proxy has
+// the browser clear that service's cache and storage. The address works once.
+func (cfg Config) serveClear(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s, ok := cfg.Served[id]
+	if !ok || s.Err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]card.Error{"error": {Code: "not_embedded"}})
+		return
+	}
+	served, err := url.Parse(s.URL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	clear := url.URL{
+		Scheme:   served.Scheme,
+		Host:     served.Host,
+		Path:     proxy.ClearPath,
+		RawQuery: url.Values{"token": {cfg.Tokens.Issue(id)}}.Encode(),
+	}
+	writeJSON(w, map[string]string{"url": clear.String()})
 }
 
 // sameOriginAPI keeps other pages from calling the API. Every port on 127.0.0.1

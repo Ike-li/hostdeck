@@ -30,3 +30,12 @@ jobs:
           if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
       - run: go vet ./...
       - run: go test ./...
+      - name: browser tests in Edge
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            export HOSTDECK_BROWSER='C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+          else
+            export HOSTDECK_BROWSER='/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+          fi
+          go test -count=1 ./e2e/

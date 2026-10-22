@@ -10,5 +10,10 @@
   "service.open": "新标签打开",
   "status.up": "在线",
   "status.down": "没有响应",
-  "error.port_unavailable": "这个服务没拿到自己的端口：{detail}"
+  "error.port_unavailable": "这个服务没拿到自己的端口：{detail}",
+  "service.clear": "清除缓存",
+  "service.clear.confirm": "再点一次清除",
+  "service.clearing": "正在清除…",
+  "service.clear.explain": "只清除这个服务的缓存和网站数据：HTTP 缓存、localStorage、IndexedDB、Cache Storage 和 service worker。cookie 和其他服务都不受影响。如果这个服务把登录状态存在 localStorage 里，你会退出这个服务的登录。它的 service worker 会被注销，依赖它的网页推送需要重新订阅。",
+  "error.clear_failed": "没能清除：{detail}"
 }

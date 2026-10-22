@@ -2,6 +2,7 @@ const LANGS = ['en', 'zh-CN'];
 const LANG_KEY = 'hostdeck.lang';
 const STATUS_EVERY = 15_000;
 const IDLE_RELEASE = 10 * 60_000; // a page switched away from this long is unloaded, and loads again on its next visit
+const ARMED_FOR = 4000; // how long a button that needs a second click waits for it
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,6 +21,9 @@ let current = null; // the open sidebar entry, or null on the overview
 let overview = null; // the last answer of /api/cards
 let failure = null; // why the backend could not be read
 const frames = new Map(); // plugin id -> iframe, kept so each page keeps its state
+let clearArmed = null; // the timer while the clear button waits for its second click
+let clearing = false;
+let clearFailure = null; // why the last clearing failed
 const hiddenSince = new Map(); // plugin id -> when its page was switched away from
 
 // A choice made on this page wins; otherwise the first of the browser's
@@ -87,6 +91,8 @@ function route() {
     // a malformed escape: show the overview
   }
   current = plugins.find((p) => p.id === id && p.type === 'proxy') || null;
+  disarmClear();
+  clearFailure = null;
   for (const frameId of frames.keys()) {
     if (current && frameId === current.id) hiddenSince.delete(frameId);
     else if (!hiddenSince.has(frameId)) hiddenSince.set(frameId, Date.now());
@@ -110,18 +116,33 @@ function render() {
   else renderOverview();
 }
 
+// The sidebar is built once and then updated in place: rebuilding it on every
+// status refresh would drop a click that lands while it is replaced.
 function renderNav() {
   const nav = $('nav');
-  const overviewItem = el('a', 'nav-item', t('nav.overview'));
-  overviewItem.href = '#/';
+  if (nav.children.length !== plugins.length + 1) {
+    const overviewItem = el('a', 'nav-item');
+    overviewItem.href = '#/';
+    overviewItem.append(el('span', 'nav-name'));
+    nav.replaceChildren(overviewItem, ...plugins.map(navItem));
+  }
+  const [overviewItem, ...items] = nav.children;
+  overviewItem.querySelector('.nav-name').textContent = t('nav.overview');
   overviewItem.classList.toggle('active', !current);
-  nav.replaceChildren(overviewItem, ...plugins.map(navItem));
+  items.forEach((a, i) => {
+    const p = plugins[i];
+    a.querySelector('.nav-name').textContent = pick(p.name);
+    a.querySelector('.icon').textContent = iconOf(p);
+    a.classList.toggle('active', current?.id === p.id);
+    const d = a.querySelector('.dot');
+    if (d) paintDot(d, p);
+  });
 }
 
 function navItem(p) {
   const a = el('a', 'nav-item');
   a.dataset.id = p.id;
-  a.append(el('span', 'icon', iconOf(p)), el('span', 'nav-name', pick(p.name)));
+  a.append(el('span', 'icon'), el('span', 'nav-name'));
   if (p.type === 'link') {
     a.href = p.url;
     a.target = '_blank';
@@ -129,22 +150,18 @@ function navItem(p) {
     a.append(el('span', 'nav-ext', '↗'));
   } else {
     a.href = `#/${encodeURIComponent(p.id)}`;
-    a.classList.toggle('active', current?.id === p.id);
-    a.append(dot(p));
+    a.append(el('span', 'dot'));
   }
   return a;
 }
 
 const iconOf = (p) => p.icon || pick(p.name).slice(0, 1);
 
-function dot(p) {
-  const d = el('span', 'dot');
+function paintDot(d, p) {
   const s = p.error ? 'down' : status[p.id];
-  if (s) {
-    d.dataset.status = s;
-    d.title = t(`status.${s}`);
-  }
-  return d;
+  if (s) d.dataset.status = s;
+  else delete d.dataset.status;
+  d.title = s ? t(`status.${s}`) : '';
 }
 
 function renderOverview() {
@@ -176,9 +193,16 @@ function renderService(p) {
   document.title = `${pick(p.name)} · hostdeck`;
   $('service-icon').textContent = iconOf(p);
   $('service-name').textContent = pick(p.name);
-  $('service-dot').replaceWith(Object.assign(dot(p), { id: 'service-dot' }));
+  paintDot($('service-dot'), p);
   $('service-error').hidden = !p.error;
-  $('service-reload').hidden = $('service-open').hidden = !!p.error;
+  $('service-reload').hidden = $('service-open').hidden = $('service-clear').hidden = !!p.error;
+  const clear = $('service-clear');
+  clear.textContent = t(clearing ? 'service.clearing' : clearArmed ? 'service.clear.confirm' : 'service.clear');
+  clear.classList.toggle('armed', !!clearArmed);
+  clear.disabled = clearing;
+  const note = $('clear-note');
+  note.hidden = !clearArmed && !clearFailure;
+  note.textContent = clearArmed ? t('service.clear.explain') : clearFailure ? t('error.clear_failed', { detail: clearFailure }) : '';
   if (p.error) {
     $('service-error').textContent = explain(p.error);
   } else {
@@ -193,6 +217,61 @@ function renderService(p) {
     }
   }
   for (const [id, f] of frames) f.hidden = id !== p.id || !!p.error;
+}
+
+// Clearing needs two clicks: the first arms the button and says what clearing
+// does. A double-click is one gesture, so its second click does not confirm.
+function onClearClick(e) {
+  if (e.detail > 1 || clearing || !current) return;
+  if (!clearArmed) {
+    clearFailure = null;
+    clearArmed = setTimeout(() => {
+      disarmClear();
+      render();
+    }, ARMED_FOR);
+    render();
+    return;
+  }
+  disarmClear();
+  clearService(current);
+}
+
+function disarmClear() {
+  clearTimeout(clearArmed);
+  clearArmed = null;
+}
+
+const navigated = (frame, src) =>
+  new Promise((resolve) => {
+    frame.addEventListener('load', resolve, { once: true });
+    frame.src = src;
+  });
+
+// The browser clears the origin whose answer carries Clear-Site-Data, and
+// only the answer to a navigation counts, so a hidden frame opens the
+// clearing address on the service's own port. The service's page is unloaded
+// first, so that nothing it writes on its way out survives. Its frame then
+// goes back to the page the user was on.
+async function clearService(p) {
+  clearing = true;
+  render();
+  const frame = frames.get(p.id);
+  try {
+    const resp = await fetch(`/api/clear/${encodeURIComponent(p.id)}`, { method: 'POST' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const { url } = await resp.json();
+    if (frame) await navigated(frame, 'about:blank');
+    const helper = el('iframe');
+    helper.hidden = true;
+    document.body.append(helper);
+    await navigated(helper, url);
+    helper.remove();
+    if (frame) frame.contentWindow.history.back();
+  } catch (e) {
+    clearFailure = e.message;
+  }
+  clearing = false;
+  render();
 }
 
 // Removing an iframe frees its memory and closes its connections; the next
@@ -230,6 +309,7 @@ async function init() {
   for (const b of document.querySelectorAll('[data-lang]')) {
     b.addEventListener('click', () => setLang(b.dataset.lang, true));
   }
+  $('service-clear').addEventListener('click', onClearClick);
   $('service-reload').addEventListener('click', () => {
     if (current && frames.has(current.id)) frames.get(current.id).src = current.url;
   });

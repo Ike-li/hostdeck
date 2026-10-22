@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -367,5 +369,205 @@ func TestAMalformedAddressShowsTheOverview(t *testing.T) {
 		if _, hidden := attrs(t, ctx, "#service")["hidden"]; !hidden {
 			t.Errorf("%s: the service view is showing", hash)
 		}
+	}
+}
+
+// storageService answers like a web UI that keeps data in the browser. The
+// first visit to its start page in a frame fills every kind of storage and
+// moves deeper in, as a user would; later visits, and the console's status
+// probes, go straight to the state page, which shows what the browser holds
+// for the service. name keeps its cookie apart from other services', since
+// cookies are not kept per port.
+func storageService(t *testing.T, name string) string {
+	t.Helper()
+	var visited atomic.Bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/start.html", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Sec-Fetch-Dest") != "iframe" || visited.Swap(true) {
+			http.Redirect(w, r, "/state.html", http.StatusFound)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: name + "_session", Value: "kept", Path: "/", SameSite: http.SameSiteLaxMode})
+		w.Header().Set("Cache-Control", "no-store")
+		io.WriteString(w, fillPage)
+	})
+	mux.HandleFunc("/state.html", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		fmt.Fprintf(w, statePage, name)
+	})
+	mux.HandleFunc("/cached.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		w.Header().Set("Cache-Control", "max-age=3600")
+		io.WriteString(w, "// cached")
+	})
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		io.WriteString(w, "self.addEventListener('fetch', () => {});")
+	})
+	svc := httptest.NewServer(mux)
+	t.Cleanup(svc.Close)
+	return svc.URL
+}
+
+const fillPage = `<!doctype html><meta charset="utf-8"><p>filling</p>
+<script>
+(async () => {
+  localStorage.setItem('k', 'v');
+  await new Promise((res, rej) => {
+    const r = indexedDB.open('db', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('s');
+    r.onsuccess = () => { r.result.close(); res(); };
+    r.onerror = rej;
+  });
+  await (await caches.open('c')).put('/x', new Response('x'));
+  await fetch('/cached.js');
+  await navigator.serviceWorker.register('/sw.js');
+  location.assign('/state.html?deeper=1');
+})();
+</script>`
+
+const statePage = `<!doctype html><meta charset="utf-8"><pre id="state"></pre>
+<script>
+addEventListener('pagehide', () => localStorage.setItem('left', 'written'));
+(async () => {
+  const state = {
+    page: location.search,
+    nonce: Math.random(),
+    localStorage: localStorage.getItem('k'),
+    writtenWhileLeaving: localStorage.getItem('left'),
+    indexedDB: (await indexedDB.databases()).some(d => d.name === 'db'),
+    cacheStorage: (await caches.keys()).length,
+    serviceWorkers: (await navigator.serviceWorker.getRegistrations()).length,
+    httpCache: await fetch('/cached.js', {cache: 'only-if-cached', mode: 'same-origin'}).then(r => r.ok, () => false),
+    cookie: document.cookie.includes('%s_session=kept'),
+  };
+  document.getElementById('state').textContent = JSON.stringify(state);
+  parent.postMessage({state}, '*');
+})();
+</script>`
+
+const storagePlugin = `schema: 1
+name: %s
+page:
+  proxy: %s/start.html
+`
+
+type siteState struct {
+	Page                string  `json:"page"`
+	Nonce               float64 `json:"nonce"`
+	LocalStorage        *string `json:"localStorage"`
+	WrittenWhileLeaving *string `json:"writtenWhileLeaving"`
+	IndexedDB           bool    `json:"indexedDB"`
+	CacheStorage        int     `json:"cacheStorage"`
+	ServiceWorkers      int     `json:"serviceWorkers"`
+	HTTPCache           bool    `json:"httpCache"`
+	Cookie              bool    `json:"cookie"`
+}
+
+func (s siteState) full() bool {
+	return s.LocalStorage != nil && s.IndexedDB && s.CacheStorage == 1 && s.ServiceWorkers == 1 && s.HTTPCache && s.Cookie
+}
+
+// collectStates has the console page keep every state that a service frame
+// reports, by the service's origin.
+func collectStates(t *testing.T, ctx context.Context) {
+	t.Helper()
+	_, err := chromedp.Run(ctx, chromedp.Evaluate[any](`
+		window.reported = [];
+		addEventListener('message', (e) => { if (e.data && e.data.state) reported.push({origin: e.origin, state: e.data.state}); });
+	`))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// serviceState waits until the service at origin reports a state that ok
+// accepts, and returns it.
+func serviceState(t *testing.T, ctx context.Context, origin string, ok func(siteState) bool) siteState {
+	t.Helper()
+	var last siteState
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		states, err := chromedp.Run(ctx, chromedp.Evaluate[[]siteState](fmt.Sprintf(`reported.filter(r => r.origin === %q).map(r => r.state)`, origin)))
+		if err == nil && len(states) > 0 {
+			if last = states[len(states)-1]; ok(last) {
+				return last
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("%s never reported the state the test waits for; last %+v", origin, last)
+	return last
+}
+
+func originOf(t *testing.T, rawURL string) string {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// doubleClick clicks twice the way a person's double-click does: a click,
+// then a second one that the browser counts as the second of two.
+func doubleClick(t *testing.T, ctx context.Context, css string) {
+	t.Helper()
+	nodes, err := chromedp.Run(ctx, chromedp.Nodes(chromedp.CSS(css)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	do(t, ctx, chromedp.MouseClickNode(nodes[0]), chromedp.MouseClickNode(nodes[0], chromedp.ClickCount(2)))
+}
+
+func TestClearingCacheEmptiesOneServiceAndKeepsCookies(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "b", fmt.Sprintf(storagePlugin, "B", storageService(t, "b")))
+	writePlugin(t, dir, "c", fmt.Sprintf(storagePlugin, "C", storageService(t, "c")))
+	console := startConsole(t, dir)
+	b, c := originOf(t, sidebarURL(t, console, "b")), originOf(t, sidebarURL(t, console, "c"))
+	ctx := openBrowser(t, "en-US,en;q=0.9")
+
+	// Picking a language stores it in the console's own storage.
+	do(t, ctx, chromedp.Navigate(console), chromedp.Click(chromedp.CSS(`button[data-lang="en"]`)))
+	collectStates(t, ctx)
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[data-id="c"]`)))
+	serviceState(t, ctx, c, siteState.full)
+	do(t, ctx,
+		chromedp.Click(chromedp.CSS(`.nav-item[data-id="b"]`)),
+		chromedp.WaitVisible(chromedp.Search(`//span[@id="service-name" and text()="B"]`)),
+	)
+	before := serviceState(t, ctx, b, func(s siteState) bool { return s.full() && s.Page == "?deeper=1" })
+
+	// A double-click is one gesture: its first click arms the button and its
+	// second does not confirm.
+	doubleClick(t, ctx, "#service-clear")
+	time.Sleep(1500 * time.Millisecond)
+	if s := serviceState(t, ctx, b, func(siteState) bool { return true }); s.Nonce != before.Nonce {
+		t.Fatalf("a double-click cleared the service: before %+v, now %+v", before, s)
+	}
+	if label := text(t, ctx, "#service-clear"); label != "Click again to clear" {
+		t.Errorf("after the first click the button says %q, want it waiting for a second click", label)
+	}
+
+	do(t, ctx, chromedp.Click(chromedp.CSS("#service-clear")))
+	after := serviceState(t, ctx, b, func(s siteState) bool { return s.Nonce != before.Nonce })
+	want := siteState{Page: "?deeper=1", Nonce: after.Nonce, Cookie: true}
+	if after != want {
+		t.Errorf("after clearing, the service reports %+v; want it back on the page the user was on, with nothing kept but its cookie", after)
+	}
+
+	lang, err := chromedp.Run(ctx, chromedp.Evaluate[string](`localStorage.getItem('hostdeck.lang')`))
+	if err != nil || lang != "en" {
+		t.Errorf("the console's own storage holds %q (%v), want the language kept", lang, err)
+	}
+	// The console routes on hashchange, which comes after the click returns.
+	do(t, ctx,
+		chromedp.Click(chromedp.CSS(`.nav-item[data-id="c"]`)),
+		chromedp.WaitVisible(chromedp.Search(`//span[@id="service-name" and text()="C"]`)),
+		chromedp.Click(chromedp.CSS("#service-reload")),
+	)
+	if s := serviceState(t, ctx, c, func(s siteState) bool { return s.Page == "" }); !s.full() {
+		t.Errorf("another service lost its data: %+v", s)
 	}
 }

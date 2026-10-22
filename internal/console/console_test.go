@@ -9,8 +9,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/proxy"
 )
 
 func decodeJSON(t *testing.T, resp *http.Response) any {
@@ -165,5 +168,43 @@ func TestStatusSaysWhichEmbeddedServicesAnswer(t *testing.T) {
 	want := parseJSON(`{"up": "up", "down": "down"}`)
 	if got := decodeJSON(t, resp); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func post(h http.Handler, url string) *http.Response {
+	req := httptest.NewRequest(http.MethodPost, url, nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w.Result()
+}
+
+func TestClearingIsOfferedForEmbeddedServicesOnly(t *testing.T) {
+	tokens := onetime.New(time.Now)
+	plugins := []plugin.Plugin{
+		{ID: "grafana", Name: plugin.Text{All: "Grafana"}, Page: &plugin.Page{Proxy: "http://127.0.0.1:3000/grafana/"}},
+		{ID: "stuck", Name: plugin.Text{All: "Stuck"}, Page: &plugin.Page{Proxy: "http://127.0.0.1:3001/"}},
+		{ID: "wiki", Name: plugin.Text{All: "Wiki"}, Page: &plugin.Page{Link: "https://wiki.example/"}},
+	}
+	served := map[string]Served{
+		"grafana": {URL: "http://127.0.0.1:4679/grafana/"},
+		"stuck":   {Err: errors.New("port 4680 is in use")},
+	}
+	h := Handler(Config{Plugins: plugins, Served: served, Tokens: tokens})
+
+	var got struct{ URL string }
+	if err := json.NewDecoder(post(h, "http://127.0.0.1:4678/api/clear/grafana").Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	prefix := "http://127.0.0.1:4679" + proxy.ClearPath + "?token="
+	token, ok := strings.CutPrefix(got.URL, prefix)
+	if !ok || !tokens.Redeem("grafana", token) {
+		t.Errorf("clearing URL %q, want %s and a token for grafana", got.URL, prefix)
+	}
+
+	for _, id := range []string{"stuck", "wiki", "nothing"} {
+		if resp := post(h, "http://127.0.0.1:4678/api/clear/"+id); resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", id, resp.StatusCode)
+		}
 	}
 }

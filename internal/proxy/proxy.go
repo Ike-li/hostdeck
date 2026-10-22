@@ -5,6 +5,7 @@ package proxy
 import (
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -13,15 +14,19 @@ import (
 	"github.com/Ike-li/hostdeck/internal/local"
 )
 
-// New forwards every request to target's scheme and host. In the responses,
-// only the service itself and the console may frame it; the rest of the
-// service's Content-Security-Policy passes through untouched.
-func New(target *url.URL, consoleOrigin string) http.Handler {
+// New forwards every request but ClearPath to target's scheme and host. In the
+// responses, only the service itself and the console may frame it; the rest of
+// the service's Content-Security-Policy passes through untouched. redeem says
+// whether a token for clearing this service is one the console handed out.
+// ClearPath is where the proxy, not the service, answers with Clear-Site-Data.
+const ClearPath = "/.well-known/hostdeck/clear-site-data"
+
+func New(target *url.URL, consoleOrigin string, redeem func(token string) bool) http.Handler {
 	base := &url.URL{Scheme: target.Scheme, Host: target.Host}
 	// 'self' keeps working the pages that a service frames inside its own
 	// pages: frame-ancestors checks every ancestor, the console included.
 	ancestors := "frame-ancestors 'self' " + consoleOrigin
-	return local.Only(&httputil.ReverseProxy{
+	rp := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(base)
 			// Services such as Grafana refuse requests whose Origin and Host
@@ -48,7 +53,30 @@ func New(target *url.URL, consoleOrigin string) http.Handler {
 			w.WriteHeader(http.StatusBadGateway)
 			fmt.Fprintf(w, unreachablePage, text.lang, html.EscapeString(fmt.Sprintf(text.title, target.Host)), text.hint, html.EscapeString(err.Error()))
 		},
-	})
+	}
+	return local.Only(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == ClearPath {
+			clearSiteData(w, r, redeem)
+			return
+		}
+		rp.ServeHTTP(w, r)
+	}))
+}
+
+// clearSiteData has the browser drop the cache and storage it keeps for this
+// service's origin. Cookies stay: the browser keeps them per host, not per
+// port, so clearing them would sign the user out of every service. A token
+// from the console is required, because every other page on 127.0.0.1 is the
+// same site and could otherwise wipe a service's data with a link.
+func clearSiteData(w http.ResponseWriter, r *http.Request, redeem func(string) bool) {
+	if r.Method != http.MethodGet || !redeem(r.URL.Query().Get("token")) {
+		http.Error(w, "clearing needs a token from the console", http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Clear-Site-Data", `"cache", "storage"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	io.WriteString(w, "<!doctype html><title>Cleared</title>")
 }
 
 func dropDirective(policy, name string) string {
