@@ -1159,9 +1159,8 @@ function errorFile(path) {
   return d;
 }
 
-function installedItem(p) {
-  const item = el('article', 'card catalog-item catalog-entry');
-  item.dataset.id = p.id;
+// Management rows share the same identity and capability presentation.
+function catalogIdentity(p) {
   const name = pick(p.name);
   const identity = el('div', 'catalog-identity');
   const head = el('header', 'card-head');
@@ -1172,9 +1171,21 @@ function installedItem(p) {
   const description = el('p', 'catalog-description', pick(p.description) || p.proxy || p.link || t('catalog.custom'));
   description.title = pick(p.description) || description.textContent;
   identity.append(head, description);
+  return identity;
+}
 
+function catalogFeatures(p) {
   const features = el('div', 'catalog-summary');
   features.append(el('span', 'catalog-field-label', t('catalog.features')), providesList(p) || el('p', null, t('catalog.features.none')));
+  return features;
+}
+
+function installedItem(p) {
+  const item = el('article', 'card catalog-item catalog-entry');
+  item.dataset.id = p.id;
+  const name = pick(p.name);
+  const identity = catalogIdentity(p);
+  const features = catalogFeatures(p);
   const status = el('div', 'catalog-status');
   const broken = p.error || p.broken;
   const state = broken ? 'broken' : p.disabled ? (p.loaded ? 'disabling' : 'disabled') : p.loaded ? 'loaded' : 'added';
@@ -1367,9 +1378,9 @@ async function savePage(e, id) {
 }
 
 function availableItem(p) {
-  const item = catalogCard(p);
-  const offers = providesList(p);
-  if (offers) item.append(offers);
+  const item = el('article', 'card catalog-item catalog-entry catalog-offer');
+  item.dataset.id = p.id;
+  const actions = el('div', 'catalog-actions');
   const btn = catalogButton(
     t('catalog.add'),
     t('catalog.add.confirm'),
@@ -1378,7 +1389,8 @@ function availableItem(p) {
     p.id,
   );
   btn.classList.add('add');
-  item.append(btn);
+  actions.append(btn);
+  item.append(catalogIdentity(p), catalogFeatures(p), actions);
   return item;
 }
 

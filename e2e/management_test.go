@@ -143,3 +143,55 @@ func TestAnInvalidManifestRemainsAPluginWithAnActionableError(t *testing.T) {
 		t.Fatalf("missing actionable manifest error: %q", reason)
 	}
 }
+
+func TestBuiltInPluginsUseAlignedRowsAndKeepTheirSetupInstructionsReadable(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "site", "schema: 1\nname: Site\npage: {link: 'https://example.test/'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.EmulateViewport(1280, 900), chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#catalog-available .add`)))
+	aligned, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
+ const rows=[...document.querySelectorAll('#catalog-available .catalog-item')];
+ const installed=document.querySelector('#catalog-installed .catalog-item').getBoundingClientRect();
+ return rows.length>=2 && rows.every((row,i)=>{
+  const r=row.getBoundingClientRect(),previous=i?rows[i-1].getBoundingClientRect():null;
+  const summary=row.querySelector('.catalog-summary'),actions=row.querySelector('.catalog-actions');
+  return Math.abs(r.left-installed.left)<1 && Math.abs(r.width-installed.width)<1 && (!previous || r.top>=previous.bottom) && summary && actions && Math.abs(summary.getBoundingClientRect().left-rows[0].querySelector('.catalog-summary').getBoundingClientRect().left)<1 && Math.abs(actions.getBoundingClientRect().right-rows[0].querySelector('.catalog-actions').getBoundingClientRect().right)<1;
+ });
+ })()`))
+	if err != nil || !aligned {
+		t.Fatalf("built-ins should use full-width rows with aligned identity, features and actions: %v %v", aligned, err)
+	}
+	for _, language := range []string{"en", "zh-CN"} {
+		do(t, ctx, chromedp.EmulateViewport(1280, 900))
+		// Resizing paints the desktop sidebar before its media-query event
+		// removes the narrow drawer's inert state. Wait before clicking it.
+		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!document.querySelector('.side-menu').inert`)); err != nil {
+			t.Fatalf("the desktop language controls remain inert: %v", err)
+		}
+		before, err := chromedp.Run(ctx, chromedp.Evaluate[string](`JSON.stringify({language:document.documentElement.lang,inert:document.querySelector('.side-menu').inert,width:innerWidth})`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("before switching to %s: %s", language, before)
+		do(t, ctx, chromedp.Click(chromedp.CSS(`[data-lang="`+language+`"]`)))
+		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === `+fmt.Sprintf("%q", language))); err != nil {
+			t.Fatalf("switching to %s from %s: %v", language, before, err)
+		}
+		for _, width := range []int{1280, 768, 520} {
+			do(t, ctx, chromedp.EmulateViewport(int64(width), 900))
+			fits, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.documentElement.scrollWidth<=innerWidth && [...document.querySelectorAll('#catalog-available .catalog-item')].every(row=>{const description=row.querySelector('.catalog-description'),button=row.querySelector('.add'),r=row.getBoundingClientRect(),b=button.getBoundingClientRect();return row.scrollWidth<=row.clientWidth+1 && description.scrollHeight<=description.clientHeight+1 && b.height>=44 && b.left>=r.left && b.right<=r.right;})`))
+			if err != nil || !fits {
+				t.Fatalf("built-in instructions or actions are clipped at %dpx in %s: %v %v", width, language, fits, err)
+			}
+		}
+		do(t, ctx, chromedp.Click(chromedp.CSS(`#catalog-available [data-id="syncthing"] .add`)))
+		armed, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {const row=document.querySelector('#catalog-available [data-id="syncthing"]'),button=row.querySelector('.add'),b=button.getBoundingClientRect(),r=row.getBoundingClientRect();return (button.textContent.includes('again') || button.textContent.includes('再点一次')) && b.left>=r.left && b.right<=r.right && b.height>=44;})()`))
+		if err != nil || !armed {
+			t.Fatalf("the confirmation label must remain inside the row in %s: %v %v", language, armed, err)
+		}
+	}
+	if reason := text(t, ctx, `#catalog-available [data-id="syncthing"] .catalog-description`); !strings.Contains(reason, "SYNCTHING_API_KEY") {
+		t.Fatalf("missing setup instructions: %q", reason)
+	}
+}
