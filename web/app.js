@@ -54,7 +54,8 @@ function positionPanel() {
   if (r.bottom < 0 || r.top > innerHeight) return closePanel();
   const size = panel.getBoundingClientRect();
   panel.style.left = `${Math.max(8, Math.min(r.right - size.width, innerWidth - size.width - 8))}px`;
-  panel.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - size.height - 8))}px`;
+  const top = r.bottom + 4 + size.height <= innerHeight - 8 ? r.bottom + 4 : r.top - size.height - 4;
+  panel.style.top = `${Math.max(8, Math.min(top, innerHeight - size.height - 8))}px`;
 }
 
 function moreActions(name, controls) {

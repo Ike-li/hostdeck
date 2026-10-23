@@ -850,7 +850,12 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	}
 	gone(t, ctx, `.nav-item[data-id="site"]`)
 
-	do(t, ctx, chromedp.Click(chromedp.CSS(site+" .more-trigger")), chromedp.Click(chromedp.CSS(button)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(site+" .more-trigger")))
+	clickable, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {const button=document.querySelector('#catalog-installed .catalog-toggle');const r=button.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2) === button;})()`))
+	if err != nil || !clickable {
+		t.Fatalf("More actions covers the primary Enable button: %v %v", clickable, err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
 	waitLabel("再点一次启用")
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
 	waitLabel("停用")

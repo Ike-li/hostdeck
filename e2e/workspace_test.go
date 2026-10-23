@@ -93,7 +93,7 @@ func TestEnabledConnectionsAreTheFirstManagementSection(t *testing.T) {
 func TestManagementKeepsAnEmptyEnabledSectionBeforeAdding(t *testing.T) {
 	url := startConsole(t, t.TempDir())
 	ctx := openBrowser(t, "zh-CN")
-	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#page-form`)))
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitReady(chromedp.CSS(`#catalog-installed [data-group="use"]`)))
 	visible, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {const enabled=document.querySelector('#catalog-installed [data-group="use"]');return enabled.checkVisibility() && enabled.textContent.includes('还没有已启用') && document.querySelector('#catalog h2') === enabled.querySelector('h2');})()`))
 	if err != nil || !visible {
 		t.Fatalf("empty Enabled section disappeared: %v %v", visible, err)
