@@ -96,6 +96,17 @@ function setNavigation(open, restore = false) {
 }
 
 function onInterfaceKey(e) {
+  const editor = $('page-editor');
+  if (editor.open) {
+    if (e.key === 'Tab') {
+      const controls = [...editor.querySelectorAll('input, select, button')].filter((node) => !node.disabled && !node.closest('fieldset:disabled'));
+      const first = controls[0], last = controls.at(-1);
+      if (!first) e.preventDefault();
+      else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    return;
+  }
   if (e.key === 'Escape') {
     if (openPanel) { e.preventDefault(); closePanel(true); }
     else if (document.querySelector('.app').classList.contains('nav-open')) {
@@ -187,6 +198,7 @@ async function getJSON(url) {
 }
 
 async function setLang(next, remember) {
+  if ($('page-editor').open) $('page-editor').close();
   closePanel();
   if (remember) setNavigation(false, true);
   dict = await getJSON(`/i18n/${next}.json`);
@@ -205,6 +217,7 @@ async function setLang(next, remember) {
 // The address names the open entry: #/<id>, or #/.plugins for the plugins
 // page. Anything else, a malformed address included, is the overview.
 function route() {
+  if ($('page-editor').open) $('page-editor').close();
   closePanel();
   pendingOverview = null;
   setNavigation(false);
@@ -1127,7 +1140,7 @@ function installedItem(p) {
   const head = el('header', 'card-head');
   const title = el('h4', 'card-name', name);
   title.title = name;
-  const kind = p.card || p.detail || p.actions ? 'plugin' : p.link ? 'link' : 'page';
+  const kind = p.page && !p.card && !p.detail && !p.actions ? (p.link ? 'link' : 'page') : 'plugin';
   head.append(el('span', 'icon', iconOf(p)), title, el('span', 'catalog-kind', t(`catalog.kind.${kind}`)));
   const description = el('p', 'catalog-description', pick(p.description) || p.proxy || p.link || t('catalog.custom'));
   description.title = pick(p.description) || description.textContent;
@@ -1164,12 +1177,11 @@ function installedItem(p) {
   if (p.disabled) actions.append(toggle);
   else options.push(toggle);
   options.push(trash);
-  actions.append(moreActions(name, options));
+  actions.append(pageEdit(p), moreActions(name, options));
   item.append(identity, features, status, actions);
   const detail = p.error ? explain(p.error) : p.broken ? t('catalog.state.broken') : p.disabled && p.loaded ? t('catalog.disablingHint') : !p.disabled && !p.loaded ? t('catalog.pendingHint') : '';
   if (detail) item.append(el('p', 'catalog-state-detail', detail));
   if (p.error?.file) item.append(errorFile(p.error.file));
-  item.append(pageEdit(p));
   return item;
 }
 
@@ -1212,16 +1224,35 @@ function labeled(name, label, value) {
   return wrap;
 }
 
-// pageEdit is the form that saves a page's name, icon and address once.
-// It has no field a command could be written into.
+// pageEdit opens one focused editor without expanding the management row.
 function pageEdit(p) {
-  const details = el('details', 'page-edit');
+  const button = el('button', 'btn page-edit-open', t('page.edit'));
+  button.type = 'button';
+  button.setAttribute('aria-haspopup', 'dialog');
+  button.setAttribute('aria-label', t('page.editTitle', { name: pick(p.name) }));
+  button.addEventListener('click', () => openPageEditor(p));
+  return button;
+}
+
+// The editor only exposes the existing allowlisted fields, never commands.
+function openPageEditor(p) {
+  closePanel();
+  const editor = $('page-editor');
+  const head = el('header', 'editor-head');
+  const title = el('h2', null, t('page.editTitle', { name: pick(p.name) }));
+  title.id = 'editor-title';
+  title.title = title.textContent;
+  const description = el('p', null, pick(p.description) || t('page.editHint'));
+  description.id = 'editor-description';
+  head.append(title);
   const form = el('form', 'page-edit-form');
-  form.append(labeled('name', t('page.name'), pick(p.name)), labeled('icon', t('page.icon'), p.icon || ''));
-  form.elements.name.required = true;
+  const fields = el('fieldset', 'editor-fields');
+  fields.append(labeled('name', t('page.name'), pick(p.name)), labeled('icon', t('page.icon'), p.icon || ''));
+  fields.querySelector('[name="name"]').required = true;
   if (p.page) {
     const kind = el('select');
     kind.name = 'kind';
+    kind.setAttribute('aria-describedby', 'editor-mode-hint');
     for (const [value, key] of [['proxy', 'page.embed'], ['link', 'page.link']]) {
       const option = el('option', null, t(key));
       option.value = value;
@@ -1230,31 +1261,59 @@ function pageEdit(p) {
     kind.value = p.link ? 'link' : 'proxy';
     const address = labeled('address', t('page.address'), p.proxy || p.link || '');
     address.querySelector('input').required = true;
+    address.querySelector('input').inputMode = 'url';
     const mode = el('label', 'edit-field');
     mode.append(el('span', null, t('page.mode')), kind);
-    form.append(mode, address);
+    const hint = el('p', 'page-hint');
+    hint.id = 'editor-mode-hint';
+    const updateHint = () => { hint.textContent = t(kind.value === 'link' ? 'catalog.page.linkHint' : 'catalog.page.embedHint'); };
+    kind.addEventListener('change', updateHint);
+    updateHint();
+    fields.append(mode, address, hint);
   }
-  if (p.cardUrl) form.append(labeled('cardUrl', t('page.card'), p.cardUrl));
-  const save = el('button', 'btn', t('page.save'));
+  if (p.cardUrl) fields.append(labeled('cardUrl', t('page.card'), p.cardUrl));
+  const note = el('p', 'catalog-note');
+  note.id = 'editor-note';
+  note.hidden = true;
+  const footer = el('footer', 'editor-actions');
+  const cancel = el('button', 'btn', t('page.cancel'));
+  cancel.id = 'editor-cancel';
+  cancel.type = 'button';
+  cancel.addEventListener('click', () => editor.close());
+  const save = el('button', 'btn primary', t('page.save'));
   save.type = 'submit';
-  form.append(save);
+  footer.append(cancel, save);
+  const body = el('div', 'editor-body');
+  body.append(description, fields, note);
+  form.append(body, footer);
   form.addEventListener('submit', (e) => savePage(e, p.id));
-  details.append(el('summary', null, t('page.edit')), form);
-  return details;
+  editor.replaceChildren(head, form);
+  editor.oncancel = (e) => { if (form.dataset.saving === 'true') e.preventDefault(); };
+  editor.onclose = () => {
+    const trigger = document.querySelector(`#catalog-installed .catalog-item[data-id="${CSS.escape(p.id)}"] .page-edit-open`);
+    if (catalogOpen && trigger?.checkVisibility()) trigger.focus();
+  };
+  editor.showModal();
+  form.elements.name.focus();
 }
 
-// savePage writes the form once. A failure leaves what was typed; success
-// is a note on that plugin's card.
+// Failed saves retain the draft and explain the error within the editor.
+// Successful saves close it and announce the result on the updated row.
 async function savePage(e, id) {
   e.preventDefault();
   const form = e.target;
+  if (form.dataset.saving === 'true') return;
   const body = { name: form.elements.name.value, icon: form.elements.icon.value };
   if (form.elements.kind) body[form.elements.kind.value] = form.elements.address.value.trim();
   if (form.elements.cardUrl) body.cardUrl = form.elements.cardUrl.value.trim();
-  const btn = form.querySelector('button');
-  btn.disabled = true;
-  catalogNoteFor = id;
-  const note = $('catalog-note');
+  const btn = form.querySelector('[type="submit"]');
+  const cancel = form.querySelector('#editor-cancel');
+  const fields = form.querySelector('fieldset');
+  const note = form.querySelector('#editor-note');
+  form.dataset.saving = 'true';
+  form.setAttribute('aria-busy', 'true');
+  btn.disabled = cancel.disabled = fields.disabled = true;
+  feedback(note, t('page.saving'));
   try {
     const resp = await fetch(`/api/plugins/${encodeURIComponent(id)}/page`, {
       method: 'POST',
@@ -1263,16 +1322,20 @@ async function savePage(e, id) {
     });
     const got = await resp.json().catch(() => ({}));
     if (!resp.ok) throw got.error || { code: '', detail: `HTTP ${resp.status}` };
-    feedback(note, t('page.saved'));
+    catalogNoteFor = id;
+    feedback($('catalog-note'), t('page.saved'));
     await loadPlugins();
     render();
     refreshStatus();
     await loadCatalog();
+    $('page-editor').close();
   } catch (err) {
     feedback(note, explain(err), true);
-    const card = form.closest('.catalog-item');
-    if (card) card.insertBefore(note, card.firstChild);
-    btn.disabled = false;
+  } finally {
+    form.dataset.saving = 'false';
+    form.setAttribute('aria-busy', 'false');
+    btn.disabled = cancel.disabled = fields.disabled = false;
+    if ($('page-editor').open && !form.contains(document.activeElement)) btn.focus();
   }
 }
 

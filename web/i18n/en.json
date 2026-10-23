@@ -123,7 +123,7 @@
   "layout.hideHint": "Remove from the overview and sidebar while keeping this connection enabled.",
   "catalog.addContent": "Add content",
   "catalog.addContentHint": "Connect a web page or choose a built-in plugin.",
-  "catalog.manageHint": "Enablement controls whether a connection is loaded. Hiding only removes it from the overview and sidebar.",
+  "catalog.manageHint": "Enable or disable a connection in hostdeck; external services keep running. Hiding only affects the overview and sidebar.",
   "catalog.directory": "Plugin folder",
   "catalog.features": "Provides",
   "catalog.connectionState": "Connection",
@@ -138,5 +138,9 @@
   "catalog.pendingHint": "This connection has not loaded yet. Restart hostdeck or save an edit to load it.",
   "catalog.disablingHint": "The disabled state is saved, but the loaded connection has not updated. Restart hostdeck to apply it.",
   "catalog.features.none": "No features declared",
-  "catalog.custom": "Custom plugin"
+  "catalog.custom": "Custom plugin",
+  "page.editTitle": "Edit {name}",
+  "page.editHint": "Update the name, icon and available addresses for this connection.",
+  "page.cancel": "Cancel",
+  "page.saving": "Saving…"
 }

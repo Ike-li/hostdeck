@@ -508,9 +508,6 @@ h1 {
   margin-top: 10px;
 }
 
-.page-edit { margin-top: 10px; font-size: 13px; }
-.page-edit summary { cursor: pointer; color: var(--muted); }
-
 .page-edit-form {
   display: flex;
   flex-wrap: wrap;
@@ -809,9 +806,6 @@ button:disabled { cursor: default; opacity: .45; }
 .edit-field input, .edit-field select, .catalog-search { width: 100%; min-width: 0; padding: 8px 12px; border-radius: 8px; font-size: 14px; }
 .search-field { display: flex; flex-direction: column; gap: 8px; max-width: 360px; font-size: 13px; color: var(--muted); }
 .catalog-search { width: 100%; }
-.page-edit { margin-top: 16px; border-top: 1px solid var(--line); }
-.page-edit summary { padding: 8px 0; }
-.page-edit-form { padding-top: 8px; }
 .catalog-note { overflow-wrap: anywhere; }
 [data-kind="error"] { background: color-mix(in srgb, var(--error) 10%, var(--panel)); color: var(--error); }
 .catalog-provides li { padding: 2px 8px; }
@@ -853,7 +847,7 @@ button:disabled { cursor: default; opacity: .45; }
 .catalog-guidance { margin: -8px 0 20px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .catalog-subheading { margin: 24px 0 12px; font-size: 15px; }
 .catalog-list { display: grid; gap: 12px; }
-.catalog-entry { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 136px 208px; align-items: center; gap: 16px 20px; min-height: 128px; }
+.catalog-entry { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 136px 272px; align-items: center; gap: 16px 20px; min-height: 128px; }
 .catalog-identity, .catalog-summary, .catalog-status { min-width: 0; }
 .catalog-entry .card-head { min-height: 32px; }
 .catalog-entry .icon { width: 32px; height: 32px; }
@@ -867,7 +861,7 @@ button:disabled { cursor: default; opacity: .45; }
 .catalog-entry .catalog-state { margin: 0; font-size: 13px; font-weight: 600; }
 .catalog-entry .catalog-visibility { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .catalog-entry .catalog-actions { margin: 0; align-items: center; justify-content: flex-end; flex-wrap: nowrap; }
-.catalog-entry .page-edit, .catalog-entry > .catalog-note, .catalog-state-detail, .catalog-entry > .error-file { grid-column: 1 / -1; margin: 0; }
+.catalog-entry > .catalog-note, .catalog-state-detail, .catalog-entry > .error-file { grid-column: 1 / -1; margin: 0; }
 .catalog-state-detail { color: var(--error); font-size: 13px; }
 .catalog-directory { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 13px; color: var(--muted); }
 .catalog-directory summary { display: flex; align-items: center; cursor: pointer; }
@@ -891,4 +885,24 @@ button:disabled { cursor: default; opacity: .45; }
  .catalog-entry .catalog-summary .catalog-field-label, .catalog-entry .catalog-status .catalog-field-label { margin-bottom: 0; }
  .catalog-entry .catalog-visibility { margin: 0; }
  .catalog-entry .catalog-actions { justify-content: flex-start; flex-wrap: wrap; }
+}
+
+/* A bounded native dialog keeps editing separate from browsing the list. */
+.page-editor { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--text); box-shadow: 0 24px 80px #0003; }
+.page-editor::backdrop { background: #11182770; }
+.page-editor[open] { display: flex; flex-direction: column; }
+.editor-head { padding: 24px 24px 16px; flex: none; }
+.editor-head h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0; font-size: 20px; overflow-wrap: anywhere; }
+.editor-body > p:first-child { margin: 0 0 20px; color: var(--muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.page-editor .page-edit-form { display: flex; flex-direction: column; align-items: stretch; min-height: 0; margin: 0; padding: 0; gap: 0; }
+.editor-body { overflow: auto; min-height: 0; padding: 0 24px 24px; }
+.editor-fields { display: grid; gap: 16px; min-width: 0; padding: 0; margin: 0; border: 0; }
+.editor-fields .page-hint { margin: -8px 0 0; }
+.editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--line); flex: none; }
+.page-editor .catalog-note { margin-bottom: 0; }
+body:has(.page-editor[open]) main { overflow: hidden; }
+@media (max-width: 640px) {
+ .editor-head { padding: 20px 20px 16px; }
+ .editor-body { padding: 0 20px 20px; }
+ .editor-actions { padding: 16px 20px; }
 }

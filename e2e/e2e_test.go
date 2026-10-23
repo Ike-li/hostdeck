@@ -1886,11 +1886,11 @@ card:
 	const item = `#catalog .catalog-item[data-id="meter"]`
 	do(t, ctx,
 		chromedp.Navigate(url+"#/.plugins"),
-		chromedp.Click(chromedp.CSS(item+` .page-edit summary`)),
-		chromedp.WaitVisible(chromedp.CSS(item+` input[name="address"]`)),
+		chromedp.Click(chromedp.CSS(item+` .page-edit-open`)),
+		chromedp.WaitVisible(chromedp.CSS(`#page-editor input[name="address"]`)),
 	)
 	got, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
-		const form = document.querySelector('#catalog .catalog-item[data-id="meter"] form');
+		const form = document.querySelector('#page-editor form');
 		const names = [...form.querySelectorAll('[name]')].map((el) => el.name);
 		if (names.some((n) => /command|exec|action/.test(n))) return 'command ' + names.join(',');
 		const v = (n) => form.elements[n].value;
@@ -1910,14 +1910,18 @@ card:
 		}
 	}
 	set(`(() => {
-		const form = document.querySelector('#catalog .catalog-item[data-id="meter"] form');
+		const form = document.querySelector('#page-editor form');
 		form.elements.address.value = 'http://8.8.8.8/';
-		form.querySelector('button').click();
+		form.querySelector('[type="submit"]').click();
 	})()`)
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(document.querySelector('#catalog .catalog-item[data-id="meter"] #catalog-note')?.textContent || '').includes('局域网')`)); err != nil {
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#page-editor').open && document.querySelector('#editor-note')?.textContent.includes('局域网') && document.querySelector('#editor-note').getAttribute('role') === 'alert'`)); err != nil {
 		t.Fatalf("a public address: %v; the card says %q", err, text(t, ctx, item))
 	}
-	kept, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('#catalog .catalog-item[data-id="meter"] input[name="address"]').value`))
+	inside, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('#page-editor form').contains(document.activeElement)`))
+	if err != nil || !inside {
+		t.Fatalf("a refused save must keep keyboard focus in the editor: %v %v", inside, err)
+	}
+	kept, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('#page-editor input[name="address"]').value`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1926,13 +1930,16 @@ card:
 	}
 
 	set(`(() => {
-		const form = document.querySelector('#catalog .catalog-item[data-id="meter"] form');
+		const form = document.querySelector('#page-editor form');
 		form.elements.name.value = '量表';
 		form.elements.address.value = 'http://127.0.0.1:9/now';
-		form.querySelector('button').click();
+		form.querySelector('[type="submit"]').click();
 	})()`)
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#catalog .catalog-item[data-id="meter"] .card-name')?.textContent === '量表' && document.querySelector('#nav .nav-item[data-id="meter"] .nav-name')?.textContent === '量表'`)); err != nil {
 		t.Fatalf("after saving: %v", err)
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!document.querySelector('#page-editor').open && document.activeElement.matches('#catalog .catalog-item[data-id="meter"] .page-edit-open') && document.querySelector('#catalog .catalog-item[data-id="meter"] #catalog-note')?.getAttribute('role') === 'status'`)); err != nil {
+		t.Fatalf("successful save should close the editor, restore focus and announce on the updated row: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "plugins", "meter", "plugin.yaml"))
 	if err != nil {

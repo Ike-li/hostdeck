@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 func TestManagementSeparatesWorkspaceVisibilityFromEnablement(t *testing.T) {
@@ -71,5 +73,73 @@ func TestTheManagementDestinationFitsItsSidebarLabelInBothLanguages(t *testing.T
 		if err != nil || !fits {
 			t.Fatalf("management destination is truncated in %s: %v %v", language, fits, err)
 		}
+	}
+}
+
+func TestEditingUsesAFocusedDialogAndCancelKeepsTheSavedPage(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "web", "schema: 1\nname: Web\ndescription: A web page with a description.\npage: {link: 'https://example.test/'}\n")
+	before, err := os.ReadFile(filepath.Join(dir, "plugins", "web", "plugin.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := openBrowser(t, "en")
+	url := startConsole(t, dir)
+	const edit = `#catalog-installed .catalog-item[data-id="web"] .page-edit-open`
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#catalog-installed .catalog-item`)))
+	check := func(js string) {
+		t.Helper()
+		got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](js))
+		if err != nil || !got {
+			t.Fatalf("%s: %v %v", js, got, err)
+		}
+	}
+	check(`!!document.querySelector('#catalog-installed .page-edit-open') && !document.querySelector('#catalog-installed details.page-edit')`)
+	do(t, ctx, chromedp.Click(chromedp.CSS(edit)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open]`)))
+	check(`document.querySelector('#page-editor').matches(':modal') && document.activeElement.matches('#page-editor input[name="name"]') && document.querySelector('#editor-title').textContent.includes('Web') && document.querySelector('#editor-description').textContent.includes('description') && [...document.querySelectorAll('#page-editor input, #page-editor select')].every(field=>field.labels.length)`)
+	do(t, ctx, chromedp.Focus(chromedp.CSS(`#page-editor button[type="submit"]`)), chromedp.KeyEvent(kb.Tab))
+	check(`document.activeElement.matches('#page-editor input[name="name"]')`)
+	do(t, ctx, chromedp.KeyEvent(kb.Tab, chromedp.KeyModifiers(chromedp.ModifierShift)))
+	check(`document.activeElement.matches('#page-editor button[type="submit"]')`)
+	do(t, ctx, chromedp.KeyEvent(kb.Escape))
+	check(`!document.querySelector('#page-editor').open && document.activeElement.matches('#catalog-installed .page-edit-open')`)
+	do(t, ctx, chromedp.Click(chromedp.CSS(edit)), chromedp.SendKeys(chromedp.CSS(`#page-editor input[name="name"]`), " discarded"), chromedp.Click(chromedp.CSS(`#editor-cancel`)))
+	check(`!document.querySelector('#page-editor').open && document.activeElement.matches('#catalog-installed .page-edit-open') && document.querySelector('#catalog-installed .card-name').textContent === 'Web'`)
+	after, err := os.ReadFile(filepath.Join(dir, "plugins", "web", "plugin.yaml"))
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("cancel changed the saved page: %s %v", after, err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(edit)))
+	check(`document.querySelector('#page-editor input[name="name"]').value === 'Web'`)
+	for _, width := range []int{1280, 768, 520} {
+		do(t, ctx, chromedp.EmulateViewport(int64(width), 700))
+		check(`(() => {const d=document.querySelector('#page-editor'),r=d.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight && d.scrollWidth<=d.clientWidth+1 && d.querySelector('button[type="submit"]').getBoundingClientRect().height>=44;})()`)
+	}
+}
+
+func TestLongEditorContentScrollsWithoutHidingItsActions(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "web", "schema: 1\nname: "+strings.Repeat("A very long name ", 40)+"\ndescription: "+strings.Repeat("A detailed explanation. ", 100)+"\npage: {link: 'https://example.test/'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.EmulateViewport(520, 700), chromedp.Navigate(url+"#/.plugins"), chromedp.Click(chromedp.CSS(`#catalog-installed .page-edit-open`)))
+	fits, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {const d=document.querySelector('#page-editor'),body=d.querySelector('.editor-body'),actions=d.querySelector('.editor-actions'),b=actions.getBoundingClientRect(),r=d.getBoundingClientRect();return d.open && r.top>=0 && r.bottom<=innerHeight && d.querySelector('.editor-head').getBoundingClientRect().height<=128 && body.clientHeight>=100 && body.scrollHeight>body.clientHeight && b.top>=r.top && b.bottom<=r.bottom && document.documentElement.scrollWidth<=innerWidth;})()`))
+	if err != nil || !fits {
+		t.Fatalf("long editor content should scroll above visible actions: %v %v", fits, err)
+	}
+}
+
+func TestAnInvalidManifestRemainsAPluginWithAnActionableError(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "bad", "schema: 1\nname: Broken\nunknown: true\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	const row = `#catalog-installed .catalog-item[data-id="bad"]`
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(row)))
+	if kind := text(t, ctx, row+` .catalog-kind`); kind != "Plugin" {
+		t.Fatalf("invalid manifest is described as %q, want Plugin", kind)
+	}
+	if reason := text(t, ctx, row+` .catalog-state-detail`); !strings.Contains(reason, "unknown") {
+		t.Fatalf("missing actionable manifest error: %q", reason)
 	}
 }

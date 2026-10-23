@@ -92,7 +92,7 @@
   "error.not_local": "只能内嵌本机或局域网里的网页。",
   "error.no_card_url": "这个插件没有可改的卡片地址。",
   "error.edit_failed": "没能保存：{detail}",
-  "page.edit": "修改",
+  "page.edit": "编辑",
   "page.name": "名称",
   "page.icon": "图标",
   "page.address": "地址",
@@ -123,7 +123,7 @@
   "layout.hideHint": "只从总览和侧栏移除，接入仍保持启用。",
   "catalog.addContent": "添加内容",
   "catalog.addContentHint": "接入网页，或选择适合你的内置插件。",
-  "catalog.manageHint": "启用决定接入是否可用；隐藏只影响总览和侧栏显示。",
+  "catalog.manageHint": "启用后可在 hostdeck 中使用；停用不会关闭外部服务。隐藏只影响总览和侧栏。",
   "catalog.directory": "插件目录",
   "catalog.features": "提供功能",
   "catalog.connectionState": "接入状态",
@@ -138,5 +138,9 @@
   "catalog.pendingHint": "尚未加载此接入。重启 hostdeck 或保存一次修改后加载。",
   "catalog.disablingHint": "停用已保存，但当前加载尚未更新。重启 hostdeck 后生效。",
   "catalog.features.none": "未声明功能",
-  "catalog.custom": "自定义插件"
+  "catalog.custom": "自定义插件",
+  "page.editTitle": "编辑{name}",
+  "page.editHint": "修改这个接入的名称、图标和可用地址。",
+  "page.cancel": "取消",
+  "page.saving": "正在保存…"
 }
