@@ -27,18 +27,20 @@
   </aside>
   <div id="nav-backdrop" class="nav-backdrop" hidden></div>
   <main>
-    <p id="banner" class="banner" hidden></p>
-    <p id="layout-note" class="note" hidden><span data-i18n="layout.saved"></span> <button type="button" id="layout-undo" class="btn" data-i18n="layout.undo"></button></p>
+    <p id="banner" class="banner" role="alert" hidden></p>
+    <p id="layout-note" class="note" role="status" hidden><span data-i18n="layout.saved"></span> <button type="button" id="layout-undo" class="btn" data-i18n="layout.undo"></button></p>
     <section id="overview" class="overview">
       <div class="overview-head">
         <h1 data-i18n="overview.title"></h1>
         <div class="overview-actions">
           <button type="button" id="layout-reset" class="btn" data-i18n="layout.reset"></button>
-          <button type="button" id="refresh" class="btn" data-i18n="overview.refresh"></button>
+          <button type="button" id="refresh" class="btn primary" data-i18n="overview.refresh"></button>
         </div>
       </div>
       <p id="empty" class="empty" hidden></p>
-      <div id="cards" class="cards"></div>
+      <a id="empty-add" class="btn primary" href="#/.plugins" hidden data-i18n="overview.add"></a>
+      <p id="overview-loading" class="empty" role="status" data-i18n="loading" hidden></p>
+      <div id="cards" class="cards" aria-busy="false"></div>
     </section>
     <section id="catalog" class="overview" hidden>
       <h1 data-i18n="catalog.title"></h1>

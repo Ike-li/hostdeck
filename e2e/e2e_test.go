@@ -942,6 +942,7 @@ func TestCardsAreDraggedAndWidenedAndStaySo(t *testing.T) {
 	savedLayout(t, dir, "cards", []string{"c", "a", "b"})
 
 	// Widening is undone as easily, so one click does it.
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="b"] .more-trigger`)))
 	if label := text(t, ctx, `.card[data-id="b"] .card-width`); label != "加宽" {
 		t.Errorf("width button says %q, want 加宽", label)
 	}
@@ -959,6 +960,7 @@ func TestCardsAreDraggedAndWidenedAndStaySo(t *testing.T) {
 	if widths[1] < 1.8*widths[0] {
 		t.Errorf("widths of a and b: %v, want b about twice as wide", widths)
 	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="b"] .more-trigger`)))
 	if label := text(t, ctx, `.card[data-id="b"] .card-width`); label != "恢复" {
 		t.Errorf("width button of a wide card says %q, want 恢复", label)
 	}
@@ -1137,8 +1139,8 @@ card:
 		return got.Lines, got.Inside, got.Pos, got.Opacity
 	}
 
-	if lines, inside, pos, opacity := fits("disk"); lines > 1.4 || !inside || pos != "absolute" || opacity != "0" {
-		t.Errorf("disk at 1280: lines %.2f inside %v button %s opacity %s; want one line, label inside, absolute button, hidden", lines, inside, pos, opacity)
+	if lines, inside, pos, opacity := fits("disk"); lines > 1.4 || !inside || pos != "static" || opacity != "1" {
+		t.Errorf("disk at 1280: lines %.2f inside %v button %s opacity %s; want one line, label inside, width action in its closed panel", lines, inside, pos, opacity)
 	}
 	if _, inside, _, _ := fits("long"); !inside {
 		t.Errorf("the long label leaves its card at 1280")
@@ -1149,40 +1151,8 @@ card:
 		t.Errorf("disk at 520: lines %.2f inside %v; want one line, label inside", lines, inside)
 	}
 
-	// A headless page is not focused, so a script focus sets activeElement and
-	// still leaves :focus unmatched. Focus emulation is what a real window does.
-	if _, err := chromedp.Call(ctx, emulation.SetFocusEmulationEnabled, emulation.SetFocusEmulationEnabledParams{Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
-	do(t, ctx, chromedp.Focus(chromedp.CSS(`.card[data-id="disk"] .card-width`)))
-	raw, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
-		const btn = document.querySelector('.card[data-id="disk"] .card-width');
-		return JSON.stringify({
-			hasFocus: document.hasFocus(),
-			active: document.activeElement === btn,
-			focus: btn.matches(':focus'),
-			opacity: getComputedStyle(btn).opacity
-		});
-	})()`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(raw, `"opacity":"1"`) {
-		t.Errorf("after focus: %s", raw)
-	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="disk"] .more-trigger`)), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="disk"] .card-width`)))
 
-	// Focus leaves the button. A touch screen has no hover, so the button stays
-	// visible. setEmulatedMedia does not change hover; touch emulation does.
-	do(t, ctx, chromedp.Focus(chromedp.CSS("a.brand")))
-	if _, err := chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{
-		Enabled:        true,
-		MaxTouchPoints: 1,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, pos, opacity := fits("disk"); pos != "absolute" || opacity != "1" {
-		t.Errorf("widen button on a touch screen is %s with opacity %s, want absolute and 1", pos, opacity)
-	}
 }
 
 // Below 640px the page starts under a short bar and the menu opens over it.
@@ -1734,7 +1704,7 @@ func TestSidebarEntriesAndCardsMoveUpAndDownAndTheMoveCanBeUndone(t *testing.T) 
 	}
 	savedLayout(t, dir, "sidebar", []string{"a", "b", "c"})
 
-	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"] .move-up`)))
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"] .more-trigger`)))
 	cardEnds, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
 		const up = document.querySelector('.card[data-id="a"] .move-up');
 		const down = document.querySelector('.card[data-id="c"] .move-down');
@@ -1751,7 +1721,7 @@ func TestSidebarEntriesAndCardsMoveUpAndDownAndTheMoveCanBeUndone(t *testing.T) 
 		t.Fatalf("card move buttons: %s", cardEnds)
 	}
 
-	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="c"] .move-up`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="c"] .more-trigger`)), chromedp.Click(chromedp.CSS(`.card[data-id="c"] .move-up`)))
 	if got, want := idsOf(t, ctx, ".card"), []string{"a", "c", "b"}; !slices.Equal(got, want) {
 		t.Errorf("after moving c up: %v, want %v", got, want)
 	}
@@ -1828,7 +1798,7 @@ func TestHidingAPluginRemovesItUntilItIsShownOrReset(t *testing.T) {
 	}
 	savedLayout(t, dir, "hidden", nil)
 
-	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="b"] .hide`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="b"] .more-trigger`)), chromedp.Click(chromedp.CSS(`.card[data-id="b"] .hide`)))
 	gone(t, ctx, `#nav .nav-item[data-id="b"]`)
 	gone(t, ctx, `.card[data-id="b"]`)
 	savedLayout(t, dir, "hidden", []string{"b"})

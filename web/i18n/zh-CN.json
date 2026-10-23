@@ -110,5 +110,7 @@
   "catalog.restored.note": "已放回 {name}。",
   "catalog.purged.note": "已清除 {name}。",
   "error.trash_failed": "没能改动回收区：{detail}",
-  "more.for": "{name}的更多操作"
+  "more.for": "{name}的更多操作",
+  "overview.add": "管理插件",
+  "overview.refreshing": "刷新中…"
 }

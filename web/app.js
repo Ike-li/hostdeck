@@ -102,6 +102,7 @@ let current = null; // the open sidebar entry, or null on the overview
 let catalogOpen = false; // whether the plugins page is shown
 let catalog = null; // the last answer of /api/catalog
 let catalogNoteFor = null; // the plugin whose card the last result belongs on
+let pendingOverview = null; // a reading waiting until card controls lose focus
 let overview = null; // the last answer of /api/cards
 let cardsTimer = null; // the next /api/cards while a card is pending
 let failure = null; // why the backend could not be read
@@ -178,6 +179,7 @@ async function setLang(next, remember) {
 // page. Anything else, a malformed address included, is the overview.
 function route() {
   closePanel();
+  pendingOverview = null;
   setNavigation(false);
   let id = '';
   try {
@@ -384,7 +386,8 @@ function renderOverview() {
   document.title = 'hostdeck';
   const cards = overview ? overview.cards : [];
   const noCards = !overview || cards.length === 0;
-  $('empty').hidden = !noCards;
+  $('empty').hidden = !overview || !noCards;
+  $('empty-add').hidden = !overview || !noCards;
   if (overview && noCards) {
     $('empty').textContent = stored.hidden.length ? t('overview.hidden') : t('overview.empty', { dir: overview.pluginDir });
   }
@@ -410,19 +413,20 @@ function cardElement(c) {
   width.type = 'button';
   width.addEventListener('click', () => {
     const previous = overview.cards.filter((x) => x.wide).map((x) => x.id);
+    closePanel();
     c.wide = !c.wide;
     overview.lang = null;
     saveLayout({ wide: overview.cards.filter((x) => x.wide).map((x) => x.id) }, { wide: previous });
     render();
   });
-  const moves = el('span', 'card-moves');
-  moves.append(moveButton('up'), moveButton('down'), hideButton());
-  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), cardTitle(c), moves, width);
+  const moves = moreActions(pick(c.name), [moveButton('up'), moveButton('down'), hideButton(), width]);
+  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), cardTitle(c), moves);
   card.append(head);
   card.addEventListener('click', (e) => {
-    if (suppressClick || e.target.closest('button, a, summary')) return;
+    if (suppressClick || e.target.closest('button, a, summary, .action-panel')) return;
     card.querySelector('.card-name a')?.click();
   });
+  if (c.error || c.status) card.append(el('span', 'pill', t(`card.status.${c.error ? 'error' : c.status}`)));
   if (c.pending) card.append(el('p', 'card-pending', t('loading')));
   if (c.error) {
     card.dataset.status = 'error';
@@ -433,14 +437,12 @@ function cardElement(c) {
   }
   if (c.status) {
     card.dataset.status = c.status;
-    width.after(el('span', 'pill', t(`card.status.${c.status}`)));
   }
   // A pending card that has never been read has nothing more to show.
   if (c.pending && !c.status && !c.value) return card;
   const big = el('div', 'card-big');
   big.append(el('span', 'card-value', c.value ?? ''), el('span', 'card-label', pick(c.label)));
   card.append(big);
-  stamp(card, c);
   if (c.rows?.length) {
     const rows = el('ul', 'rows');
     for (const r of c.rows) {
@@ -451,6 +453,7 @@ function cardElement(c) {
     }
     card.append(rows);
   }
+  stamp(card, c);
   return card;
 }
 
@@ -533,6 +536,7 @@ function applyStored(l) {
 // saveLayout sends the lists of the layout that changed; the others stay.
 // The answer is the whole layout, so the next hide can send every hidden ID.
 async function saveLayout(change, previous) {
+  pendingOverview = null;
   const epoch = ++layoutEpoch;
   // The undo is offered before the answer: the page already shows the change,
   // and a slower answer must not put an older change back in its place.
@@ -557,6 +561,22 @@ async function saveLayout(change, previous) {
       layoutUndo = null;
       $('layout-note').hidden = true;
     }
+    // The server keeps its last saved layout when a write fails. Read that
+    // state before showing the error, so an optimistic hide or move is undone.
+    try {
+      const [saved, shown, cards] = await Promise.all([
+        getJSON('/api/layout'), getJSON('/api/plugins'), getJSON('/api/cards'),
+      ]);
+      if (epoch !== layoutEpoch) return false;
+      applyStored(saved);
+      plugins = shown;
+      overview = cards;
+      $('nav').dataset.entries = '';
+      if (catalog) catalog.lang = null;
+    } catch {
+      // Keep the original write failure when recovery cannot reach the server.
+    }
+    if (epoch !== layoutEpoch) return false;
     failure = e.message;
     render();
     return false;
@@ -1272,18 +1292,30 @@ async function loadPlugins() {
 
 // A card still being read is asked for again shortly, for as long as the
 // overview is shown.
+function flushOverview() {
+  if (!pendingOverview || $('cards').contains(document.activeElement) || (openPanel && $('cards').contains(openPanel.trigger))) return;
+  overview = pendingOverview;
+  pendingOverview = null;
+  render();
+}
+
 async function loadCards() {
   clearTimeout(cardsTimer);
+  $('cards').setAttribute('aria-busy', 'true');
+  $('overview-loading').hidden = !!overview;
   try {
-    overview = await getJSON('/api/cards');
+    const next = await getJSON('/api/cards');
+    if ($('cards').contains(document.activeElement) || (openPanel && $('cards').contains(openPanel.trigger))) pendingOverview = next;
+    else overview = next;
     failure = null;
   } catch (e) {
     failure = e.message;
+  } finally {
+    $('cards').setAttribute('aria-busy', 'false');
+    $('overview-loading').hidden = true;
   }
   render();
-  // A failed card is asked again for as long as the overview stays open.
-  // A card that succeeded stays cached until its interval, or until Refresh.
-  const waiting = overview?.cards.some((c) => c.pending || c.error);
+  const waiting = (pendingOverview || overview)?.cards.some((c) => c.pending || c.error);
   if (!current && !catalogOpen && waiting) cardsTimer = setTimeout(loadCards, PENDING_AGAIN);
 }
 
@@ -1315,6 +1347,10 @@ async function init() {
   $('layout-undo').addEventListener('click', undoLayout);
   $('layout-reset').addEventListener('click', resetLayout);
   $('refresh').addEventListener('click', async () => {
+    const refresh = $('refresh');
+    refresh.disabled = true;
+    refresh.textContent = t('overview.refreshing');
+    refresh.dataset.i18n = 'overview.refreshing';
     try {
       const resp = await fetch('/api/cards/refresh', { method: 'POST' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1322,8 +1358,13 @@ async function init() {
     } catch (e) {
       failure = e.message;
       render();
+    } finally {
+      refresh.disabled = false;
+      refresh.dataset.i18n = 'overview.refresh';
+      refresh.textContent = t('overview.refresh');
     }
   });
+  document.addEventListener('focusout', () => setTimeout(flushOverview, 0));
   $('menu').addEventListener('click', () => setNavigation(!document.querySelector('.app').classList.contains('nav-open')));
   $('nav-backdrop').addEventListener('click', () => setNavigation(false, true));
   document.querySelector('.side-menu').addEventListener('click', (e) => {

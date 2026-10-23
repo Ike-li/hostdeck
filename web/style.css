@@ -229,8 +229,8 @@ h1 {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 16px;
   container-type: inline-size;
 }
 
@@ -253,16 +253,16 @@ h1 {
 .card.wide { grid-column: span 2; }
 
 /* Narrower than two columns of 220px and the gap, a wide card takes one. */
-@container (max-width: 453px) {
+@container (max-width: 455px) {
   .card.wide { grid-column: auto; }
 }
 
 .dragging { opacity: .4; }
 
 .card {
-  padding: 14px 16px;
+  padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--panel);
 }
 
@@ -270,8 +270,9 @@ h1 {
 .card[data-status="warn"] { border-color: var(--warn); }
 
 .pill {
-  margin-left: auto;
-  padding: 1px 8px;
+  display: inline-block;
+  margin: 8px 0 0;
+  padding: 2px 8px;
   border-radius: 999px;
   font-size: 12px;
   background: color-mix(in srgb, var(--status, var(--muted)) 16%, transparent);
@@ -323,42 +324,6 @@ h1 {
   font-weight: 600;
 }
 
-/* Over the end of the title, and only while they can be used. They stay put, so a click does not land on the title. */
-.card-moves {
-  position: absolute;
-  top: 0;
-  right: 3.4em;
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  background: var(--panel);
-  border-radius: 4px;
-}
-
-.card:hover .card-moves,
-.card:focus-within .card-moves { opacity: 1; }
-
-/* The buttons stay on the top edge, in space that is always there. Adding it
-   only on hover moves the title, and a click aimed at the card lands short. */
-#cards .card-head { padding-top: 28px; }
-
-.move {
-  padding: 0 4px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--panel);
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  line-height: 1.7;
-  cursor: pointer;
-}
-
-.move:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
 .card-name a {
   color: inherit;
   text-decoration: none;
@@ -367,31 +332,6 @@ h1 {
 .card-name a:hover { text-decoration: underline; }
 
 .card:has(.card-name a) { cursor: pointer; }
-
-/* Out of the row until the pointer, the keyboard, or a screen without hover. */
-.card-width {
-  position: absolute;
-  top: 0;
-  right: 0;
-  padding: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  opacity: 0;
-}
-
-.card:hover .card-width,
-.card-width:focus,
-.card-width:focus-visible { opacity: 1; }
-
-@media (hover: none) {
-  .card-width { opacity: 1; }
-  .nav-moves, .card-moves { opacity: 1; }
-}
 
 .card-big {
   display: flex;
@@ -405,7 +345,7 @@ h1 {
   flex: 0 0 auto;
   max-width: 100%;
   overflow-wrap: anywhere;
-  font-size: 26px;
+  font-size: 32px;
   font-weight: 600;
 }
 
@@ -631,7 +571,7 @@ h1 {
   margin-bottom: 10px;
   padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--panel);
 }
 
@@ -778,3 +718,17 @@ button:disabled { cursor: default; opacity: .45; }
   .app { height: 100dvh; }
   main { height: 100dvh; }
 }
+
+.card { min-width: 0; }
+.card-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.card-value { line-height: 1.25; font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
+.card-head { min-height: 44px; }
+.card-updated { padding-top: 12px; margin-top: 16px; border-top: 1px solid var(--line); }
+.row-name, .row-value { min-width: 0; overflow-wrap: anywhere; }
+.card .icon { width: 28px; height: 28px; border: 1px solid var(--line); font-weight: 600; }
+.btn.primary { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(.94); }
+.overview { width: 100%; max-width: 1440px; }
+.overview-head { flex-wrap: wrap; }
+.overview-actions { flex-wrap: wrap; }
+@media (prefers-color-scheme: dark) { .btn.primary { color: #15171b; } }

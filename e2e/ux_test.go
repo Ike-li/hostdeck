@@ -1,7 +1,15 @@
 package e2e
 
 import (
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
@@ -61,5 +69,81 @@ func TestTheNarrowNavigationKeepsFocusInsideAndRestoresItWhenClosed(t *testing.T
 	do(t, ctx, chromedp.EmulateViewport(1280, 860))
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!document.querySelector('.side-menu').inert && !document.querySelector('main').inert`)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOverviewActionsStayInTheirPanelWhileAReadingArrives(t *testing.T) {
+	var healthy atomic.Bool
+	var reads atomic.Int32
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads.Add(1)
+		if !healthy.Load() {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		io.WriteString(w, `{"database":"ready"}`)
+	}))
+	defer svc.Close()
+	dir := t.TempDir()
+	writePlugin(t, dir, "demo", fmt.Sprintf(demoPlugin, svc.URL))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#cards .card-error`)))
+	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
+ const card = document.querySelector('#cards .card');
+ const head = card.querySelector('.card-head');
+ const more = card.querySelector('.more-trigger');
+ return !!more && more.getBoundingClientRect().height >= 44 && getComputedStyle(head).paddingTop === '0px' && card.querySelector('.card-width').getClientRects().length === 0;
+ })()`))
+	if err != nil || !got {
+		t.Fatalf("want a compact card with visible more and hidden width action: %v %v", got, err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#cards .more-trigger`)), chromedp.Focus(chromedp.CSS(`#cards .hide`)))
+	before := reads.Load()
+	healthy.Store(true)
+	for deadline := time.Now().Add(8 * time.Second); reads.Load() <= before && time.Now().Before(deadline); {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if reads.Load() <= before {
+		t.Fatal("the overview did not retry the failed card")
+	}
+	// Waiting for the HTTP response to settle must not replace the focused action.
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#cards').getAttribute('aria-busy') === 'false'`)); err != nil {
+		t.Fatal(err)
+	}
+	got, err = chromedp.Run(ctx, chromedp.Evaluate[bool](`document.activeElement.matches('#cards .hide') && document.querySelector('#cards .more-trigger').getAttribute('aria-expanded') === 'true'`))
+	if err != nil || !got {
+		t.Fatalf("a new reading interrupted the open action panel: %v %v", got, err)
+	}
+	do(t, ctx, chromedp.KeyEvent(kb.Escape), chromedp.Focus(chromedp.CSS(`#refresh`)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#cards .card-value')?.textContent === 'ready'`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAnEmptyOverviewOffersADirectLinkToPlugins(t *testing.T) {
+	url := startConsole(t, t.TempDir())
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#empty`)))
+	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`!!document.querySelector('#empty-add[href="#/.plugins"]') && !document.querySelector('#empty-add').hidden`))
+	if err != nil || !got {
+		t.Fatalf("empty overview needs an actionable plugin link: %v %v", got, err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#empty-add`)), chromedp.WaitVisible(chromedp.CSS(`#catalog h1`)))
+}
+
+func TestAFailedLayoutSaveRestoresTheVisibleCards(t *testing.T) {
+	dir := t.TempDir()
+	threeLinks(t, dir)
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="c"]`)))
+	if err := os.Mkdir(filepath.Join(dir, "layout.json"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#cards .card[data-id="a"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#cards .card[data-id="a"] .hide`)), chromedp.WaitVisible(chromedp.CSS(`#banner`)))
+	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`!!document.querySelector('#cards .card[data-id="a"]') && !!document.querySelector('#nav .nav-item[data-id="a"]') && document.querySelector('#layout-note').hidden`))
+	if err != nil || !got {
+		t.Fatalf("a refused save should restore the visible layout and remove undo: %v %v", got, err)
 	}
 }

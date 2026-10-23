@@ -110,5 +110,7 @@
   "catalog.restored.note": "Restored {name}.",
   "catalog.purged.note": "Purged {name}.",
   "error.trash_failed": "Could not update the trash: {detail}",
-  "more.for": "More actions for {name}"
+  "more.for": "More actions for {name}",
+  "overview.add": "Manage plugins",
+  "overview.refreshing": "Refreshing…"
 }
