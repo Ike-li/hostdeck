@@ -4,6 +4,7 @@ const STATUS_EVERY = 15_000;
 const IDLE_RELEASE = 10 * 60_000; // a page switched away from this long is unloaded, and loads again on its next visit
 const ARMED_FOR = 4000; // how long a button that needs a second click waits for it
 const PENDING_AGAIN = 2000; // how soon a card still being read is asked for again
+const LAYOUT_NOTE_FOR = 8000; // idle time before the saved notice and its one-step undo close
 const INTERNAL_DRAG = 'application/x-hostdeck-internal';
 const CATALOG = '.plugins'; // the plugins page's address, #/.plugins: no plugin ID starts with a dot
 
@@ -136,6 +137,8 @@ const hiddenSince = new Map(); // plugin id -> when its page was switched away f
 let dragging = false; // whether a sidebar entry or a card is being dragged
 let suppressClick = false; // a click that ends a drag is not an open
 let layoutUndo = null; // the layout lists to post to undo the last move, widen, drag, hide or reset
+let layoutNoteTimer = null;
+let savingLayout = false;
 let layoutEpoch = 0; // a save that answers late must not replace a newer one
 let stored = { sidebar: [], cards: [], wide: [], hidden: [] }; // the layout file, hidden IDs included
 let layoutKnown = false; // a hide before this is known would post only part of the hidden list
@@ -562,9 +565,27 @@ function applyStored(l) {
   layoutKnown = true;
 }
 
+function dismissLayoutNote() {
+  clearTimeout(layoutNoteTimer);
+  layoutUndo = null;
+  $('layout-note').hidden = true;
+}
+
+function scheduleLayoutNote() {
+  clearTimeout(layoutNoteTimer);
+  if (!layoutUndo || savingLayout) return;
+  layoutNoteTimer = setTimeout(() => {
+    const note = $('layout-note');
+    if (note.matches(':hover') || note.contains(document.activeElement)) return;
+    dismissLayoutNote();
+  }, LAYOUT_NOTE_FOR);
+}
+
 // saveLayout sends the lists of the layout that changed; the others stay.
 // The answer is the whole layout, so the next hide can send every hidden ID.
 async function saveLayout(change, previous) {
+  clearTimeout(layoutNoteTimer);
+  savingLayout = true;
   pendingOverview = null;
   const epoch = ++layoutEpoch;
   // The undo is offered before the answer: the page already shows the change,
@@ -583,13 +604,13 @@ async function saveLayout(change, previous) {
     const saved = await resp.json();
     if (epoch !== layoutEpoch) return false;
     applyStored(saved);
+    savingLayout = false;
+    scheduleLayoutNote();
     return true;
   } catch (e) {
     if (epoch !== layoutEpoch) return false;
-    if (layoutUndo === previous) {
-      layoutUndo = null;
-      $('layout-note').hidden = true;
-    }
+    savingLayout = false;
+    if (layoutUndo === previous) dismissLayoutNote();
     // The server keeps its last saved layout when a write fails. Read that
     // state before showing the error, so an optimistic hide or move is undone.
     try {
@@ -615,8 +636,7 @@ async function saveLayout(change, previous) {
 async function undoLayout() {
   const previous = layoutUndo;
   if (!previous) return;
-  layoutUndo = null;
-  $('layout-note').hidden = true;
+  dismissLayoutNote();
   const hiddenBefore = stored.hidden.slice();
   if (previous.sidebar) {
     plugins.sort(byOrder(previous.sidebar));
@@ -1422,6 +1442,12 @@ async function init() {
   document.addEventListener('drop', onDrop);
   $('catalog-search').addEventListener('input', filterCatalog);
   $('layout-undo').addEventListener('click', undoLayout);
+  for (const event of ['pointerenter', 'focusin']) {
+    $('layout-note').addEventListener(event, () => clearTimeout(layoutNoteTimer));
+  }
+  for (const event of ['pointerleave', 'focusout']) {
+    $('layout-note').addEventListener(event, scheduleLayoutNote);
+  }
   $('layout-reset').addEventListener('click', resetLayout);
   $('refresh').addEventListener('click', async () => {
     const refresh = $('refresh');
