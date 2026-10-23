@@ -7,13 +7,20 @@ import (
 	"testing"
 )
 
+// cssDecl is one declaration inside a rule.
+type cssDecl struct {
+	prop  string
+	value string
+}
+
 // cssRule is one style rule: the selectors it is written for, the custom
-// properties it declares, and the media query it sits in ("" at the top
-// level of the sheet).
+// properties and declarations it holds, and the media query it sits in ("" at
+// the top level of the sheet).
 type cssRule struct {
 	media    string
 	selector string
 	props    []string
+	decls    []cssDecl
 	line     int
 }
 
@@ -93,14 +100,22 @@ func collectCSSRules(css string, from, to int, media string, lineBase int, rules
 					continue
 				}
 				var props []string
+				var decls []cssDecl
 				for _, decl := range splitOutsideParens(body, ";") {
-					if name, _, ok := strings.Cut(decl, ":"); ok {
-						if name = strings.TrimSpace(name); strings.HasPrefix(name, "--") {
-							props = append(props, name)
-						}
+					name, value, ok := strings.Cut(decl, ":")
+					if !ok {
+						continue
+					}
+					name, value = strings.TrimSpace(name), strings.TrimSpace(value)
+					if name == "" || value == "" {
+						continue
+					}
+					decls = append(decls, cssDecl{prop: name, value: value})
+					if strings.HasPrefix(name, "--") {
+						props = append(props, name)
 					}
 				}
-				*rules = append(*rules, cssRule{media: media, selector: sel, props: props, line: line})
+				*rules = append(*rules, cssRule{media: media, selector: sel, props: props, decls: decls, line: line})
 			}
 		}
 		i = cut + 1
@@ -165,6 +180,135 @@ func TestTheStyleSheetKeepsOneLayerWithNoDuplicatedSelectors(t *testing.T) {
 			}
 		}
 	}
+}
+
+// rootTokens returns the custom properties the light :root block declares.
+func rootTokens(rules []cssRule) map[string]string {
+	tokens := map[string]string{}
+	for _, r := range rules {
+		if r.media != "" || r.selector != ":root" {
+			continue
+		}
+		for _, d := range r.decls {
+			if strings.HasPrefix(d.prop, "--") {
+				tokens[d.prop] = d.value
+			}
+		}
+	}
+	return tokens
+}
+
+// The console's rhythm is one four-point scale: every gap, inset and row step
+// is a spacing token, so cards and rows line up without per-component
+// guesswork, and a stray 10px or 6px would sit between steps and drift on its
+// own. The tokens themselves are checked against the scale, so widening a
+// step cannot quietly redefine the rhythm.
+func TestTheConsolesSpacingStaysOnTheFourPointScale(t *testing.T) {
+	scale := map[string]string{
+		"--space-1": "4px", "--space-2": "8px", "--space-3": "12px", "--space-4": "16px",
+		"--space-5": "24px", "--space-6": "32px", "--space-7": "48px", "--space-8": "64px",
+	}
+	steps := map[string]bool{"0": true}
+	for _, v := range scale {
+		steps[v] = true
+	}
+
+	rules := styleRules(t)
+	tokens := rootTokens(rules)
+	for name, want := range scale {
+		if got := tokens[name]; got != want {
+			t.Errorf("%s is %s, want %s", name, got, want)
+		}
+	}
+	for name := range tokens {
+		if strings.HasPrefix(name, "--space-") && scale[name] == "" {
+			t.Errorf("%s is not one of the spacing steps %v", name, scale)
+		}
+	}
+
+	for _, r := range rules {
+		for _, d := range r.decls {
+			if !spacingProps[d.prop] {
+				continue
+			}
+			for _, part := range strings.Fields(d.value) {
+				// A var(), calc() or color-mix() carries its own rhythm.
+				if strings.Contains(part, "(") {
+					continue
+				}
+				if !strings.HasSuffix(part, "px") {
+					continue
+				}
+				if !steps[part] {
+					t.Errorf("line %d: %s sets %s: %s, and %s is off the four-point scale", r.line, r.selector, d.prop, d.value, part)
+				}
+			}
+		}
+	}
+}
+
+var spacingProps = map[string]bool{
+	"margin": true, "padding": true, "gap": true, "row-gap": true, "column-gap": true,
+	"margin-top": true, "margin-right": true, "margin-bottom": true, "margin-left": true,
+	"padding-top": true, "padding-right": true, "padding-bottom": true, "padding-left": true,
+	"margin-block": true, "margin-inline": true, "padding-block": true, "padding-inline": true,
+	"margin-block-start": true, "margin-block-end": true, "margin-inline-start": true, "margin-inline-end": true,
+	"padding-block-start": true, "padding-block-end": true, "padding-inline-start": true, "padding-inline-end": true,
+}
+
+// Type stays on one scale too: a size or leading is always a token, so a new
+// view cannot introduce a one-off 17px or 1.6 that reads as neither step.
+func TestTheConsolesTypeStaysOnItsScale(t *testing.T) {
+	sizes := map[string]string{
+		"--text-xs": "12px", "--text-sm": "13px", "--text-base": "14px", "--text-md": "15px",
+		"--text-lg": "16px", "--text-xl": "20px", "--text-2xl": "24px", "--text-3xl": "32px",
+	}
+	leadings := map[string]string{
+		"--leading-tight": "1.25", "--leading-normal": "1.5", "--leading-relaxed": "1.65",
+	}
+
+	rules := styleRules(t)
+	tokens := rootTokens(rules)
+	for name, want := range sizes {
+		if got := tokens[name]; got != want {
+			t.Errorf("%s is %s, want %s", name, got, want)
+		}
+	}
+	for name, want := range leadings {
+		if got := tokens[name]; got != want {
+			t.Errorf("%s is %s, want %s", name, got, want)
+		}
+	}
+
+	typeToken := regexp.MustCompile(`^var\(--(?:text|glyph)-[a-z0-9-]+\)$`)
+	leadingToken := regexp.MustCompile(`^var\(--leading-[a-z0-9-]+\)$`)
+	for _, r := range rules {
+		for _, d := range r.decls {
+			switch d.prop {
+			case "font-size":
+				if !typeToken.MatchString(d.value) {
+					t.Errorf("line %d: %s sets font-size: %s; use a --text-* or --glyph-* token", r.line, r.selector, d.value)
+				}
+			case "line-height":
+				// A bare 1 is the one exception: an icon symbol wants lines
+				// as tall as the glyph itself.
+				if !leadingToken.MatchString(d.value) && d.value != "1" {
+					t.Errorf("line %d: %s sets line-height: %s; use a --leading-* token", r.line, r.selector, d.value)
+				}
+			}
+		}
+	}
+}
+
+func styleRules(t *testing.T) []cssRule {
+	t.Helper()
+	data, err := Files.ReadFile("style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rules []cssRule
+	collectCSSRules(blankComments(string(data)), 0, len(data), "", 0, &rules)
+	return rules
 }
 
 // Every script the page loads is embedded: a module the binary does not carry
