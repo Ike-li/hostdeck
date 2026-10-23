@@ -603,6 +603,14 @@ func TestTheDiskExampleShowsItsStatusAndRows(t *testing.T) {
 // its arguments in $HOSTDECK_E2E_RAN and prints a message.
 func fakePlugin(args []string) {
 	switch args[0] {
+	case "detail-long":
+		json.NewEncoder(os.Stdout).Encode(map[string]any{"items": []any{map[string]any{
+			"id": "long", "name": map[string]string{"en": "A local service with a long descriptive name", "zh-CN": "一个有很长名称的本机后台服务"},
+			"status": "warn", "value": strings.Repeat("1234567890", 8),
+			"fields":  []any{map[string]any{"name": strings.Repeat("Field", 20), "value": strings.Repeat("/very-long-path", 40)}},
+			"log":     strings.Repeat("a long log line ", 80),
+			"actions": []any{map[string]any{"id": "restart", "label": "Restart the background service with its long descriptive name"}},
+		}}})
 	case "detail":
 		fmt.Print(`{"items": [{"id": "svc", "name": {"en": "Service", "zh-CN": "服务"}, "status": "ok",
 			"fields": [{"name": "PID", "value": 4242}], "log": "started",

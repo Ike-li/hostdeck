@@ -408,7 +408,6 @@ h1 {
   font-size: 13px;
 }
 
-.page-form input#page-name { flex-basis: 8em; }
 
 .page-hint {
   margin: 8px 0 0;
@@ -765,3 +764,25 @@ button:disabled { cursor: default; opacity: .45; }
 #clear-note { line-height: 1.65; overflow-wrap: anywhere; }
 .action-panel .armed { background: color-mix(in srgb, var(--error) 10%, var(--panel)); color: var(--error); }
 .service-error { flex: none; }
+
+.detail-view { padding: 24px; }
+.detail-item { padding: 24px; margin: 0 0 16px; min-width: 0; }
+.detail-head { flex-wrap: wrap; align-items: start; gap: 12px; }
+.detail-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 16px; }
+.detail-status { margin: 0; }
+.detail-value { margin: 12px 0; color: var(--text); font-size: 24px; font-weight: 600; overflow-wrap: anywhere; }
+.detail-fields { grid-template-columns: minmax(80px, 160px) minmax(0, 1fr); gap: 8px 16px; margin-top: 16px; }
+.detail-fields dt, .detail-fields dd { min-width: 0; overflow-wrap: anywhere; }
+.detail-log { margin-top: 16px; }
+.detail-log summary { padding: 8px 0; }
+.detail-log pre { max-width: 100%; max-height: 240px; overflow: auto; padding: 16px; border: 1px solid var(--line); }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.detail-actions .btn { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+@media (max-width: 640px) {
+  .detail-view, .detail-item { padding: 16px; }
+  .detail-fields { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .detail-fields dd { margin-bottom: 12px; }
+}
+
+.brand { display: inline-flex; align-items: center; min-height: 44px; }
+.card-name a { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; }

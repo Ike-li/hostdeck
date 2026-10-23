@@ -36,7 +36,7 @@ function closePanel(restore = false) {
   if (!openPanel) return;
   const { panel, trigger } = openPanel;
   openPanel = null;
-  panel.hidePopover();
+  if (panel.isConnected && panel.matches(':popover-open')) panel.hidePopover();
   panel.hidden = true;
   trigger.setAttribute('aria-expanded', 'false');
   if (restore && trigger.isConnected) trigger.focus();
@@ -45,7 +45,7 @@ function closePanel(restore = false) {
 function positionPanel() {
   if (!openPanel) return;
   const { panel, trigger } = openPanel;
-  if (!trigger.isConnected) return closePanel();
+  if (!trigger.isConnected || trigger.closest('[inert]') || !trigger.checkVisibility()) return closePanel();
   const r = trigger.getBoundingClientRect();
   if (r.bottom < 0 || r.top > innerHeight) return closePanel();
   const size = panel.getBoundingClientRect();
@@ -82,12 +82,14 @@ function moreActions(name, controls) {
 
 function setNavigation(open, restore = false) {
   open = narrow.matches && open;
+  const wasOpen = document.querySelector('.app').classList.contains('nav-open');
+  if (open !== wasOpen) closePanel();
   document.querySelector('.app').classList.toggle('nav-open', open);
   $('menu').setAttribute('aria-expanded', String(open));
   document.querySelector('.side-menu').inert = narrow.matches && !open;
   document.querySelector('main').inert = open;
   $('nav-backdrop').hidden = !open;
-  if (open) $('nav-overview').focus();
+  if (open && !wasOpen) $('nav-overview').focus();
   else if (restore && narrow.matches) $('menu').focus();
 }
 
@@ -181,6 +183,7 @@ async function getJSON(url) {
 
 async function setLang(next, remember) {
   closePanel();
+  if (remember) setNavigation(false, true);
   dict = await getJSON(`/i18n/${next}.json`);
   lang = next;
   document.documentElement.lang = next;
@@ -676,6 +679,7 @@ function renderService(p) {
   $('service-dot').hidden = p.type !== 'proxy';
   $('service-error').hidden = !p.error;
   $('service-reload').hidden = !!p.error;
+  $('service-reload').disabled = p.type === 'detail' && frames.get(p.id)?.getAttribute('aria-busy') === 'true';
   $('service-open').hidden = $('service-clear').hidden = !!p.error || p.type === 'detail';
   const clear = $('service-clear');
   clear.textContent = t(clearing ? 'service.clearing' : clearArmed ? 'service.clear.confirm' : 'service.clear');
@@ -723,10 +727,15 @@ function renderService(p) {
 // is rebuilt only when it is loaded or the language changes, so that a
 // periodic render does not reset an action button waiting for its second click.
 async function loadDetail(p, view) {
+  view.setAttribute('aria-busy', 'true');
+  if (current?.id === p.id) $('service-reload').disabled = true;
   try {
     view.data = await getJSON(`/api/detail/${encodeURIComponent(p.id)}`);
   } catch (e) {
     view.data = { error: { code: 'backend', detail: e.message } };
+  } finally {
+    view.setAttribute('aria-busy', 'false');
+    if (current?.id === p.id) $('service-reload').disabled = false;
   }
   renderDetail(p, view);
 }
@@ -736,7 +745,9 @@ function renderDetail(p, view) {
   const { items, error } = view.data;
   const list = view.querySelector('.detail-list');
   if (error) {
-    list.replaceChildren(el('p', 'banner', explain(error)));
+    const note = el('p', 'banner', explain(error));
+    note.setAttribute('role', 'alert');
+    list.replaceChildren(note);
   } else if (!items?.length) {
     list.replaceChildren(el('p', 'empty', t('detail.empty')));
   } else {
@@ -748,9 +759,10 @@ function detailItem(p, item, view) {
   const section = el('section', 'detail-item');
   if (item.status) section.dataset.status = item.status;
   const head = el('header', 'detail-head');
-  head.append(el('span', 'row-dot'), el('h3', 'detail-name', pick(item.name)), el('span', 'detail-value', item.value ?? ''));
-  for (const action of item.actions || []) head.append(actionButton(p, item, action, view));
+  head.append(el('h2', 'detail-name', pick(item.name)));
+  if (item.status) head.append(el('span', 'pill detail-status', t(`card.status.${item.status}`)));
   section.append(head);
+  if (item.value !== undefined && item.value !== null) section.append(el('p', 'detail-value', item.value));
   if (item.fields?.length) {
     const fields = el('dl', 'detail-fields');
     for (const f of item.fields) fields.append(el('dt', null, pick(f.name)), el('dd', null, f.value));
@@ -758,8 +770,16 @@ function detailItem(p, item, view) {
   }
   if (item.log) {
     const log = el('details', 'detail-log');
-    log.append(el('summary', null, t('detail.log')), el('pre', null, item.log));
+    const content = el('pre', null, item.log);
+    content.tabIndex = 0;
+    content.setAttribute('aria-label', t('detail.log'));
+    log.append(el('summary', null, t('detail.log')), content);
     section.append(log);
+  }
+  if (item.actions?.length) {
+    const actions = el('div', 'detail-actions');
+    actions.append(...item.actions.map((action) => actionButton(p, item, action, view)));
+    section.append(actions);
   }
   return section;
 }
@@ -797,6 +817,7 @@ function actionButton(p, item, action, view) {
     btn.disabled = true;
     btn.textContent = t('action.running');
     let note;
+    let failed = false;
     try {
       const resp = await fetch(`/api/action/${encodeURIComponent(p.id)}`, {
         method: 'POST',
@@ -808,17 +829,17 @@ function actionButton(p, item, action, view) {
       note = body.message ? pick(body.message) : t('action.done', { label, name: pick(item.name) });
     } catch (err) {
       note = err instanceof TypeError ? t('action.interrupted') : explain(err);
+      failed = true;
     }
-    showNote(view, note);
+    showNote(view, note, failed);
     setTimeout(() => loadDetail(p, view), 1500);
   });
   return btn;
 }
 
-function showNote(view, text) {
+function showNote(view, text, failed = false) {
   const note = view.querySelector('.detail-note');
-  note.textContent = text;
-  note.hidden = false;
+  feedback(note, text, failed);
   clearTimeout(note.timer);
   note.timer = setTimeout(() => {
     note.hidden = true;
@@ -1421,10 +1442,10 @@ async function init() {
     if (openPanel && !e.composedPath().includes(openPanel.panel) && !e.composedPath().includes(openPanel.trigger)) closePanel();
   });
   narrow.addEventListener('change', () => {
-    closePanel();
     setNavigation(document.querySelector('.app').classList.contains('nav-open'));
+    positionPanel();
   });
-  addEventListener('resize', () => closePanel());
+  addEventListener('resize', positionPanel);
   document.addEventListener('scroll', (e) => {
     if (openPanel && !openPanel.panel.contains(e.target)) positionPanel();
   }, true);

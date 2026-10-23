@@ -25,7 +25,7 @@ func TestNavigationHasCompactRowsAndKeyboardAccessibleMoreActions(t *testing.T) 
 	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
  const row = document.querySelector('#nav .nav-row[data-id="a"]');
  const trigger = row.querySelector('.more-trigger');
- return document.querySelector('.sidebar').getBoundingClientRect().width === 240 && row.getBoundingClientRect().height <= 52 && !!trigger && trigger.getBoundingClientRect().height >= 44 && row.querySelector('.move-down').getClientRects().length === 0;
+ return document.querySelector('.brand').getBoundingClientRect().height >= 44 && document.querySelector('.sidebar').getBoundingClientRect().width === 240 && row.getBoundingClientRect().height <= 52 && !!trigger && trigger.getBoundingClientRect().height >= 44 && row.querySelector('.move-down').getClientRects().length === 0;
  })()`))
 	if err != nil || !got {
 		t.Fatalf("want a 240px sidebar, compact rows, a visible 44px more button and hidden actions: %v %v", got, err)
@@ -64,6 +64,11 @@ func TestTheNarrowNavigationKeepsFocusInsideAndRestoresItWhenClosed(t *testing.T
 	check(`document.activeElement.matches('.brand')`)
 	do(t, ctx, chromedp.KeyEvent(kb.Escape))
 	check(`document.querySelector('.side-menu').inert && !document.querySelector('main').inert && document.activeElement.id === 'menu'`)
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#menu`)), chromedp.Click(chromedp.CSS(`[data-lang="zh-CN"]`)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === 'zh-CN'`)); err != nil {
+		t.Fatal(err)
+	}
+	check(`document.querySelector('#menu').getAttribute('aria-expanded') === 'false' && document.activeElement.id === 'menu'`)
 	do(t, ctx, chromedp.Click(chromedp.CSS(`#menu`)), chromedp.Click(chromedp.CSS(`#nav-backdrop`)))
 	check(`document.querySelector('#menu').getAttribute('aria-expanded') === 'false'`)
 	do(t, ctx, chromedp.EmulateViewport(1280, 860))
@@ -212,5 +217,54 @@ func TestTheServiceToolbarKeepsThePageWhenItsMorePanelCloses(t *testing.T) {
 	got, err = chromedp.Run(ctx, chromedp.Evaluate[bool](`document.documentElement.scrollWidth <= innerWidth && document.querySelector('#service-reload').getBoundingClientRect().right <= innerWidth`))
 	if err != nil || !got {
 		t.Fatalf("the narrow toolbar should fit: %v %v", got, err)
+	}
+}
+
+func TestDetailContentAndActionsFitNarrowWindowsAndLogsScrollOnTheirOwn(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writePlugin(t, dir, "long", fmt.Sprintf("schema: 1\nname: Long details\ndetail:\n  exec: {command: [%q, fake-plugin, detail-long]}\nactions:\n  exec: {command: [%q, fake-plugin, action]}\n", exe, exe))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url+"#/long"), chromedp.WaitVisible(chromedp.CSS(`.detail-item`)), chromedp.Click(chromedp.CSS(`.detail-log summary`)))
+	for _, width := range []int{1280, 768, 520} {
+		do(t, ctx, chromedp.EmulateViewport(int64(width), 800))
+		got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
+ const view = document.querySelector('.detail-view');
+ const log = view.querySelector('.detail-log pre');
+ const actions = view.querySelector('.detail-actions');
+ const button = actions?.querySelector('button');
+ return document.documentElement.scrollWidth <= innerWidth && view.scrollWidth <= view.clientWidth + 1 && getComputedStyle(log).overflowX === 'auto' && log.scrollWidth > log.clientWidth && !!button && button.getBoundingClientRect().height >= 44 && !!view.querySelector('.detail-status');
+ })()`))
+		if err != nil || !got {
+			t.Fatalf("detail fields, actions or log overflow at %dpx: %v %v", width, got, err)
+		}
+	}
+}
+
+func TestTheAddFormKeepsSingleLineInputsAtEveryWindowWidth(t *testing.T) {
+	url := startConsole(t, t.TempDir())
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#page-form`)))
+	for _, width := range []int{1280, 768, 520} {
+		do(t, ctx, chromedp.EmulateViewport(int64(width), 800))
+		got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`['page-address','page-name'].every(id => {const r = document.getElementById(id).getBoundingClientRect(); return r.height >= 44 && r.height <= 52 && r.width > 0 && r.right <= innerWidth})`))
+		if err != nil || !got {
+			t.Fatalf("single-line fields must remain about 44px tall at %dpx: %v %v", width, got, err)
+		}
+	}
+}
+
+func TestAnOpenActionPanelStaysAnchoredWhenTheWindowResizes(t *testing.T) {
+	dir := t.TempDir()
+	threeLinks(t, dir)
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.EmulateViewport(1280, 800), chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="c"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#cards .card[data-id="c"] .more-trigger`)), chromedp.EmulateViewport(768, 800))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(() => {const panel = document.querySelector('#cards .action-panel:popover-open'); if (!panel) return false; const r = panel.getBoundingClientRect(); const trigger = document.querySelector('#cards .card[data-id="c"] .more-trigger').getBoundingClientRect(); return r.right <= innerWidth && r.left >= 0 && Math.abs(r.right-trigger.right) < 1 && panel.querySelector('.hide').checkVisibility()})()`, chromedp.WithPollingTimeout(2*time.Second))); err != nil {
+		t.Fatalf("resizing should retain and reposition an open action panel: %v", err)
 	}
 }

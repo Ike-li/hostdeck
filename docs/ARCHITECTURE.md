@@ -112,6 +112,18 @@ Text shown to people is a string, or `{en: …, zh-CN: …}`. Programs run in th
 
 **An action runs.** The first click arms the button, and a double click counts as one click. `POST /api/action/<id>` must come from the console's own Origin. The detail program is run again, and the action runs only if it is still offered for that item. Once started, the action runs to its end or its 30 s limit even if the page is closed or reloaded, so that a restart is not stopped halfway.
 
+## Console layout
+
+The desktop sidebar is 240px wide, with its plugin list scrolling independently. Below 640px a top bar opens a navigation drawer: the closed drawer is inert, the open drawer makes the content inert and keeps keyboard focus inside the sidebar. Escape, the backdrop or choosing a language closes it and restores focus to the menu button. Resizing to desktop removes both inert states.
+
+Overview cards show their reading time after the values and rows. While a card control has focus, a new reading waits until focus leaves the card, so polling does not remove an open panel. Layout changes discard that waiting reading. A failed layout save reads the server's last saved layout and restores the visible entries before reporting the error. An empty overview links directly to plugin management; refreshing disables the refresh button until it finishes.
+
+Plugin management keeps Open, Show and inline Edit directly available. Enable, Disable and Move to trash are in the plugin's More actions panel, and Purge is in the trash item's panel. A first confirmation click keeps its panel open. The page header focuses the labelled add form below the installed plugins; its hint follows the selected Embed or Link mode. Forms retain refused input and announce results beside the affected form or plugin.
+
+The service toolbar keeps Refresh and Open in new tab visible; Clear cache lives in More actions. Its first click keeps the panel open and shows the existing clearing explanation; the second closes the panel and reports progress outside it. Closing a panel or switching console language does not recreate the embedded page. Status dots have text labels and unchanged errors are not repeatedly announced.
+
+Detail items separate the name and written status, the main value, labelled fields, scrollable logs and action buttons. Long values and paths wrap inside the item; logs have their own bounded scroll area reachable by keyboard. Narrow windows stack field labels above values. Reloading a detail view keeps its current content while busy and disables repeated refreshes; action results use the shared status/error feedback.
+
 ## Security model
 
 Everything rests on hostdeck being reachable from this machine only.
@@ -141,11 +153,3 @@ Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `d
 ## Not there yet
 
 Background checks and notifications (M2), launchd, Windows services, Docker and port views (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
-
-The desktop sidebar is 240px wide, with its plugin list scrolling independently. Below 640px a top bar opens a navigation drawer: the closed drawer is inert, the open drawer makes the content inert and keeps keyboard focus inside the sidebar. Escape or the backdrop closes it and restores focus to the menu button. Resizing to desktop removes both inert states.
-
-Overview cards show their reading time after the values and rows. While a card control has focus, a new reading waits until focus leaves the card, so polling does not remove an open panel. Layout changes discard that waiting reading. A failed layout save reads the server's last saved layout and restores the visible entries before reporting the error. An empty overview links directly to plugin management; refreshing disables the refresh button until it finishes.
-
-Plugin management keeps Open, Show and inline Edit directly available. Enable, Disable and Move to trash are in the plugin's More actions panel, and Purge is in the trash item's panel. A first confirmation click keeps its panel open. The page header focuses the labelled add form below the installed plugins; its hint follows the selected Embed or Link mode. Forms retain refused input and announce results beside the affected form or plugin.
-
-The service toolbar keeps Refresh and Open in new tab visible; Clear cache lives in More actions. Its first click keeps the panel open and shows the existing clearing explanation; the second closes the panel and reports progress outside it. Closing a panel or switching console language does not recreate the embedded page. Status dots have text labels and unchanged errors are not repeatedly announced.
