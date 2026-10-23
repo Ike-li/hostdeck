@@ -36,13 +36,24 @@ func newTree(cmd *exec.Cmd) (*tree, error) {
 	return &tree{cmd: cmd, job: job}, nil
 }
 
-func (t *tree) started() {
-	h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(t.cmd.Process.Pid))
+func (t *tree) started() error {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(t.cmd.Process.Pid))
 	if err != nil {
-		return
+		t.cmd.Process.Kill()
+		t.cmd.Wait()
+		return err
 	}
 	defer windows.CloseHandle(h)
-	windows.AssignProcessToJobObject(t.job, h)
+	if err := windows.AssignProcessToJobObject(t.job, h); err != nil {
+		var code uint32
+		if exitErr := windows.GetExitCodeProcess(h, &code); exitErr == nil && code != uint32(windows.STATUS_PENDING) {
+			return nil
+		}
+		t.cmd.Process.Kill()
+		t.cmd.Wait()
+		return err
+	}
+	return nil
 }
 
 func (t *tree) close() {

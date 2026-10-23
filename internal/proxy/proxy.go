@@ -3,13 +3,16 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/Ike-li/hostdeck/internal/local"
 )
@@ -26,7 +29,11 @@ func New(target *url.URL, consoleOrigin string, redeem func(token string) bool) 
 	// 'self' keeps working the pages that a service frames inside its own
 	// pages: frame-ancestors checks every ancestor, the console included.
 	ancestors := "frame-ancestors 'self' " + consoleOrigin
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = dialLocal
 	rp := &httputil.ReverseProxy{
+		Transport: transport,
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(base)
 			// Services such as Grafana refuse requests whose Origin and Host
@@ -61,6 +68,40 @@ func New(target *url.URL, consoleOrigin string, redeem func(token string) bool) 
 		}
 		rp.ServeHTTP(w, r)
 	}))
+}
+
+// dialLocal resolves addr's host and connects only when every address it stands
+// for is loopback, private or link-local, so a host name that later points to
+// the internet is never proxied.
+func dialLocal(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupNetIP(lookupCtx, "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("%s resolved to no addresses", host)
+	}
+	for _, a := range addrs {
+		if a = a.Unmap(); !a.IsLoopback() && !a.IsPrivate() && !a.IsLinkLocalUnicast() {
+			return nil, fmt.Errorf("%s is not on this machine or the local network", host)
+		}
+	}
+	var d net.Dialer
+	var lastErr error
+	for _, a := range addrs {
+		conn, err := d.DialContext(ctx, network, net.JoinHostPort(a.Unmap().String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 // clearSiteData has the browser drop the cache and storage it keeps for this

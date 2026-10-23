@@ -35,6 +35,8 @@ var (
 	ErrTaken    = errors.New("the folder that name would be renamed to is already there")
 	// ErrBoth means the edit named both an embed address and a link.
 	ErrBoth = errors.New("proxy and link are both set")
+	// ErrEmptyName means the edit gave an empty or whitespace-only name.
+	ErrEmptyName = errors.New("name is required")
 	// ErrNoCardURL means the manifest has no declarative card.http.url to change.
 	ErrNoCardURL = errors.New("this plugin has no declarative card address")
 )
@@ -208,6 +210,13 @@ func EditPage(pluginDir, id string, change PageChange) error {
 	if change.Proxy != nil && change.Link != nil {
 		return ErrBoth
 	}
+	if change.Name != nil {
+		name := strings.TrimSpace(*change.Name)
+		if name == "" {
+			return ErrEmptyName
+		}
+		change.Name = &name
+	}
 	if change.Proxy != nil {
 		proxy, err := localPage(*change.Proxy)
 		if err != nil {
@@ -231,6 +240,10 @@ func EditPage(pluginDir, id string, change PageChange) error {
 	}
 	path := filepath.Join(pluginDir, id, "plugin.yaml")
 	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		path = filepath.Join(pluginDir, "."+id, "plugin.yaml")
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		return ErrUnknown
 	}
@@ -371,7 +384,7 @@ func ensureMapping(parent *yaml.Node, key string) *yaml.Node {
 // and dashes.
 func pageID(u *url.URL) string {
 	var b strings.Builder
-	for _, r := range strings.ToLower(u.Hostname() + "-" + u.Port()) {
+	for _, r := range strings.ToLower(u.Hostname()) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			b.WriteRune(r)
@@ -379,7 +392,14 @@ func pageID(u *url.URL) string {
 			b.WriteByte('-')
 		}
 	}
-	return strings.TrimSuffix(b.String(), "-")
+	host := strings.TrimSuffix(b.String(), "-")
+	if host == "" {
+		host = "page"
+	}
+	if port := u.Port(); port != "" {
+		return host + "-" + port
+	}
+	return host
 }
 
 // onLocalNetwork says whether every address host stands for is loopback,

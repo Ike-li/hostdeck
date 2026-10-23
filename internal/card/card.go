@@ -95,13 +95,26 @@ func Fetch(ctx context.Context, p plugin.Plugin) View {
 	return v
 }
 
+var httpClient = &http.Client{
+	Transport: &http.Transport{Proxy: nil},
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 // get asks h and returns its JSON. Errors name the URL as the manifest writes
 // it and never hold a value that ${env:NAME} filled in.
 func get(ctx context.Context, h *plugin.HTTP) (body []byte, err error) {
 	url, secrets := plugin.Expand(h.URL)
 	defer func() {
 		if err != nil {
-			err = errors.New(redact(fmt.Sprintf("GET %s: %v", h.URL, err), secrets))
+			msg := err.Error()
+			if url != h.URL && url != "" {
+				quoted := strconv.Quote(url)
+				msg = strings.ReplaceAll(msg, url, h.URL)
+				msg = strings.ReplaceAll(msg, quoted[1:len(quoted)-1], h.URL)
+			}
+			err = errors.New(redact(fmt.Sprintf("GET %s: %s", h.URL, msg), secrets))
 		}
 	}()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -113,7 +126,7 @@ func get(ctx context.Context, h *plugin.HTTP) (body []byte, err error) {
 		secrets = append(secrets, s...)
 		req.Header.Set(name, value)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		var ue *neturl.Error
 		if errors.As(err, &ue) {
@@ -125,9 +138,12 @@ func get(ctx context.Context, h *plugin.HTTP) (body []byte, err error) {
 	if resp.StatusCode/100 != 2 {
 		return nil, errors.New(resp.Status)
 	}
-	body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > maxBody {
+		return nil, fmt.Errorf("the response exceeded %d bytes", maxBody)
 	}
 	if !gjson.ValidBytes(body) {
 		return nil, errors.New("the response is not JSON")
@@ -139,6 +155,9 @@ func get(ctx context.Context, h *plugin.HTTP) (body []byte, err error) {
 // it, the forms in which error messages repeat a URL.
 func redact(msg string, secrets []string) string {
 	for _, s := range secrets {
+		if len(s) < 3 {
+			continue
+		}
 		quoted := strconv.Quote(s)
 		for _, form := range []string{s, quoted[1 : len(quoted)-1], neturl.QueryEscape(s), neturl.PathEscape(s)} {
 			msg = strings.ReplaceAll(msg, form, "***")

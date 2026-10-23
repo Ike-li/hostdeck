@@ -86,12 +86,24 @@ func TestADeclarativeCardShowsTheValueAtItsPath(t *testing.T) {
 func TestAFailedFetchBecomesAnErrorCardSayingWhy(t *testing.T) {
 	closed := httptest.NewServer(http.NotFoundHandler())
 	closed.Close()
+	var redirected atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirected.Add(1)
+		io.WriteString(w, `{"status": "ok"}`)
+	}))
+	t.Cleanup(target.Close)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	t.Cleanup(redirect.Close)
 	for _, tc := range []struct {
 		name, url, path, mention string
 	}{
 		{"unreachable", closed.URL, "status", strings.TrimPrefix(closed.URL, "http://")},
 		{"error status", serve(t, 500, `{"status": "ok"}`), "status", "500"},
+		{"redirect", redirect.URL, "status", "302"},
 		{"not JSON", serve(t, 200, `<html>`), "status", "not JSON"},
+		{"too large", serve(t, 200, `{"status":"`+strings.Repeat("a", maxBody)+`"}`), "status", "exceeded 4194304 bytes"},
 		{"nothing at the path", serve(t, 200, `{"state": "ok"}`), "status", `"status"`},
 	} {
 		got := Fetch(context.Background(), declarative(tc.url, tc.path))
@@ -101,6 +113,9 @@ func TestAFailedFetchBecomesAnErrorCardSayingWhy(t *testing.T) {
 		if got.Value != "" {
 			t.Errorf("%s: value = %q, want none", tc.name, got.Value)
 		}
+	}
+	if hits := redirected.Load(); hits != 0 {
+		t.Errorf("redirect target hit %d times, want 0", hits)
 	}
 }
 
@@ -250,6 +265,16 @@ func TestASecretThatBreaksTheURLStaysOutOfTheError(t *testing.T) {
 	got := Fetch(context.Background(), declarative("http://127.0.0.1:1/?key=${env:HOSTDECK_TEST_TOKEN}", "v"))
 	if got.Error == nil || strings.Contains(got.Error.Detail, "token") {
 		t.Errorf("error %+v, want one without the token", got.Error)
+	}
+}
+
+func TestAShortEnvValueDoesNotCorruptOrdinaryErrorWords(t *testing.T) {
+	t.Setenv("HOSTDECK_SHORT_TOKEN", "o")
+	p := declarative(serve(t, 200, `<html>`), "v")
+	p.Card.HTTP.Headers = map[string]string{"X-Mode": "${env:HOSTDECK_SHORT_TOKEN}"}
+	got := Fetch(context.Background(), p)
+	if got.Error == nil || !strings.Contains(got.Error.Detail, "the response is not JSON") {
+		t.Errorf("error %+v, want intact 'the response is not JSON'", got.Error)
 	}
 }
 

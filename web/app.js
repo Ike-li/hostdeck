@@ -1387,7 +1387,13 @@ async function savePage(e, id) {
   e.preventDefault();
   const form = e.target;
   if (form.dataset.saving === 'true') return;
-  const body = { name: form.elements.name.value, icon: form.elements.icon.value };
+  const name = form.elements.name.value.trim();
+  if (!name) {
+    form.elements.name.value = '';
+    form.reportValidity();
+    return;
+  }
+  const body = { name, icon: form.elements.icon.value };
   if (form.elements.kind) body[form.elements.kind.value] = form.elements.address.value.trim();
   if (form.elements.cardUrl) body.cardUrl = form.elements.cardUrl.value.trim();
   const btn = form.querySelector('[type="submit"]');

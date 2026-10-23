@@ -107,3 +107,18 @@ func TestAtTheDeadlineTheCommandsChildrenStopToo(t *testing.T) {
 		t.Errorf("the grandchild is still running: beat %s, then %s", before, after)
 	}
 }
+
+func TestDecodeRejectsTrailingOutput(t *testing.T) {
+	for _, out := range []string{
+		`{"value": "42"} trailing`,
+		"{\"value\": \"42\"}\n{\"value\": \"99\"}",
+	} {
+		var got struct {
+			Value string `json:"value"`
+		}
+		var outErr *OutputError
+		if err := Decode([]byte(out), &got); !errors.As(err, &outErr) {
+			t.Errorf("Decode(%q) = %v, want *OutputError", out, err)
+		}
+	}
+}

@@ -580,7 +580,7 @@ func (s *server) serveEditPage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "not_web"})
 	case errors.Is(err, catalog.ErrNotLocal):
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "not_local"})
-	case errors.Is(err, catalog.ErrBoth):
+	case errors.Is(err, catalog.ErrBoth), errors.Is(err, catalog.ErrEmptyName):
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request"})
 	case errors.Is(err, catalog.ErrNoCardURL):
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "no_card_url"})

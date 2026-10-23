@@ -17,7 +17,7 @@ func newTree(cmd *exec.Cmd) (*tree, error) {
 	return &tree{cmd}, nil
 }
 
-func (t *tree) started() {}
+func (t *tree) started() error { return nil }
 
 func (t *tree) close() {
 	if t.cmd.Process != nil {

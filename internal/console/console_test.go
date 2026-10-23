@@ -974,6 +974,8 @@ card:
 		`{"proxy": "http://93.184.215.14/"}`:                                "not_local",
 		`{"proxy": "ftp://127.0.0.1/"}`:                                     "not_web",
 		`{"proxy": "http://127.0.0.1:9/a", "link": "https://example.com/"}`: "bad_request",
+		`{"name": ""}`:    "bad_request",
+		`{"name": "   "}`: "bad_request",
 	} {
 		resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/meter/page", body, fromConsole)
 		got, _ := io.ReadAll(resp.Body)
@@ -1021,6 +1023,19 @@ card:
 	}
 	if !strings.Contains(got, "# kept on purpose") || !strings.Contains(got, "# leave this command") {
 		t.Errorf("comments were dropped:\n%s", got)
+	}
+
+	writeManifest(t, pluginDir, ".off", "schema: 1\nname: Off\npage:\n  link: https://example.com/old\n")
+	resp = postJSON(h, "http://127.0.0.1:4678/api/plugins/off/page", `{"name": "Still off", "link": "https://example.com/new"}`, fromConsole)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("editing a disabled plugin: %d %s", resp.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(pluginDir, "off")); !os.IsNotExist(err) {
+		t.Fatalf("editing a disabled plugin enabled its folder: %v", err)
+	}
+	if got := readFile(t, filepath.Join(pluginDir, ".off", "plugin.yaml")); !strings.Contains(got, "Still off") || !strings.Contains(got, "https://example.com/new") {
+		t.Errorf("disabled plugin manifest is:\n%s", got)
 	}
 }
 
@@ -1242,6 +1257,18 @@ func TestAddingALinkDoesNotRequireItToBeLocalAndWritesNoCommand(t *testing.T) {
 	got = readFile(t, filepath.Join(pluginDir, "127-0-0-1-9", "plugin.yaml"))
 	if !strings.Contains(got, "http://127.0.0.1:9/here") || strings.Contains(got, "proxy") {
 		t.Fatalf("a local link was not stored as a link:\n%s", got)
+	}
+
+	for _, tc := range []struct{ address, wantID string }{
+		{"https://内网/notes", "page"},
+		{"https://内网/more", "page-2"},
+		{"https://内网:8080/notes", "page-8080"},
+	} {
+		resp = postJSON(h, "http://127.0.0.1:4678/api/pages", fmt.Sprintf(`{"address": %q, "mode": "link"}`, tc.address), fromConsole)
+		body, _ = io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK || gjson.GetBytes(body, "id").String() != tc.wantID {
+			t.Fatalf("%s: %d %s, want 200 %s", tc.address, resp.StatusCode, body, tc.wantID)
+		}
 	}
 }
 

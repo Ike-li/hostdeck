@@ -72,6 +72,15 @@ func TestAnAgentCanAddAndEditAPageWithoutChangingItsOtherFields(t *testing.T) {
 	if err != nil || !strings.Contains(string(after), "# Keep this comment") || !strings.Contains(string(after), "icon: N") || !strings.Contains(string(after), "New notes") || !strings.Contains(string(after), "/new") {
 		t.Fatalf("page update lost other fields: %s %v", after, err)
 	}
+	command(t, 0, "plugin", "disable", "--url", url, "--id", id)
+	disabledEdit := command(t, 0, "page", "update", "--url", url, "--id", id, "--name", "Disabled notes")
+	if !disabledEdit.Get("data.disabled").Bool() || disabledEdit.Get("data.loaded").Bool() {
+		t.Fatalf("editing a disabled plugin did not keep it disabled: %s", disabledEdit.Raw)
+	}
+	disabledBytes, err := os.ReadFile(filepath.Join(root, "."+id, "plugin.yaml"))
+	if err != nil || !strings.Contains(string(disabledBytes), "Disabled notes") {
+		t.Fatalf("disabled manifest was not updated: %s %v", disabledBytes, err)
+	}
 }
 
 func TestInvalidCLIArgumentsDoNotChangeData(t *testing.T) {
@@ -81,6 +90,7 @@ func TestInvalidCLIArgumentsDoNotChangeData(t *testing.T) {
 		{"page", "add", "--url", url, "--address", "https://example.test", "--mode", "other"},
 		{"page", "update", "--url", url, "--id", "../outside", "--name", "No"},
 		{"page", "update", "--url", url, "--id", "notes"},
+		{"page", "update", "--url", url, "--id", "notes", "--name", "   "},
 		{"page", "update", "--url", url, "--id", "notes", "--proxy", "http://127.0.0.1:1", "--link", "https://example.test"},
 		{"page", "add", "--url", url, "--address", "https://example.test", "unexpected"},
 		{"plugin", "unknown"},

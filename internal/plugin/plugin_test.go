@@ -315,6 +315,7 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 		{"schema: 1\nname: Demo\ncard: {exec: {command: [sh, c.sh]}, rows: [{name: X, value: x}]}\n", "card.http"},
 		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/?k=${env:HOSTDECK_TEST_UNSET}'}, value: v}\n", "HOSTDECK_TEST_UNSET"},
 		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/', headers: {X-Key: '${KEY}'}}, value: v}\n", "${env:NAME}"},
+		{"schema: 1\nname: Demo\n" + card + "---\nschema: 1\n", "YAML document"},
 	} {
 		root := t.TempDir()
 		path := writePlugin(t, root, "demo", tc.manifest)

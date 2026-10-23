@@ -351,6 +351,13 @@ func parse(data []byte) (Plugin, error) {
 	if err := dec.Decode(&m); err != nil && !errors.Is(err, io.EOF) {
 		return Plugin{}, reword(err)
 	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return Plugin{}, reword(err)
+		}
+		return Plugin{}, errors.New("unexpected second YAML document")
+	}
 	if err := m.validate(); err != nil {
 		return Plugin{}, err
 	}

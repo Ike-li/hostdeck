@@ -116,6 +116,9 @@ func Run(args []string, out io.Writer) int {
 		if changes == 0 {
 			return usage("provide at least one field to update")
 		}
+		if visited["name"] && strings.TrimSpace(value("name")) == "" {
+			return usage("--name cannot be empty")
+		}
 		if visited["proxy"] && visited["link"] {
 			return usage("--proxy and --link cannot be combined")
 		}
@@ -159,7 +162,7 @@ func Run(args []string, out io.Writer) int {
 		}
 		_, problem = c.call(http.MethodPost, "/api/plugins/"+url.PathEscape(value("id"))+"/page", body)
 		if problem == nil {
-			data, problem = c.installed(value("id"), false)
+			data, problem = c.installed(value("id"))
 		}
 	case "plugin list", "plugin catalog":
 		var raw json.RawMessage
@@ -335,7 +338,7 @@ func (c *client) call(method, path string, body any) (json.RawMessage, *Failure)
 
 // installed checks the state after a write instead of treating a saved file as
 // proof that the plugin loaded. A failure retains saved=true for recovery.
-func (c *client) installed(id string, disabled bool) (any, *Failure) {
+func (c *client) installed(id string, disabled ...bool) (any, *Failure) {
 	data := map[string]any{"id": id, "saved": true, "available": false}
 	raw, problem := c.call(http.MethodGet, "/api/catalog", nil)
 	if problem != nil {
@@ -366,7 +369,7 @@ func (c *client) installed(id string, disabled bool) (any, *Failure) {
 		if entry.Disabled {
 			data["path"] = filepath.Join(listing.PluginDir, "."+id)
 		}
-		if entry.Disabled != disabled || (!disabled && (!entry.Loaded || entry.Broken || hasError(entry.Error))) {
+		if (len(disabled) > 0 && entry.Disabled != disabled[0]) || (!entry.Disabled && (!entry.Loaded || entry.Broken || hasError(entry.Error))) {
 			if hasError(entry.Error) {
 				var reported struct {
 					Code   string `json:"code"`
@@ -378,7 +381,7 @@ func (c *client) installed(id string, disabled bool) (any, *Failure) {
 			}
 			return data, &Failure{"not_loaded", "data was saved but the plugin is not available; inspect data.plugin"}
 		}
-		data["available"] = !disabled
+		data["available"] = !entry.Disabled
 		return data, nil
 	}
 	return data, &Failure{"not_loaded", "data was saved but the plugin is absent from the catalog"}

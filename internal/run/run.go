@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -50,7 +51,9 @@ func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	t.started()
+	if err := t.started(); err != nil {
+		return nil, err
+	}
 	err = cmd.Wait()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -88,6 +91,13 @@ func Decode(out []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(out, bom)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
+		return &OutputError{err}
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			err = errors.New("unexpected trailing JSON output")
+		}
 		return &OutputError{err}
 	}
 	return nil

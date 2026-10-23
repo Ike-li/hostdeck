@@ -24,6 +24,13 @@ func TestMain(m *testing.M) {
 	switch args := os.Args[1:]; args[0] {
 	case "print":
 		fmt.Print(args[1])
+	case "detail-until":
+		os.WriteFile(args[1]+".read", nil, 0o644)
+		if _, err := os.Stat(args[1]); err == nil {
+			fmt.Print(`{"items": [{"id": "svc", "name": "Service"}]}`)
+		} else {
+			fmt.Print(items)
+		}
 	case "slow-act":
 		os.WriteFile(args[1]+".started", nil, 0o644)
 		time.Sleep(time.Second)
@@ -173,5 +180,36 @@ func TestAnActionFinishesWhenItsRequestGoesAway(t *testing.T) {
 
 	if got, err := os.ReadFile(ran); err != nil || string(got) != "restart svc" {
 		t.Errorf("the action did not finish: %q, %v", got, err)
+	}
+}
+
+func TestConcurrentActionsWaitAndReReadBeforeRunning(t *testing.T) {
+	p, ran := fakePlugin(t, items, "")
+	p.Detail.Exec.Command = []string{os.Args[0], "detail-until", ran}
+	p.Actions.Exec.Command[1] = "slow-act"
+
+	firstErr := make(chan *string, 1)
+	go func() {
+		_, err := Act(context.Background(), p, "svc", "restart")
+		if err != nil {
+			s := err.Code
+			firstErr <- &s
+			return
+		}
+		firstErr <- nil
+	}()
+	for {
+		if _, err := os.Stat(ran + ".read"); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	_, secondErr := Act(context.Background(), p, "svc", "restart")
+	if got := <-firstErr; got != nil {
+		t.Fatalf("first action error = %v, want nil", *got)
+	}
+	if secondErr == nil || secondErr.Code != "not_offered" {
+		t.Errorf("second action error = %+v, want not_offered after first action changed state", secondErr)
 	}
 }

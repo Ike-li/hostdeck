@@ -190,6 +190,17 @@ func TestAnUnreachableServiceGetsAPageInTheBrowsersLanguage(t *testing.T) {
 	}
 }
 
+func TestTargetsOutsideTheLocalNetworkAreRefusedWhenDialing(t *testing.T) {
+	target, _ := url.Parse("http://93.184.215.14:80/")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	New(target, consoleOrigin, refuseAll).ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if rec.Code != http.StatusBadGateway || !strings.Contains(body, "not on this machine or the local network") {
+		t.Errorf("status %d, body %q; want 502 refusing non-local target", rec.Code, body)
+	}
+}
+
 func TestClearingSiteDataTakesAFreshTokenAndNeverReachesTheService(t *testing.T) {
 	var reached atomic.Bool
 	used := false
