@@ -934,7 +934,7 @@ func TestCardsAreDraggedAndWidenedAndStaySo(t *testing.T) {
 	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
 
 	const card = ".card"
-	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"] .card-value`)))
+	do(t, ctx, chromedp.EmulateViewport(1280, 860), chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="c"] .card-value`)))
 	drag(t, ctx, `.card[data-id="c"]`, `.card[data-id="a"]`)
 	if got, want := idsOf(t, ctx, card), []string{"c", "a", "b"}; !slices.Equal(got, want) {
 		t.Errorf("after dragging: %v, want %v", got, want)
