@@ -545,6 +545,7 @@ func TestClearingCacheEmptiesOneServiceAndKeepsCookies(t *testing.T) {
 
 	// A double-click is one gesture: its first click arms the button and its
 	// second does not confirm.
+	do(t, ctx, chromedp.Click(chromedp.CSS("#service-more .more-trigger")))
 	doubleClick(t, ctx, "#service-clear")
 	time.Sleep(1500 * time.Millisecond)
 	if s := serviceState(t, ctx, b, func(siteState) bool { return true }); s.Nonce != before.Nonce {
@@ -738,7 +739,7 @@ func TestARefusedClearingSaysItFailed(t *testing.T) {
 	`)); err != nil {
 		t.Fatal(err)
 	}
-	do(t, ctx, chromedp.Click(chromedp.CSS("#service-clear")))
+	do(t, ctx, chromedp.Click(chromedp.CSS("#service-more .more-trigger")), chromedp.Click(chromedp.CSS("#service-clear")))
 	time.Sleep(200 * time.Millisecond)
 	do(t, ctx, chromedp.Click(chromedp.CSS("#service-clear")))
 	note, err := chromedp.Run(ctx, chromedp.Poll[string](

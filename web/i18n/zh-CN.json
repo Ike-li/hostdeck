@@ -117,5 +117,6 @@
   "catalog.page.drop": "也可以从浏览器拖入网址，直接按内嵌方式添加。",
   "catalog.page.embedHint": "在 hostdeck 内打开本机或局域网里的网页。",
   "catalog.page.linkHint": "在新标签页打开任意网址，不会内嵌网页。",
-  "catalog.noResults": "没有匹配的插件。"
+  "catalog.noResults": "没有匹配的插件。",
+  "status.unknown": "尚未检查"
 }

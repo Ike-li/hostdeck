@@ -75,15 +75,15 @@
       <header class="service-bar">
         <span class="service-title">
           <span id="service-icon" class="icon"></span>
-          <span id="service-name"></span>
+          <span id="service-name" role="heading" aria-level="1"></span>
           <span id="service-dot" class="dot"></span>
         </span>
-        <button id="service-reload" class="btn" type="button" data-i18n="service.reload"></button>
+        <div class="service-actions"><button id="service-reload" class="btn" type="button" data-i18n="service.reload"></button>
         <a id="service-open" class="btn" target="_blank" rel="noopener" data-i18n="service.open"></a>
-        <button id="service-clear" class="btn" type="button"></button>
+        <div id="service-more"><button id="service-clear" class="btn" type="button"></button></div></div>
       </header>
       <p id="clear-note" class="note" hidden></p>
-      <p id="service-error" class="banner" hidden></p>
+      <p id="service-error" class="banner" role="alert" hidden></p>
       <div id="frames" class="frames"></div>
     </section>
   </main>

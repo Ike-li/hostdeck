@@ -756,3 +756,12 @@ button:disabled { cursor: default; opacity: .45; }
 
 .empty { overflow-wrap: anywhere; }
 #catalog-intro { margin-bottom: 24px; font-size: 14px; }
+
+.service-bar { flex-wrap: wrap; padding: 12px 16px; }
+.service-title { flex: 1 1 160px; min-width: 0; }
+#service-name { min-width: 0; overflow-wrap: anywhere; font-size: 16px; }
+.service-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.frames { min-height: 0; }
+#clear-note { line-height: 1.65; overflow-wrap: anywhere; }
+.action-panel .armed { background: color-mix(in srgb, var(--error) 10%, var(--panel)); color: var(--error); }
+.service-error { flex: none; }

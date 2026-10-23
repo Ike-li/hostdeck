@@ -184,3 +184,33 @@ func TestPluginManagementLabelsItsFormsAndConfirmsInsideMoreActions(t *testing.T
 		t.Fatal(err)
 	}
 }
+
+func TestTheServiceToolbarKeepsThePageWhenItsMorePanelCloses(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "b", fmt.Sprintf(storagePlugin, "B", storageService(t, "b")))
+	url := startConsole(t, dir)
+	origin := originOf(t, sidebarURL(t, url, "b"))
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url+"#/b"), chromedp.WaitVisible(chromedp.CSS(`#service-name`)))
+	collectStates(t, ctx)
+	before := serviceState(t, ctx, origin, siteState.full)
+	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('#service-clear').getClientRects().length === 0 && !!document.querySelector('#service-more .more-trigger') && document.querySelector('#service-reload').getBoundingClientRect().height >= 44`))
+	if err != nil || !got {
+		t.Fatalf("want a visible refresh control and cache clearing inside More: %v %v", got, err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#service-more .more-trigger`)), chromedp.Click(chromedp.CSS(`#service-clear`)))
+	got, err = chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('#service-more .more-trigger').getAttribute('aria-expanded') === 'true' && !document.querySelector('#clear-note').hidden`))
+	if err != nil || !got {
+		t.Fatalf("the first clear click should show its explanation and keep the panel open: %v %v", got, err)
+	}
+	do(t, ctx, chromedp.KeyEvent(kb.Escape), chromedp.Click(chromedp.CSS(`[data-lang="zh-CN"]`)))
+	after := serviceState(t, ctx, origin, siteState.full)
+	if after.Nonce != before.Nonce || after.Page != before.Page {
+		t.Fatalf("toolbar or language interaction reloaded the embedded page: before %+v after %+v", before, after)
+	}
+	do(t, ctx, chromedp.EmulateViewport(520, 700))
+	got, err = chromedp.Run(ctx, chromedp.Evaluate[bool](`document.documentElement.scrollWidth <= innerWidth && document.querySelector('#service-reload').getBoundingClientRect().right <= innerWidth`))
+	if err != nil || !got {
+		t.Fatalf("the narrow toolbar should fit: %v %v", got, err)
+	}
+}

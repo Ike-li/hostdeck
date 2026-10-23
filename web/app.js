@@ -227,7 +227,10 @@ function render() {
   for (const b of document.querySelectorAll('[data-lang]')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
 
   $('banner').hidden = !failure;
-  if (failure) $('banner').textContent = t('error.backend', { detail: failure });
+  if (failure) {
+    const message = t('error.backend', { detail: failure });
+    if ($('banner').textContent !== message) $('banner').textContent = message;
+  }
 
   // Redrawing the sidebar or the cards would drop what is being dragged.
   if (dragging) return;
@@ -399,7 +402,9 @@ function paintDot(d, p) {
   const s = p.error ? 'down' : status[p.id];
   if (s) d.dataset.status = s;
   else delete d.dataset.status;
-  d.title = s ? t(`status.${s}`) : '';
+  d.title = s ? t(`status.${s}`) : t('status.unknown');
+  d.setAttribute('role', 'img');
+  d.setAttribute('aria-label', d.title);
 }
 
 function renderOverview() {
@@ -663,6 +668,9 @@ async function loadLayout() {
 function renderService(p) {
   document.title = `${pick(p.name)} · hostdeck`;
   $('service-icon').textContent = iconOf(p);
+  $('service').setAttribute('aria-busy', String(clearing));
+  $('service-more').hidden = !!p.error || p.type !== 'proxy';
+  $('service-more').querySelector('.more-trigger').setAttribute('aria-label', t('more.for', { name: pick(p.name) }));
   $('service-name').textContent = pick(p.name);
   paintDot($('service-dot'), p);
   $('service-dot').hidden = p.type !== 'proxy';
@@ -674,10 +682,13 @@ function renderService(p) {
   clear.classList.toggle('armed', !!clearArmed);
   clear.disabled = clearing;
   const note = $('clear-note');
-  note.hidden = !clearArmed && !clearFailure;
-  note.textContent = clearArmed ? t('service.clear.explain') : clearFailure ? t('error.clear_failed', { detail: clearFailure }) : '';
+  note.hidden = !clearArmed && !clearFailure && !clearing;
+  note.setAttribute('role', clearFailure ? 'alert' : 'status');
+  const clearMessage = clearArmed ? t('service.clear.explain') : clearFailure ? t('error.clear_failed', { detail: clearFailure }) : clearing ? t('service.clearing') : '';
+  if (note.textContent !== clearMessage) note.textContent = clearMessage;
   if (p.error) {
-    $('service-error').textContent = explain(p.error);
+    const message = explain(p.error);
+    if ($('service-error').textContent !== message) $('service-error').textContent = message;
   } else if (p.type === 'detail') {
     let view = frames.get(p.id);
     if (!view) {
@@ -702,7 +713,10 @@ function renderService(p) {
       frames.set(p.id, frame);
     }
   }
-  for (const [id, f] of frames) f.hidden = id !== p.id || !!p.error;
+  for (const [id, f] of frames) {
+    f.hidden = id !== p.id || !!p.error;
+    if (id === p.id && f.tagName === 'IFRAME') f.title = pick(p.name);
+  }
 }
 
 // A detail page is drawn here from the items its plugin's command prints. It
@@ -1224,6 +1238,7 @@ function onClearClick(e) {
     return;
   }
   disarmClear();
+  closePanel(true);
   clearService(current);
 }
 
@@ -1364,6 +1379,7 @@ async function init() {
   for (const b of document.querySelectorAll('[data-lang]')) {
     b.addEventListener('click', () => setLang(b.dataset.lang, true));
   }
+  $('service-more').append(moreActions('hostdeck', [$('service-clear')]));
   $('service-clear').addEventListener('click', onClearClick);
   $('page-form').addEventListener('submit', onPageSubmit);
   $('page-kind').addEventListener('change', pageHint);
