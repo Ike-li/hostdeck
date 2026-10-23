@@ -83,7 +83,7 @@ go run .
 
 然后在浏览器里打开 http://127.0.0.1:4678/ 。
 
-插件放在 hostdeck 文件夹下的 `plugins/` 里：macOS 上是 `~/.config/hostdeck`，Windows 上是 `%LOCALAPPDATA%\hostdeck`。用 `--dir` 或 `HOSTDECK_DIR` 可以换一个文件夹，用 `--addr` 可以换成 127.0.0.1 上的另一个端口。侧栏的「插件」页可以添加 hostdeck 自带的插件，也能停用和启用已安装的插件，改动立即生效：停用就是把插件文件夹改名成以点开头，hostdeck 会跳过它，里面的内容不变。手动增加或修改的插件文件夹，要重启 hostdeck 或等插件页下一次改动时才会读取。本机或局域网里的网页可以在同一页按网址内嵌，也可以把网址拖到 hostdeck 上；这会生成一个插件文件夹，其中的 `plugin.yaml` 只有 `page.proxy`。
+插件放在 hostdeck 文件夹下的 `plugins/` 里：macOS 上是 `~/.config/hostdeck`，Windows 上是 `%LOCALAPPDATA%\hostdeck`。用 `--dir` 或 `HOSTDECK_DIR` 可以换一个文件夹，用 `--addr` 可以换成 127.0.0.1 上的另一个端口。侧栏的「插件」页可以添加 hostdeck 自带的插件，也能停用和启用已安装的插件，改动立即生效：停用就是把插件文件夹改名成以点开头，hostdeck 会跳过它，里面的内容不变。手动增加或修改的插件文件夹，要重启 hostdeck 或等插件页下一次改动时才会读取。本机或局域网里的网页可以在同一页按网址内嵌，也可以把网址拖到 hostdeck 上；这会生成一个插件文件夹，其中的 `plugin.yaml` 只有 `page.proxy`。拖动控制台内部的链接，或拖入控制台自身的网址，不会添加页面。
 
 一个插件就是一个放着 `plugin.yaml` 的文件夹。两个小例子：
 

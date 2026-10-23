@@ -4,6 +4,7 @@ const STATUS_EVERY = 15_000;
 const IDLE_RELEASE = 10 * 60_000; // a page switched away from this long is unloaded, and loads again on its next visit
 const ARMED_FOR = 4000; // how long a button that needs a second click waits for it
 const PENDING_AGAIN = 2000; // how soon a card still being read is asked for again
+const INTERNAL_DRAG = 'application/x-hostdeck-internal';
 const CATALOG = '.plugins'; // the plugins page's address, #/.plugins: no plugin ID starts with a dot
 
 const $ = (id) => document.getElementById(id);
@@ -1055,20 +1056,27 @@ async function onPageSubmit(e) {
   pageHint();
 }
 
-// An address dragged from the browser onto the console is embedded. Dragging
-// the console's own entries into order is left alone.
+// An external service address dropped onto the console is embedded. Internal
+// drags and the console's own origin must not create another plugin.
 function onDragOver(e) {
   if (!dragging && e.dataTransfer.types.includes('text/uri-list')) e.preventDefault();
 }
 
 function onDrop(e) {
-  if (dragging || !e.dataTransfer.types.includes('text/uri-list')) return;
+  if (!e.dataTransfer.types.includes('text/uri-list')) return;
   e.preventDefault();
+  if (dragging || e.dataTransfer.types.includes(INTERNAL_DRAG)) return;
   const address = e.dataTransfer
     .getData('text/uri-list')
     .split(/\r?\n/)
     .find((line) => line && !line.startsWith('#'));
-  if (address) addPage(address.trim());
+  if (!address) return;
+  try {
+    if (new URL(address.trim()).origin === location.origin) return;
+  } catch {
+    // The API words invalid addresses, as it does for the add-page form.
+  }
+  addPage(address.trim());
 }
 
 // errorFile is the manifest path, folded away from the sentence that says why.
@@ -1408,6 +1416,8 @@ async function init() {
     $('catalog-add').scrollIntoView({ block: 'start' });
     $('page-address').focus();
   });
+  // A URI-list from one of our own links is not a request to add a page.
+  document.addEventListener('dragstart', (e) => e.dataTransfer?.setData(INTERNAL_DRAG, '1'));
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('drop', onDrop);
   $('catalog-search').addEventListener('input', filterCatalog);
