@@ -132,7 +132,8 @@ func TestCardsListTheOverviewAndThePluginFolder(t *testing.T) {
 	json.Unmarshal([]byte(`{
 		"pluginDir": "/somewhere/plugins",
 		"cards": [{"id": "demo", "name": "Demo", "icon": "D", "value": "ok",
-		           "label": {"en": "Database", "zh-CN": "数据库"}}]
+		           "label": {"en": "Database", "zh-CN": "数据库"}},
+		          {"id": "pageonly", "name": "Page only", "destination": "link", "address": "https://wiki.example/"}]
 	}`), &want)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -159,6 +160,7 @@ func TestPluginsSayWhereEachSidebarEntryOpens(t *testing.T) {
 		{"id": "stuck", "name": "Stuck", "type": "proxy",
 		 "error": {"code": "port_unavailable", "detail": "4680"}},
 		{"id": "wiki", "name": {"en": "Wiki", "zh-CN": "维基"}, "type": "link", "url": "https://wiki.example/"},
+		{"id": "cardonly", "name": "Card only", "type": "card"},
 		{"id": "disks", "name": "Disks", "type": "detail"}
 	]`)
 	if got := decodeJSON(t, resp); !reflect.DeepEqual(got, want) {
@@ -299,7 +301,8 @@ func TestPluginsThatDidNotLoadShowAsErrorCards(t *testing.T) {
 		Err:  &plugin.Located{Path: path, Err: errors.New(`line 3: unknown field "lnk"`)},
 	}}
 
-	resp := get(Handler(Config{Broken: broken, PluginDir: "plugins"}), "http://127.0.0.1:4678/api/cards", nil)
+	h := Handler(Config{Broken: broken, PluginDir: "plugins"})
+	resp := get(h, "http://127.0.0.1:4678/api/cards", nil)
 
 	want := parseJSON(`{"pluginDir": "plugins", "cards": [
 		{"id": "bad", "name": {"en": "Broken", "zh-CN": "坏了"},
@@ -307,6 +310,10 @@ func TestPluginsThatDidNotLoadShowAsErrorCards(t *testing.T) {
 	]}`)
 	if got := decodeJSON(t, resp); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+	sidebar := string(mustRead(t, get(h, "http://127.0.0.1:4678/api/plugins", nil).Body))
+	if !strings.Contains(sidebar, `"id":"bad"`) || !strings.Contains(sidebar, `"code":"bad_manifest"`) {
+		t.Errorf("broken plugin missing from sidebar: %s", sidebar)
 	}
 }
 

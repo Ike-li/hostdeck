@@ -88,8 +88,6 @@ func (s *server) layout() layout.Layout {
 	return s.cfg.Layout.Get()
 }
 
-func pluginID(p plugin.Plugin) string { return p.ID }
-
 // Served is where the browser finds an embedded service, or why it cannot.
 type Served struct {
 	URL string
@@ -104,6 +102,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/plugins", s.servePlugins)
 	mux.HandleFunc("GET /api/status", s.serveStatus)
 	mux.HandleFunc("GET /api/cards", s.serveCards)
+	mux.HandleFunc("GET /api/cards/{id}", s.serveCard)
 	mux.HandleFunc("POST /api/cards/refresh", s.serveRefresh)
 	mux.HandleFunc("POST /api/clear/{id}", s.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
@@ -128,7 +127,7 @@ type entry struct {
 	ID    string      `json:"id"`
 	Name  plugin.Text `json:"name"`
 	Icon  string      `json:"icon,omitempty"`
-	Type  string      `json:"type"` // proxy | link | detail
+	Type  string      `json:"type"` // proxy | link | detail | card
 	URL   string      `json:"url,omitempty"`
 	Error *card.Error `json:"error,omitempty"`
 }
@@ -137,10 +136,7 @@ func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
 	now := s.loaded()
 	l := s.layout()
 	entries := []entry{}
-	for _, p := range layout.Arrange(now.Plugins, l.Sidebar, pluginID) {
-		if slices.Contains(l.Hidden, p.ID) {
-			continue
-		}
+	for _, p := range now.Plugins {
 		e := entry{ID: p.ID, Name: p.Name, Icon: p.Icon}
 		switch {
 		case p.Detail != nil:
@@ -148,6 +144,8 @@ func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
 			entries = append(entries, e)
 			continue
 		case p.Page == nil:
+			e.Type = "card"
+			entries = append(entries, e)
 			continue
 		}
 		if p.Page.Link != "" {
@@ -162,7 +160,20 @@ func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
 		}
 		entries = append(entries, e)
 	}
-	writeJSON(w, entries)
+	for _, b := range now.Broken {
+		name := b.Name
+		if name.IsZero() {
+			name = plugin.Text{All: b.ID}
+		}
+		entries = append(entries, entry{ID: b.ID, Name: name, Type: "card", Error: manifestError(b)})
+	}
+	shown := []entry{}
+	for _, e := range layout.Arrange(entries, l.Sidebar, func(e entry) string { return e.ID }) {
+		if !slices.Contains(l.Hidden, e.ID) {
+			shown = append(shown, e)
+		}
+	}
+	writeJSON(w, shown)
 }
 
 // probe asks a service directly, not through its proxy. Any answer, a login
@@ -211,16 +222,28 @@ func (s *server) serveCards(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), overviewWait)
 	defer cancel()
 	now := s.loaded()
-	var withCard []plugin.Plugin
-	for _, p := range now.Plugins {
-		if p.Card != nil {
-			withCard = append(withCard, p)
-		}
-	}
-	cards := make([]card.View, len(withCard))
+	cards := make([]workspaceCard, len(now.Plugins))
 	var wg sync.WaitGroup
-	for i, p := range withCard {
-		wg.Go(func() { cards[i] = now.cards.Get(ctx, p) })
+	for i, p := range now.Plugins {
+		wg.Go(func() {
+			if p.Card != nil {
+				cards[i].View = now.cards.Get(ctx, p)
+				return
+			}
+			c := workspaceCard{View: card.View{ID: p.ID, Name: p.Name, Icon: p.Icon}}
+			switch {
+			case p.Detail != nil:
+				c.Destination = "detail"
+			case p.Page != nil && p.Page.Link != "":
+				c.Destination, c.Address = "link", p.Page.Link
+			case p.Page != nil:
+				c.Destination, c.Address = "proxy", p.Page.Proxy
+				if served := now.Served[p.ID]; served.Err != nil {
+					c.Error = portError(served.Err)
+				}
+			}
+			cards[i] = c
+		})
 	}
 	wg.Wait()
 	for _, b := range now.Broken {
@@ -228,24 +251,46 @@ func (s *server) serveCards(w http.ResponseWriter, r *http.Request) {
 		if name.IsZero() {
 			name = plugin.Text{All: b.ID}
 		}
-		cards = append(cards, card.View{ID: b.ID, Name: name, Error: manifestError(b)})
+		cards = append(cards, workspaceCard{View: card.View{ID: b.ID, Name: name, Error: manifestError(b)}})
 	}
 	l := s.layout()
-	type placed struct {
-		card.View
-		Wide bool `json:"wide,omitempty"`
-	}
-	arranged := []placed{}
-	for _, c := range layout.Arrange(cards, l.Cards, func(c card.View) string { return c.ID }) {
+	arranged := []workspaceCard{}
+	for _, c := range layout.Arrange(cards, l.Cards, func(c workspaceCard) string { return c.ID }) {
 		if slices.Contains(l.Hidden, c.ID) {
 			continue
 		}
-		arranged = append(arranged, placed{c, slices.Contains(l.Wide, c.ID)})
+		c.Wide = slices.Contains(l.Wide, c.ID)
+		arranged = append(arranged, c)
 	}
 	writeJSON(w, struct {
-		PluginDir string   `json:"pluginDir"`
-		Cards     []placed `json:"cards"`
+		PluginDir string          `json:"pluginDir"`
+		Cards     []workspaceCard `json:"cards"`
 	}{s.cfg.PluginDir, arranged})
+}
+
+// A connection without monitoring still has an overview shortcut. Its address
+// describes where it opens, without claiming that the external service is up.
+type workspaceCard struct {
+	card.View
+	Destination string `json:"destination,omitempty"`
+	Address     string `json:"address,omitempty"`
+	Wide        bool   `json:"wide,omitempty"`
+}
+
+// The generated monitor view uses the same cache and pending contract as the
+// overview, but does not read unrelated plugins.
+func (s *server) serveCard(w http.ResponseWriter, r *http.Request) {
+	now := s.loaded()
+	for _, p := range now.Plugins {
+		if p.ID != r.PathValue("id") || p.Card == nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), overviewWait)
+		defer cancel()
+		writeJSON(w, now.cards.Get(ctx, p))
+		return
+	}
+	writeError(w, http.StatusNotFound, &card.Error{Code: "no_card"})
 }
 
 // serveRefresh forgets the kept card values. The next read asks again.

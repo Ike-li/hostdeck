@@ -1440,13 +1440,15 @@ card:
 		chromedp.Click(chromedp.CSS("#nav-overview")),
 		chromedp.WaitVisible(chromedp.CSS(`.card[data-id="only"] .card-value`)),
 	)
-	if n := count(`.card[data-id="only"] .card-name a`); n != 0 {
-		t.Errorf("a card with no page has %d links, want none", n)
+	if n := count(`.card[data-id="only"] .card-name a`); n != 1 {
+		t.Errorf("a card with no page has %d links, want its monitor view", n)
 	}
 	do(t, ctx, chromedp.Click(chromedp.CSS(`.card[data-id="only"] .card-value`)))
-	if title := text(t, ctx, "h1"); title != "总览" {
-		t.Errorf("clicking a card with no page left the overview for %q", title)
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`#service .monitor-view .card-value`)))
+	if name, value := text(t, ctx, "#service-name"), text(t, ctx, "#service .card-value"); name != "仅卡片" || value != "ok" {
+		t.Errorf("monitor shows %q %q, want the card's own reading", name, value)
 	}
+	do(t, ctx, chromedp.Click(chromedp.CSS("#nav-overview")), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="out"] .card-name a`)))
 	link := attrs(t, ctx, `.card[data-id="out"] .card-name a`)
 	if link["href"] != "https://example.test/" || link["target"] != "_blank" {
 		t.Errorf("out card link %#v, want the external page in a new tab", link)
@@ -1475,8 +1477,11 @@ card:
 	if got := says("out"); !strings.Contains(got, "网页入口") || !strings.Contains(got, "总览监控") {
 		t.Errorf("out provides %q, want a sidebar page and a card", got)
 	}
-	if n := count(`.catalog-item[data-id="only"] .catalog-open`) + count(`.catalog-item[data-id="off"] .catalog-open`); n != 0 {
-		t.Errorf("a card-only or disabled plugin has an Open control")
+	if n := count(`.catalog-item[data-id="only"] .catalog-open`); n != 1 {
+		t.Errorf("a card-only plugin has %d Open controls, want one", n)
+	}
+	if n := count(`.catalog-item[data-id="off"] .catalog-open`); n != 0 {
+		t.Errorf("a disabled plugin has an Open control")
 	}
 	open := attrs(t, ctx, `.catalog-item[data-id="out"] .catalog-open`)
 	if open["href"] != "https://example.test/" || open["target"] != "_blank" {
@@ -1541,7 +1546,7 @@ func TestThePluginsPageGroupsWhatIsInUseDisabledAndBroken(t *testing.T) {
 	if got := group("error"); !slices.Equal(got, []string{"bad"}) {
 		t.Fatalf("broken %v, want bad", got)
 	}
-	if use, disabled, broken := text(t, ctx, `[data-group="use"] h3`), text(t, ctx, `[data-group="disabled"] h3`), text(t, ctx, `[data-group="error"] h3`); use != "已启用" || disabled != "已停用" || broken != "需要处理" {
+	if use, disabled, broken := text(t, ctx, `[data-group="use"] h2`), text(t, ctx, `[data-group="disabled"] h2`), text(t, ctx, `[data-group="error"] h2`); use != "已启用" || disabled != "已停用" || broken != "需要处理" {
 		t.Errorf("group headings %q %q %q", use, disabled, broken)
 	}
 }

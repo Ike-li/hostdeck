@@ -142,6 +142,7 @@ let catalogAddRequested = false; // the overview add card should land at the add
 let pendingOverview = null; // a reading waiting until card controls lose focus
 let overview = null; // the last answer of /api/cards
 let cardsTimer = null; // the next /api/cards while a card is pending
+let monitorTimer = null; // retry the open monitor while pending or failed
 let failure = null; // why the backend could not be read
 const frames = new Map(); // plugin id -> its iframe or detail view, kept so each page keeps its state
 let clearArmed = null; // the timer while the clear button waits for its second click
@@ -219,6 +220,7 @@ async function setLang(next, remember) {
 // The address names the open entry: #/<id>, or #/.plugins for the plugins
 // page. Anything else, a malformed address included, is the overview.
 function route() {
+  clearTimeout(monitorTimer);
   if ($('page-editor').open) $('page-editor').close();
   closePanel();
   pendingOverview = null;
@@ -242,6 +244,7 @@ function route() {
   if (!current && !catalogOpen) loadCards();
   else clearTimeout(cardsTimer);
   render();
+  if (current?.type === 'card' && !current.error) loadMonitor(current, frames.get(current.id));
 }
 
 function render() {
@@ -449,14 +452,14 @@ function renderOverview() {
     return;
   }
   overview.lang = lang;
-  $('cards').replaceChildren(...cards.map(cardElement), $('empty-add'));
+  $('cards').replaceChildren(...cards.map((c) => cardElement(c)), $('empty-add'));
   placeMoves($('cards'), '.card');
 }
 
-function cardElement(c) {
+function cardElement(c, standalone = false) {
   const card = el('article', 'card');
   card.dataset.id = c.id;
-  card.draggable = true;
+  card.draggable = !standalone;
   card.classList.toggle('wide', !!c.wide);
   const head = el('header', 'card-head');
   const width = el('button', 'card-width', t(c.wide ? 'card.narrow' : 'card.widen'));
@@ -469,8 +472,8 @@ function cardElement(c) {
     saveLayout({ wide: overview.cards.filter((x) => x.wide).map((x) => x.id) }, { wide: previous });
     render();
   });
-  const moves = moreActions(pick(c.name), [moveButton('up'), moveButton('down'), hideButton(), width]);
-  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), cardTitle(c), moves);
+  head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), standalone ? el('h2', 'card-name', pick(c.name)) : cardTitle(c));
+  if (!standalone) head.append(moreActions(pick(c.name), [moveButton('up'), moveButton('down'), hideButton(), width]));
   card.append(head);
   card.addEventListener('click', (e) => {
     if (suppressClick || e.target.closest('button, a, summary, .action-panel')) return;
@@ -487,6 +490,11 @@ function cardElement(c) {
   }
   if (c.status) {
     card.dataset.status = c.status;
+  }
+  if (c.destination) {
+    card.append(el('p', 'card-destination', t(`card.destination.${c.destination}`)));
+    if (c.address) card.append(el('p', 'card-address', c.address));
+    return card;
   }
   // A pending card that has never been read has nothing more to show.
   if (c.pending && !c.status && !c.value) return card;
@@ -508,7 +516,7 @@ function cardElement(c) {
 }
 
 // cardTitle names the card, and links it when the plugin is in the sidebar.
-// A card on its own has nowhere to open.
+// Card-only plugins open the console's generated monitor view.
 function cardTitle(c) {
   const name = el('h2', 'card-name');
   const page = plugins.find((p) => p.id === c.id);
@@ -718,8 +726,8 @@ function renderService(p) {
   $('service-dot').hidden = p.type !== 'proxy';
   $('service-error').hidden = !p.error;
   $('service-reload').hidden = !!p.error;
-  $('service-reload').disabled = p.type === 'detail' && frames.get(p.id)?.getAttribute('aria-busy') === 'true';
-  $('service-open').hidden = $('service-clear').hidden = !!p.error || p.type === 'detail';
+  $('service-reload').disabled = ['detail', 'card'].includes(p.type) && frames.get(p.id)?.getAttribute('aria-busy') === 'true';
+  $('service-open').hidden = $('service-clear').hidden = !!p.error || ['detail', 'card'].includes(p.type);
   const clear = $('service-clear');
   clear.textContent = t(clearing ? 'service.clearing' : clearArmed ? 'service.clear.confirm' : 'service.clear');
   clear.classList.toggle('armed', !!clearArmed);
@@ -732,6 +740,18 @@ function renderService(p) {
   if (p.error) {
     const message = explain(p.error);
     if ($('service-error').textContent !== message) $('service-error').textContent = message;
+  } else if (p.type === 'card') {
+    let view = frames.get(p.id);
+    if (!view) {
+      view = el('div', 'frame monitor-view');
+      view.append(el('p', 'empty', t('loading')));
+      $('frames').append(view);
+      frames.set(p.id, view);
+      loadMonitor(p, view);
+    } else if (view.data && view.lang !== lang) {
+      view.lang = lang;
+      view.replaceChildren(cardElement(view.data, true));
+    }
   } else if (p.type === 'detail') {
     let view = frames.get(p.id);
     if (!view) {
@@ -760,6 +780,29 @@ function renderService(p) {
     f.hidden = id !== p.id || !!p.error;
     if (id === p.id && f.tagName === 'IFRAME') f.title = pick(p.name);
   }
+}
+
+async function loadMonitor(p, view, refresh = false) {
+  if (!view || view.getAttribute('aria-busy') === 'true') return;
+  clearTimeout(monitorTimer);
+  view.setAttribute('aria-busy', 'true');
+  if (current?.id === p.id) $('service-reload').disabled = true;
+  try {
+    if (refresh) {
+      const resp = await fetch('/api/cards/refresh', { method: 'POST' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    }
+    view.data = await getJSON(`/api/cards/${encodeURIComponent(p.id)}`);
+  } catch (e) {
+    view.data = { id: p.id, name: p.name, icon: p.icon, error: { code: 'backend', detail: e.message } };
+  } finally {
+    view.setAttribute('aria-busy', 'false');
+  }
+  view.lang = lang;
+  view.replaceChildren(cardElement(view.data, true));
+  if (current?.id !== p.id || !view.isConnected) return;
+  $('service-reload').disabled = false;
+  if (view.data.pending || view.data.error) monitorTimer = setTimeout(() => loadMonitor(p, view), PENDING_AGAIN);
 }
 
 // A detail page is drawn here from the items its plugin's command prints. It
@@ -929,12 +972,14 @@ function renderCatalog(loaded) {
     ['error', 'catalog.group.error', (p) => !!(p.broken || p.error)],
   ].flatMap(([id, key, pred]) => {
     const items = catalog.installed.filter(pred).sort(byName).map(installedItem);
-    if (!items.length) return [];
+    if (!items.length && id !== 'use') return [];
     const section = el('section', 'catalog-group');
     section.dataset.group = id;
     const grid = el('div', 'catalog-list');
     grid.append(...items);
-    section.append(el('h3', 'catalog-heading', t(key)), grid);
+    section.append(el('h2', 'catalog-heading', t(key)));
+    if (id === 'use') section.append(el('p', 'catalog-guidance', t('catalog.manageHint')));
+    section.append(items.length ? grid : el('p', 'empty', t('catalog.noEnabled')));
     return [section];
   });
   $('catalog-installed').replaceChildren(...(groups.length ? groups : [el('p', 'empty', t('catalog.none'))]));
@@ -984,7 +1029,7 @@ function filterCatalog() {
     card.hidden = q !== '' && !name.includes(q);
   }
   for (const group of document.querySelectorAll('.catalog-group')) {
-    group.hidden = ![...group.querySelectorAll('.catalog-item')].some((card) => !card.hidden);
+    group.hidden = !(q === '' && group.dataset.group === 'use') && ![...group.querySelectorAll('.catalog-item')].some((card) => !card.hidden);
   }
   const available = [...document.querySelectorAll('#catalog-available .catalog-item')];
   if (available.length) $('catalog-available-heading').hidden = available.every((card) => card.hidden);
@@ -1543,6 +1588,7 @@ async function refreshStatus() {
     return; // the banner of the next failed request says why
   }
   render();
+  if (current?.type === 'card' && !current.error) loadMonitor(current, frames.get(current.id));
 }
 
 async function init() {
@@ -1624,6 +1670,7 @@ async function init() {
   $('service-reload').addEventListener('click', () => {
     if (!current || !frames.has(current.id)) return;
     if (current.type === 'detail') loadDetail(current, frames.get(current.id));
+    else if (current.type === 'card') loadMonitor(current, frames.get(current.id), true);
     else frames.get(current.id).src = current.url;
   });
   await setLang(initialLang(), false);

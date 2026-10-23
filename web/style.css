@@ -921,3 +921,9 @@ body:has(.page-editor[open]) main { overflow: hidden; }
 .agent-prompt summary { cursor: pointer; min-height: 44px; align-content: center; }
 .agent-prompt label { display: block; margin-block: 8px; }
 .agent-prompt textarea { display: block; box-sizing: border-box; width: 100%; min-height: 180px; resize: vertical; padding: 12px; background: var(--bg); color: inherit; border: 1px solid var(--line); border-radius: 6px; font: 13px/1.6 ui-monospace, monospace; }
+
+.monitor-view { overflow-y: auto; padding: 24px; background: var(--bg); }
+.monitor-view .card { max-width: 720px; }
+.card-destination, .card-address { overflow-wrap: anywhere; }
+.card-address { color: var(--muted); font-size: 14px; }
+@media (max-width: 640px) { .monitor-view { padding: 16px; } }
