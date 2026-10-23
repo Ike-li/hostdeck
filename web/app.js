@@ -125,6 +125,7 @@ let current = null; // the open sidebar entry, or null on the overview
 let catalogOpen = false; // whether the plugins page is shown
 let catalog = null; // the last answer of /api/catalog
 let catalogNoteFor = null; // the plugin whose card the last result belongs on
+let catalogAddRequested = false; // the overview add card should land at the add form
 let pendingOverview = null; // a reading waiting until card controls lose focus
 let overview = null; // the last answer of /api/cards
 let cardsTimer = null; // the next /api/cards while a card is pending
@@ -214,6 +215,7 @@ function route() {
     // a malformed escape: show the overview
   }
   catalogOpen = id === CATALOG;
+  if (!catalogOpen) catalogAddRequested = false;
   current = plugins.find((p) => p.id === id && p.type !== 'link') || null;
   disarmClear();
   clearFailure = null;
@@ -419,7 +421,6 @@ function renderOverview() {
   const cards = overview ? overview.cards : [];
   const noCards = !overview || cards.length === 0;
   $('empty').hidden = !overview || !noCards;
-  $('empty-add').hidden = !overview || !noCards;
   if (overview && noCards) {
     $('empty').textContent = stored.hidden.length ? t('overview.hidden') : t('overview.empty', { dir: overview.pluginDir });
   }
@@ -431,7 +432,7 @@ function renderOverview() {
     return;
   }
   overview.lang = lang;
-  $('cards').replaceChildren(...cards.map(cardElement));
+  $('cards').replaceChildren(...cards.map(cardElement), $('empty-add'));
   placeMoves($('cards'), '.card');
 }
 
@@ -867,6 +868,11 @@ function showNote(view, text, failed = false) {
   }, 8000);
 }
 
+function focusCatalogAdd() {
+  $('catalog-add').scrollIntoView({ block: 'start' });
+  $('page-address').focus();
+}
+
 // The plugins page lists the plugins built into hostdeck. Like a detail page,
 // it is rebuilt only when it is loaded or the language changes, so that a
 // periodic render does not reset an add button waiting for its second click.
@@ -878,6 +884,10 @@ async function loadCatalog() {
     failure = e.message;
   }
   renderCatalog(true);
+  if (catalogOpen && catalogAddRequested) {
+    catalogAddRequested = false;
+    focusCatalogAdd();
+  }
 }
 
 function renderCatalog(loaded) {
@@ -1432,9 +1442,9 @@ async function init() {
   $('service-clear').addEventListener('click', onClearClick);
   $('page-form').addEventListener('submit', onPageSubmit);
   $('page-kind').addEventListener('change', pageHint);
-  $('catalog-add-open').addEventListener('click', () => {
-    $('catalog-add').scrollIntoView({ block: 'start' });
-    $('page-address').focus();
+  $('catalog-add-open').addEventListener('click', focusCatalogAdd);
+  $('empty-add').addEventListener('click', (e) => {
+    if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) catalogAddRequested = true;
   });
   // A URI-list from one of our own links is not a request to add a page.
   document.addEventListener('dragstart', (e) => e.dataTransfer?.setData(INTERNAL_DRAG, '1'));

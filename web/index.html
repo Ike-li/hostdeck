@@ -38,9 +38,14 @@
         </div>
       </div>
       <p id="empty" class="empty" hidden></p>
-      <a id="empty-add" class="btn primary" href="#/.plugins" hidden data-i18n="overview.add"></a>
       <p id="overview-loading" class="empty" role="status" data-i18n="loading" hidden></p>
-      <div id="cards" class="cards" aria-busy="false"></div>
+      <div id="cards" class="cards" aria-busy="false">
+        <a id="empty-add" class="add-card" href="#/.plugins" draggable="false" data-i18n-label="overview.add">
+          <span class="add-card-symbol" aria-hidden="true">+</span>
+          <strong data-i18n="overview.add"></strong>
+          <span class="add-card-hint" data-i18n="overview.addHint"></span>
+        </a>
+      </div>
     </section>
     <section id="catalog" class="overview" hidden>
       <div class="overview-head"><h1 data-i18n="catalog.title"></h1><button type="button" class="btn primary" id="catalog-add-open" data-i18n="catalog.page"></button></div>
