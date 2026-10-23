@@ -15,6 +15,85 @@ function el(tag, className, text) {
   return e;
 }
 
+// Action panels stay next to their owner in the DOM, but the browser's top
+// layer keeps them outside scrolling and clipped containers.
+let openPanel = null;
+let panelSequence = 0;
+const narrow = matchMedia('(max-width: 640px)');
+
+function closePanel(restore = false) {
+  if (!openPanel) return;
+  const { panel, trigger } = openPanel;
+  openPanel = null;
+  panel.hidePopover();
+  panel.hidden = true;
+  trigger.setAttribute('aria-expanded', 'false');
+  if (restore && trigger.isConnected) trigger.focus();
+}
+
+function moreActions(name, controls) {
+  const wrap = el('div', 'more');
+  const trigger = el('button', 'more-trigger', '⋯');
+  trigger.type = 'button';
+  trigger.setAttribute('aria-label', t('more.for', { name }));
+  trigger.setAttribute('aria-expanded', 'false');
+  const panel = el('div', 'action-panel');
+  panel.id = `actions-${++panelSequence}`;
+  panel.setAttribute('popover', 'manual');
+  panel.hidden = true;
+  trigger.setAttribute('aria-controls', panel.id);
+  panel.append(...controls);
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (openPanel?.trigger === trigger) return closePanel(true);
+    closePanel();
+    panel.hidden = false;
+    panel.showPopover();
+    openPanel = { panel, trigger };
+    trigger.setAttribute('aria-expanded', 'true');
+    const r = trigger.getBoundingClientRect();
+    const size = panel.getBoundingClientRect();
+    panel.style.left = `${Math.max(8, Math.min(r.right - size.width, innerWidth - size.width - 8))}px`;
+    panel.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - size.height - 8))}px`;
+  });
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  wrap.append(trigger, panel);
+  return wrap;
+}
+
+function setNavigation(open, restore = false) {
+  open = narrow.matches && open;
+  document.querySelector('.app').classList.toggle('nav-open', open);
+  $('menu').setAttribute('aria-expanded', String(open));
+  document.querySelector('.side-menu').inert = narrow.matches && !open;
+  document.querySelector('main').inert = open;
+  $('nav-backdrop').hidden = !open;
+  if (open) $('nav-overview').focus();
+  else if (restore && narrow.matches) $('menu').focus();
+}
+
+function onInterfaceKey(e) {
+  if (e.key === 'Escape') {
+    if (openPanel) { e.preventDefault(); closePanel(true); }
+    else if (document.querySelector('.app').classList.contains('nav-open')) {
+      e.preventDefault(); setNavigation(false, true);
+    }
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  if (openPanel && document.activeElement === openPanel.trigger && !e.shiftKey) {
+    const first = openPanel.panel.querySelector('button:not(:disabled), a[href]');
+    if (first) { e.preventDefault(); first.focus(); }
+    return;
+  }
+  if (!document.querySelector('.app').classList.contains('nav-open')) return;
+  const targets = [...document.querySelector('.sidebar').querySelectorAll('a[href], button:not(:disabled)')]
+    .filter((node) => node.getClientRects().length && !node.closest('[hidden]'));
+  const first = targets[0], last = targets.at(-1);
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+
 let lang = 'en';
 let dict = {};
 let plugins = []; // the sidebar entries
@@ -81,6 +160,7 @@ async function getJSON(url) {
 }
 
 async function setLang(next, remember) {
+  closePanel();
   dict = await getJSON(`/i18n/${next}.json`);
   lang = next;
   document.documentElement.lang = next;
@@ -97,6 +177,8 @@ async function setLang(next, remember) {
 // The address names the open entry: #/<id>, or #/.plugins for the plugins
 // page. Anything else, a malformed address included, is the overview.
 function route() {
+  closePanel();
+  setNavigation(false);
   let id = '';
   try {
     id = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
@@ -163,6 +245,7 @@ function renderNav() {
     row.querySelector('.move-up').textContent = t('move.up');
     row.querySelector('.move-down').textContent = t('move.down');
     row.querySelector('.hide').textContent = t('layout.hide');
+    row.querySelector('.more-trigger').setAttribute('aria-label', t('more.for', { name: pick(p.name) }));
   });
   placeMoves(nav, '.nav-row');
 }
@@ -184,8 +267,7 @@ function navItem(p) {
     a.href = `#/${encodeURIComponent(p.id)}`;
     if (p.type === 'proxy') a.append(el('span', 'dot'));
   }
-  const moves = el('span', 'nav-moves');
-  moves.append(moveButton('up'), moveButton('down'), hideButton());
+  const moves = moreActions(pick(p.name), [moveButton('up'), moveButton('down'), hideButton()]);
   row.append(a, moves);
   return row;
 }
@@ -219,6 +301,7 @@ function hideButton() {
 
 // hideId saves the whole hidden list. The plugin's place in the order stays.
 function hideId(id) {
+  closePanel();
   if (!layoutKnown || stored.hidden.includes(id)) return;
   const previous = { hidden: stored.hidden.slice() };
   stored.hidden = [...stored.hidden, id];
@@ -257,10 +340,12 @@ function placeMoves(list, selector) {
 
 function focusMove(item, stay) {
   const btn = item.querySelector(stay);
-  if (btn && !btn.disabled) btn.focus();
+  if (btn && !btn.disabled && btn.checkVisibility()) btn.focus();
+  else item.querySelector('.more-trigger')?.focus();
 }
 
 function moveItem(which, id, dir, btn) {
+  closePanel();
   const list = which === 'sidebar' ? $('nav') : $('cards');
   const selector = which === 'sidebar' ? '.nav-row' : '.card';
   const items = [...list.querySelectorAll(selector)];
@@ -1239,15 +1324,24 @@ async function init() {
       render();
     }
   });
-  $('menu').addEventListener('click', () => {
-    const open = document.querySelector('.app').classList.toggle('nav-open');
-    $('menu').setAttribute('aria-expanded', String(open));
-  });
+  $('menu').addEventListener('click', () => setNavigation(!document.querySelector('.app').classList.contains('nav-open')));
+  $('nav-backdrop').addEventListener('click', () => setNavigation(false, true));
   document.querySelector('.side-menu').addEventListener('click', (e) => {
-    if (!e.target.closest('a')) return;
-    document.querySelector('.app').classList.remove('nav-open');
-    $('menu').setAttribute('aria-expanded', 'false');
+    if (e.target.closest('a')) setNavigation(false, true);
   });
+  document.addEventListener('keydown', onInterfaceKey);
+  document.addEventListener('click', (e) => {
+    if (openPanel && !e.composedPath().includes(openPanel.panel) && !e.composedPath().includes(openPanel.trigger)) closePanel();
+  });
+  narrow.addEventListener('change', () => {
+    closePanel();
+    setNavigation(document.querySelector('.app').classList.contains('nav-open'));
+  });
+  addEventListener('resize', () => closePanel());
+  document.addEventListener('scroll', (e) => {
+    if (openPanel && !openPanel.panel.contains(e.target)) closePanel();
+  }, true);
+  setNavigation(false);
   sortable($('nav'), '.nav-row', (order, previous) => {
     plugins.sort(byOrder(order));
     $('nav').dataset.entries = JSON.stringify(plugins.map((p) => [p.id, p.type, p.url]));

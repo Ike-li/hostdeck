@@ -13,9 +13,9 @@
   <aside class="sidebar">
     <div class="side-head">
       <a class="brand" href="#/">hostdeck</a>
-      <button type="button" id="menu" class="menu" aria-expanded="false" data-i18n="nav.menu"></button>
+      <button type="button" id="menu" class="menu" aria-controls="side-menu" aria-expanded="false" data-i18n="nav.menu"></button>
     </div>
-    <div class="side-menu">
+    <div class="side-menu" id="side-menu">
       <a class="nav-item" id="nav-overview" href="#/"><span class="icon nav-slot" aria-hidden="true"></span><span class="nav-name"></span></a>
       <nav id="nav" data-i18n-label="nav.label"></nav>
       <a class="nav-item" id="nav-catalog" href="#/.plugins"><span class="icon nav-slot" aria-hidden="true"></span><span class="nav-name"></span></a>
@@ -25,6 +25,7 @@
       </div>
     </div>
   </aside>
+  <div id="nav-backdrop" class="nav-backdrop" hidden></div>
   <main>
     <p id="banner" class="banner" hidden></p>
     <p id="layout-note" class="note" hidden><span data-i18n="layout.saved"></span> <button type="button" id="layout-undo" class="btn" data-i18n="layout.undo"></button></p>

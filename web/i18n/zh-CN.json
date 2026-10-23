@@ -109,5 +109,6 @@
   "catalog.trashed.note": "已把 {name} 移入回收区。",
   "catalog.restored.note": "已放回 {name}。",
   "catalog.purged.note": "已清除 {name}。",
-  "error.trash_failed": "没能改动回收区：{detail}"
+  "error.trash_failed": "没能改动回收区：{detail}",
+  "more.for": "{name}的更多操作"
 }

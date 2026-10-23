@@ -1712,7 +1712,7 @@ func TestSidebarEntriesAndCardsMoveUpAndDownAndTheMoveCanBeUndone(t *testing.T) 
 		t.Fatalf("sidebar move buttons: %s", kind)
 	}
 
-	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)))
 	if got, want := idsOf(t, ctx, entry), []string{"b", "a", "c"}; !slices.Equal(got, want) {
 		t.Errorf("after moving a down: %v, want %v", got, want)
 	}
@@ -1797,10 +1797,10 @@ func TestHidingAPluginRemovesItUntilItIsShownOrReset(t *testing.T) {
 		t.Fatalf("hide and reset: %s", kind)
 	}
 
-	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)))
 	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
 
-	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .hide`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .hide`)))
 	gone(t, ctx, `#nav .nav-item[data-id="a"]`)
 	gone(t, ctx, `.card[data-id="a"]`)
 	if got, want := idsOf(t, ctx, entry), []string{"b", "c"}; !slices.Equal(got, want) {

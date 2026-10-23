@@ -109,5 +109,6 @@
   "catalog.trashed.note": "Moved {name} to the trash.",
   "catalog.restored.note": "Restored {name}.",
   "catalog.purged.note": "Purged {name}.",
-  "error.trash_failed": "Could not update the trash: {detail}"
+  "error.trash_failed": "Could not update the trash: {detail}",
+  "more.for": "More actions for {name}"
 }

@@ -2,12 +2,12 @@
   --bg: #f6f7f9;
   --panel: #ffffff;
   --text: #1c1f24;
-  --muted: #6b7280;
+  --muted: #606975;
   --line: #e3e6ea;
   --accent: #2f6fde;
-  --ok: #2f9e5b;
-  --warn: #c98a1b;
-  --error: #d64545;
+  --ok: #247a46;
+  --warn: #946313;
+  --error: #bf3636;
   color-scheme: light;
 }
 
@@ -39,7 +39,7 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 240px minmax(0, 1fr);
   height: 100vh;
 }
 
@@ -105,22 +105,6 @@ nav {
   border-radius: 6px;
 }
 
-/* A column at the end of the row, shown only while they can be used. Three
-   buttons in one line cover the middle of a 200px sidebar, so a click there
-   would hide the plugin instead of opening it. Hanging them under the row
-   covers the next entry. */
-.nav-moves {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  opacity: 0;
-  background: var(--panel);
-  border-radius: 4px;
-}
-
-.nav-row:hover .nav-moves,
-.nav-row:focus-within .nav-moves { opacity: 1; }
-
 .nav-row .nav-item {
   flex: 1;
   min-width: 0;
@@ -130,7 +114,8 @@ nav {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px;
+  min-height: 44px;
   border-radius: 6px;
   color: var(--text);
   text-decoration: none;
@@ -725,4 +710,71 @@ h1 {
 
   main { padding-top: 48px; }
   .overview { padding: 16px; }
+}
+
+/* Shared controls and focus treatment use the same targets in both themes. */
+button:not(.move):not(.card-width), input, select, summary, .btn { min-height: 44px; }
+button, .btn { justify-content: center; }
+button, a, input, select, summary { touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:disabled { cursor: default; opacity: .45; }
+.more { flex: none; }
+.more-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 24px;
+  cursor: pointer;
+}
+.more-trigger:hover, .more-trigger[aria-expanded="true"] { background: var(--bg); border-color: var(--line); color: var(--text); }
+.action-panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 8px;
+  width: max-content;
+  min-width: 176px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 32px #0002;
+}
+.action-panel > button, .action-panel > a {
+  display: flex;
+  width: 100%;
+  padding: 8px 12px;
+  min-height: 44px;
+  position: static;
+  opacity: 1;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  justify-content: start;
+  cursor: pointer;
+}
+.action-panel > button:hover:not(:disabled), .action-panel > a:hover { background: var(--bg); }
+.action-panel > .hide, .action-panel > .trash, .action-panel > .purge { color: var(--error); }
+.nav-row { min-height: 44px; }
+.nav-item { flex-shrink: 0; }
+.lang { flex-shrink: 0; }
+.nav-backdrop { display: none; }
+@media (max-width: 640px) {
+  .nav-backdrop { display: block; position: fixed; inset: 48px 0 0 min(280px, 88vw); z-index: 1; background: #0005; }
+  .app { height: 100dvh; }
+  main { height: 100dvh; }
 }
