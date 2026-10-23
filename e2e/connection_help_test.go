@@ -65,6 +65,8 @@ func TestOneClickCopiesTheCompletePromptIntoTheBrowserClipboard(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The Windows clipboard represents line breaks as CRLF.
+		copied = strings.ReplaceAll(copied, "\r\n", "\n")
 		preview, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('#`+kind+`-agent-prompt').value`))
 		if err != nil || len(copied) < 500 || copied != preview {
 			t.Fatalf("%s clipboard and preview differ: %d vs %d characters, %v", kind, len(copied), len(preview), err)
