@@ -324,6 +324,7 @@ function moveButton(dir) {
 function hideButton() {
   const btn = el('button', 'move hide', t('layout.hide'));
   btn.type = 'button';
+  btn.title = t('layout.hideHint');
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     const item = btn.closest('.nav-row, .card');
@@ -345,6 +346,7 @@ function hideId(id) {
     overview.cards = overview.cards.filter((c) => c.id !== id);
     overview.lang = null;
   }
+  if (catalog) catalog.lang = null;
   const leaving = current?.id === id;
   if (leaving) current = null;
   render();
@@ -896,7 +898,8 @@ function renderCatalog(loaded) {
   parkCatalogNote();
   catalog.lang = lang;
   document.title = `${t('catalog.title')} · hostdeck`;
-  $('catalog-intro').textContent = t('catalog.intro', { dir: catalog.pluginDir });
+  $('catalog-intro').textContent = t('catalog.intro');
+  $('catalog-directory').textContent = catalog.pluginDir;
   const byName = (a, b) => pick(a.name).localeCompare(pick(b.name), lang);
   const groups = [
     ['use', 'catalog.group.use', (p) => !p.disabled && !p.broken && !p.error],
@@ -907,7 +910,7 @@ function renderCatalog(loaded) {
     if (!items.length) return [];
     const section = el('section', 'catalog-group');
     section.dataset.group = id;
-    const grid = el('div', 'cards');
+    const grid = el('div', 'catalog-list');
     grid.append(...items);
     section.append(el('h3', 'catalog-heading', t(key)), grid);
     return [section];
@@ -1117,49 +1120,55 @@ function errorFile(path) {
 }
 
 function installedItem(p) {
-  const item = catalogCard(p);
-  const folder = `.${p.id}`;
-  const state = p.error
-    ? explain(p.error)
-    : p.broken
-      ? t('catalog.state.broken')
-      : p.disabled
-        ? t(p.loaded ? 'catalog.state.disabling' : 'catalog.state.disabled', { folder })
-        : t(p.loaded ? 'catalog.state.loaded' : 'catalog.state.added');
-  const stateLine = el('p', 'catalog-state', state);
-  stateLine.dataset.state = p.error || p.broken ? 'broken' : p.disabled ? 'disabled' : 'enabled';
-  item.append(stateLine);
-  if (p.error?.file) item.append(errorFile(p.error.file));
-  const offers = providesList(p);
-  if (offers) item.append(offers);
+  const item = el('article', 'card catalog-item catalog-entry');
+  item.dataset.id = p.id;
+  const name = pick(p.name);
+  const identity = el('div', 'catalog-identity');
+  const head = el('header', 'card-head');
+  const title = el('h4', 'card-name', name);
+  title.title = name;
+  const kind = p.card || p.detail || p.actions ? 'plugin' : p.link ? 'link' : 'page';
+  head.append(el('span', 'icon', iconOf(p)), title, el('span', 'catalog-kind', t(`catalog.kind.${kind}`)));
+  const description = el('p', 'catalog-description', pick(p.description) || p.proxy || p.link || t('catalog.custom'));
+  description.title = pick(p.description) || description.textContent;
+  identity.append(head, description);
+
+  const features = el('div', 'catalog-summary');
+  features.append(el('span', 'catalog-field-label', t('catalog.features')), providesList(p) || el('p', null, t('catalog.features.none')));
+  const status = el('div', 'catalog-status');
+  const broken = p.error || p.broken;
+  const state = broken ? 'broken' : p.disabled ? (p.loaded ? 'disabling' : 'disabled') : p.loaded ? 'loaded' : 'added';
+  const stateLine = el('p', 'catalog-state', t(`catalog.state.${state}`));
+  stateLine.dataset.state = broken ? 'broken' : p.disabled ? 'disabled' : p.loaded ? 'enabled' : 'pending';
+  const hidden = stored.hidden.includes(p.id);
+  const visibility = p.disabled ? (hidden ? 'offHidden' : 'offVisible') : hidden ? 'hidden' : p.loaded || broken ? 'visible' : 'pending';
+  status.append(el('span', 'catalog-field-label', t('catalog.connectionState')), stateLine, el('p', 'catalog-visibility', t(`catalog.visibility.${visibility}`)));
+
   const actions = el('div', 'catalog-actions');
   const open = openControl(p);
   if (open) actions.append(open);
-  if (stored.hidden.includes(p.id)) {
+  if (hidden && !p.disabled) {
     const show = el('button', 'btn show', t('layout.show'));
     show.type = 'button';
     show.addEventListener('click', () => showId(p.id));
     actions.append(show);
   }
-  const name = pick(p.name);
   const verb = p.disabled ? 'enable' : 'disable';
-  const toggle = catalogButton(
-      t(`catalog.${verb}`),
-      t(`catalog.${verb}.confirm`),
-      `/api/plugins/${encodeURIComponent(p.id)}/${verb}`,
-      () => t(`catalog.${verb}d.note`, { name }),
-      p.id,
-    );
+  const toggle = catalogButton(t(`catalog.${verb}`), t(`catalog.${verb}.confirm`),
+    `/api/plugins/${encodeURIComponent(p.id)}/${verb}`, () => t(`catalog.${verb}d.note`, { name }), p.id);
   toggle.classList.add('catalog-toggle');
-  const trash = catalogOnce(
-    t('catalog.trash'),
-    `/api/plugins/${encodeURIComponent(p.id)}/trash`,
-    () => t('catalog.trashed.note', { name }),
-    p.id,
-  );
+  const trash = catalogOnce(t('catalog.trash'), `/api/plugins/${encodeURIComponent(p.id)}/trash`, () => t('catalog.trashed.note', { name }), p.id);
   trash.classList.add('trash');
-  item.querySelector('.card-head').append(moreActions(name, [toggle, trash]));
-  if (actions.childElementCount) item.append(actions);
+  const options = [];
+  if (!hidden && !p.disabled) options.push(hideButton());
+  if (p.disabled) actions.append(toggle);
+  else options.push(toggle);
+  options.push(trash);
+  actions.append(moreActions(name, options));
+  item.append(identity, features, status, actions);
+  const detail = p.error ? explain(p.error) : p.broken ? t('catalog.state.broken') : p.disabled && p.loaded ? t('catalog.disablingHint') : !p.disabled && !p.loaded ? t('catalog.pendingHint') : '';
+  if (detail) item.append(el('p', 'catalog-state-detail', detail));
+  if (p.error?.file) item.append(errorFile(p.error.file));
   item.append(pageEdit(p));
   return item;
 }

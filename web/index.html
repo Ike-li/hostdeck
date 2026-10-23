@@ -50,18 +50,21 @@
       </div>
     </section>
     <section id="catalog" class="overview" hidden>
-      <div class="overview-head"><h1 data-i18n="catalog.title"></h1><button type="button" class="btn primary" id="catalog-add-open" data-i18n="catalog.page"></button></div>
+      <div class="overview-head"><h1 data-i18n="catalog.title"></h1><button type="button" class="btn primary" id="catalog-add-open" data-i18n="catalog.addContent"></button></div>
       <p id="catalog-intro" class="empty"></p>
       <label id="catalog-search-wrap" class="search-field" hidden><span data-i18n="catalog.search"></span><input id="catalog-search" class="catalog-search" type="search" hidden data-i18n-placeholder="catalog.search"></label>
       <p id="catalog-no-results" class="empty" hidden data-i18n="catalog.noResults"></p>
       <h2 class="catalog-heading" data-i18n="catalog.installed"></h2>
+      <p class="catalog-guidance" data-i18n="catalog.manageHint"></p>
       <div id="catalog-installed"></div>
       <section id="catalog-trash" hidden>
         <h2 class="catalog-heading" data-i18n="catalog.trashed"></h2>
         <div id="catalog-trash-list" class="cards"></div>
       </section>
       <section id="catalog-add">
-        <h2 class="catalog-heading" data-i18n="catalog.page"></h2>
+        <h2 class="catalog-heading" data-i18n="catalog.addContent"></h2>
+        <p class="catalog-guidance" data-i18n="catalog.addContentHint"></p>
+        <h3 class="catalog-subheading" data-i18n="catalog.page"></h3>
         <p id="catalog-note" class="catalog-note" hidden></p>
         <form id="page-form" class="page-form">
           <label class="edit-field"><span data-i18n="page.mode"></span><select id="page-kind" aria-describedby="page-hint">
@@ -74,9 +77,10 @@
         </form>
         <p id="page-hint" class="page-hint"></p>
         <p class="page-hint" data-i18n="catalog.page.drop"></p>
-        <h2 id="catalog-available-heading" class="catalog-heading" data-i18n="catalog.available"></h2>
+        <h3 id="catalog-available-heading" class="catalog-subheading" data-i18n="catalog.available"></h3>
         <div id="catalog-available" class="cards"></div>
       </section>
+      <details class="catalog-directory"><summary data-i18n="catalog.directory"></summary><p id="catalog-directory"></p></details>
     </section>
     <section id="service" class="service" hidden>
       <header class="service-bar">

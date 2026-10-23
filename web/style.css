@@ -133,7 +133,7 @@ nav {
 .nav-row:hover { background: var(--bg); }
 .nav-row:has(.nav-item.active) { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .nav-row .nav-item:hover, .nav-row .nav-item.active { background: transparent; }
-#nav-overview, #nav-catalog { padding-right: 52px; }
+#nav-overview, #nav-catalog { padding-right: 12px; }
 
 .nav-name {
   flex: 1;
@@ -770,7 +770,7 @@ button:disabled { cursor: default; opacity: .45; }
   cursor: pointer;
 }
 .action-panel > button:hover:not(:disabled), .action-panel > a:hover { background: var(--bg); }
-.action-panel > .hide, .action-panel > .trash, .action-panel > .purge { color: var(--error); }
+.action-panel > .trash, .action-panel > .purge { color: var(--error); }
 .nav-row { min-height: 44px; }
 .nav-item { flex-shrink: 0; }
 .lang { flex-shrink: 0; }
@@ -848,3 +848,47 @@ button:disabled { cursor: default; opacity: .45; }
 }
 
 .card-name a { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; }
+
+/* Management is a list of connections; monitoring remains a card grid. */
+.catalog-guidance { margin: -8px 0 20px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.catalog-subheading { margin: 24px 0 12px; font-size: 15px; }
+.catalog-list { display: grid; gap: 12px; }
+.catalog-entry { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 136px 208px; align-items: center; gap: 16px 20px; min-height: 128px; }
+.catalog-identity, .catalog-summary, .catalog-status { min-width: 0; }
+.catalog-entry .card-head { min-height: 32px; }
+.catalog-entry .icon { width: 32px; height: 32px; }
+.catalog-entry .card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.catalog-kind { flex: none; color: var(--muted); font-size: 12px; }
+.catalog-entry .catalog-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; min-height: 42px; margin: 8px 0 0 40px; font-size: 13px; line-height: 21px; color: var(--muted); }
+.catalog-field-label { display: block; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+.catalog-entry .catalog-provides { margin: 0; gap: 4px; }
+.catalog-entry .catalog-provides li { padding: 0; border: 0; border-radius: 0; font-size: 12px; line-height: 1.7; }
+.catalog-entry .catalog-provides li:not(:last-child)::after { content: ' ·'; color: var(--muted); }
+.catalog-entry .catalog-state { margin: 0; font-size: 13px; font-weight: 600; }
+.catalog-entry .catalog-visibility { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.catalog-entry .catalog-actions { margin: 0; align-items: center; justify-content: flex-end; flex-wrap: nowrap; }
+.catalog-entry .page-edit, .catalog-entry > .catalog-note, .catalog-state-detail, .catalog-entry > .error-file { grid-column: 1 / -1; margin: 0; }
+.catalog-state-detail { color: var(--error); font-size: 13px; }
+.catalog-directory { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 13px; color: var(--muted); }
+.catalog-directory summary { display: flex; align-items: center; cursor: pointer; }
+.catalog-directory p { overflow-wrap: anywhere; }
+#catalog-add { padding-top: 8px; }
+#catalog-available { align-items: stretch; }
+#catalog-available .catalog-item { display: flex; flex-direction: column; }
+#catalog-available .catalog-description { flex: 1; }
+#catalog-available .add { align-self: flex-start; margin-top: 16px; }
+@media (max-width: 1100px) {
+ .catalog-entry { grid-template-columns: minmax(0, 1fr) auto; }
+ .catalog-entry .catalog-identity { grid-column: 1 / -1; }
+ .catalog-entry .catalog-summary { grid-column: 1; }
+ .catalog-entry .catalog-status { grid-column: 2; }
+ .catalog-entry .catalog-actions { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+ .catalog-entry { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+ .catalog-entry .catalog-summary, .catalog-entry .catalog-status, .catalog-entry .catalog-actions { grid-column: 1; }
+ .catalog-entry .catalog-summary, .catalog-entry .catalog-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+ .catalog-entry .catalog-summary .catalog-field-label, .catalog-entry .catalog-status .catalog-field-label { margin-bottom: 0; }
+ .catalog-entry .catalog-visibility { margin: 0; }
+ .catalog-entry .catalog-actions { justify-content: flex-start; flex-wrap: wrap; }
+}

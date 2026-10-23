@@ -800,7 +800,7 @@ func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
 	if got := text(t, ctx, "#catalog-note"); !strings.Contains(got, filepath.Join(dir, "plugins", "disk")) || strings.Contains(got, "重启") {
 		t.Errorf("note %q, want where it was added and no restart", got)
 	}
-	if got := text(t, ctx, disk+" .catalog-state"); got != "使用中" {
+	if got := text(t, ctx, disk+" .catalog-state"); got != "已启用" {
 		t.Errorf("disk now shows %q, want it in use", got)
 	}
 
@@ -827,7 +827,7 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	enabled, disabled := filepath.Join(dir, "plugins", "site"), filepath.Join(dir, "plugins", ".site")
 
 	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(site+" .more-trigger")), chromedp.Click(chromedp.CSS(site+" .more-trigger")))
-	if got := text(t, ctx, site+" .catalog-state"); got != "使用中" {
+	if got := text(t, ctx, site+" .catalog-state"); got != "已启用" {
 		t.Errorf("site shows %q, want it in use", got)
 	}
 	doubleClick(t, ctx, button)
@@ -844,8 +844,8 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(disabled, "plugin.yaml")); err != nil {
 		t.Fatalf("not disabled: %v", err)
 	}
-	if note, state := text(t, ctx, "#catalog-note"), text(t, ctx, site+" .catalog-state"); strings.Contains(note+state, "重启") || !strings.Contains(state, ".site") {
-		t.Errorf("note %q, state %q; want the folder's new name and no restart", note, state)
+	if note, state := text(t, ctx, "#catalog-note"), text(t, ctx, site+" .catalog-state"); strings.Contains(note+state, "重启") || state != "已停用" {
+		t.Errorf("note %q, state %q; want a disabled state and no restart", note, state)
 	}
 	gone(t, ctx, `.nav-item[data-id="site"]`)
 
@@ -1066,7 +1066,7 @@ card:
 
 	const sync = `#catalog-installed .catalog-item[data-id="sync"]`
 	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)), chromedp.WaitVisible(chromedp.CSS(sync+" .catalog-state")))
-	if got := text(t, ctx, sync+" .catalog-state"); !strings.Contains(got, "HOSTDECK_TEST_ABSENT") || strings.Contains(got, dir) {
+	if got := text(t, ctx, sync+" .catalog-state-detail"); !strings.Contains(got, "HOSTDECK_TEST_ABSENT") || strings.Contains(got, dir) {
 		t.Errorf("plugins page says %q, want the variable and not the folder", got)
 	}
 
@@ -1459,19 +1459,19 @@ card:
 		t.Helper()
 		return text(t, ctx, fmt.Sprintf(`.catalog-item[data-id="%s"] .catalog-provides`, id))
 	}
-	if got := says("list"); !strings.Contains(got, "卡片") || !strings.Contains(got, "详情") || !strings.Contains(got, "操作") || strings.Contains(got, "侧栏页面") {
+	if got := says("list"); !strings.Contains(got, "总览监控") || !strings.Contains(got, "详情") || !strings.Contains(got, "操作") || strings.Contains(got, "网页入口") {
 		t.Errorf("list provides %q, want a card, a detail page and actions", got)
 	}
-	if got := says("board"); !strings.Contains(got, "侧栏页面") || !strings.Contains(got, "卡片") || strings.Contains(got, "详情") {
+	if got := says("board"); !strings.Contains(got, "网页入口") || !strings.Contains(got, "总览监控") || strings.Contains(got, "详情") {
 		t.Errorf("board provides %q, want a sidebar page and a card", got)
 	}
-	if got := says("only"); got != "卡片" {
+	if got := says("only"); got != "总览监控" {
 		t.Errorf("only provides %q, want just a card", got)
 	}
-	if got := says("off"); got != "侧栏页面" {
+	if got := says("off"); got != "网页入口" {
 		t.Errorf("disabled plugin provides %q, want a sidebar page", got)
 	}
-	if got := says("out"); !strings.Contains(got, "侧栏页面") || !strings.Contains(got, "卡片") {
+	if got := says("out"); !strings.Contains(got, "网页入口") || !strings.Contains(got, "总览监控") {
 		t.Errorf("out provides %q, want a sidebar page and a card", got)
 	}
 	if n := count(`.catalog-item[data-id="only"] .catalog-open`) + count(`.catalog-item[data-id="off"] .catalog-open`); n != 0 {
@@ -1540,17 +1540,20 @@ func TestThePluginsPageGroupsWhatIsInUseDisabledAndBroken(t *testing.T) {
 	if got := group("error"); !slices.Equal(got, []string{"bad"}) {
 		t.Fatalf("broken %v, want bad", got)
 	}
-	if use, disabled, broken := text(t, ctx, `[data-group="use"] h3`), text(t, ctx, `[data-group="disabled"] h3`), text(t, ctx, `[data-group="error"] h3`); use != "使用中" || disabled != "已停用" || broken != "有问题" {
+	if use, disabled, broken := text(t, ctx, `[data-group="use"] h3`), text(t, ctx, `[data-group="disabled"] h3`), text(t, ctx, `[data-group="error"] h3`); use != "已启用" || disabled != "已停用" || broken != "需要处理" {
 		t.Errorf("group headings %q %q %q", use, disabled, broken)
 	}
 }
 
-// Cards in one row keep their own height. A short card is not stretched to
-// the tall one beside it.
-func TestPluginCardsLineUpAtTheTop(t *testing.T) {
+// Management entries keep the same row structure and height even when one
+// plugin has a much longer description.
+func TestManagementEntriesUseUniformRows(t *testing.T) {
 	dir := t.TempDir()
 	writePlugin(t, dir, "short", "schema: 1\nname: {en: Short, zh-CN: 短}\npage: {link: 'https://short.example/'}\n")
 	writePlugin(t, dir, "tall", "schema: 1\nname: {en: Tall, zh-CN: 高}\ndescription: {en: A long description, zh-CN: 这是一段故意写得很长的说明，用来把这张卡片撑高，好让旁边那张短卡片不必跟着变高。它再说一句，确保高度真的不一样。}\npage: {link: 'https://tall.example/'}\n")
+	if err := os.WriteFile(filepath.Join(dir, "layout.json"), []byte(`{"hidden":["short"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	url := startConsole(t, dir)
 	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
 
@@ -1564,8 +1567,19 @@ func TestPluginCardsLineUpAtTheTop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !(heights[0]+24 < heights[1]) {
-		t.Errorf("card heights short %.0f tall %.0f, want the short card to stay short", heights[0], heights[1])
+	if abs(heights[0]-heights[1]) > 1 {
+		t.Errorf("entry heights short %.0f tall %.0f, want equal management rows", heights[0], heights[1])
+	}
+	same, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {const a=document.querySelector('.catalog-item[data-id="short"]'),b=document.querySelector('.catalog-item[data-id="tall"]'),x=a.getBoundingClientRect(),y=b.getBoundingClientRect();return ['.catalog-summary','.catalog-status','.catalog-actions'].every(s=>Math.abs(a.querySelector(s).getBoundingClientRect().left-b.querySelector(s).getBoundingClientRect().left)<1) && Math.abs(x.left-y.left)<1 && Math.abs(x.width-y.width)<1 && y.top>=x.bottom && [a,b].every(e=>e.querySelector('.catalog-summary') && e.querySelector('.catalog-visibility'));})()`))
+	if err != nil || !same {
+		t.Fatalf("management entries should share aligned identity, features, visibility and actions: %v %v", same, err)
+	}
+	for _, width := range []int{1280, 768, 520} {
+		do(t, ctx, chromedp.EmulateViewport(int64(width), 800))
+		fits, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.catalog-entry')].every(row => row.scrollWidth <= row.clientWidth + 1 && [...row.querySelectorAll('.catalog-actions > .btn, .more-trigger')].every(button => button.getBoundingClientRect().height >= 44))`))
+		if err != nil || !fits {
+			t.Fatalf("management entries overflow or shrink controls at %dpx: %v %v", width, fits, err)
+		}
 	}
 }
 
@@ -1585,7 +1599,7 @@ func TestTheResultSitsOnThePluginJustChanged(t *testing.T) {
 		chromedp.Click(chromedp.CSS(button)),
 	)
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('.catalog-item[data-id="site"] .catalog-state')?.textContent.includes('.site')`)); err != nil {
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('.catalog-item[data-id="site"] .catalog-state')?.dataset.state === 'disabled'`)); err != nil {
 		t.Fatal(err)
 	}
 	onCard, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('.catalog-item[data-id="site"]').contains(document.querySelector('#catalog-note')) && !document.querySelector('.catalog-item[data-id="keep"]').contains(document.querySelector('#catalog-note'))`))
@@ -1773,7 +1787,7 @@ func TestHidingAPluginRemovesItUntilItIsShownOrReset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if kind != "ok 隐藏 重置" {
+	if kind != "ok 从工作区隐藏 重置" {
 		t.Fatalf("hide and reset: %s", kind)
 	}
 
@@ -1815,8 +1829,8 @@ func TestHidingAPluginRemovesItUntilItIsShownOrReset(t *testing.T) {
 	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
 
 	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#catalog .catalog-item[data-id="b"] .show`)))
-	if label := text(t, ctx, `#catalog .catalog-item[data-id="b"] .show`); label != "显示" {
-		t.Errorf("show button says %q, want 显示", label)
+	if label := text(t, ctx, `#catalog .catalog-item[data-id="b"] .show`); label != "恢复到工作区" {
+		t.Errorf("show button says %q, want 恢复到工作区", label)
 	}
 	showKind, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
 		const show = document.querySelector('#catalog .catalog-item[data-id="b"] .show');
