@@ -1,0 +1,26 @@
+import { ARMED_FOR } from './state.js';
+
+// twoClicks makes btn run confirmed only on a second click: the first arms it
+// for a few seconds and shows armedText. A double-click is one gesture, so its
+// second click does not confirm.
+export function twoClicks(btn, armedText, confirmed) {
+  const label = btn.textContent;
+  let armed = null;
+  btn.addEventListener('click', (e) => {
+    if (e.detail > 1 || btn.disabled) return;
+    if (!armed) {
+      btn.textContent = armedText;
+      btn.classList.add('armed');
+      armed = setTimeout(() => {
+        armed = null;
+        btn.textContent = label;
+        btn.classList.remove('armed');
+      }, ARMED_FOR);
+      return;
+    }
+    clearTimeout(armed);
+    armed = null;
+    btn.classList.remove('armed');
+    confirmed();
+  });
+}

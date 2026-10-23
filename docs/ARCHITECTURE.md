@@ -63,7 +63,13 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/onetime` | One-time tokens for clearing a service's cache. |
 | `internal/catalog` | For the plugins page: lists the plugins built into hostdeck and copies one into the plugins folder; lists the installed plugins and disables or enables one by renaming its folder. |
 | `examples` | The built-in plugins: disk, Grafana, Syncthing and Ollama, embedded in the program. |
-| `web` | The console page: `index.html`, `app.js` (plain ES modules, no build step), `style.css`, and `i18n/*.json`. Embedded in the program. |
+| `web` | The console page: `index.html`, plain ES modules with no build step, `style.css`, and `i18n/*.json`. Embedded in the program. |
+
+## The page's code
+
+`web/app.js` is the composition root: it wires the page's own controls, fills the hooks that would otherwise make import cycles, and owns the hash route and the one `render()` every view is drawn by. The rest of the page is split by domain, each module importing only the ones below it: `state` (constants and the one mutable state object), `dom` and `api` (element building, JSON reads and writes), `i18n` (dictionaries, error wording, the `data-i18n` pass), `panel` and `nav` (action panels, the drawer and its keyboard rules), `layout` (the saved layout and the row controls that write it), `plugins` and `overview` (the sidebar and the cards), `monitor`, `service` and `catalog` (the three views), `editor` (the allowlisted page dialog), and `dnd` (dragging). `frag`, `confirm` and `hooks` hold the pieces several views share. A module never imports one above it; the few upward calls (`render`, `reloadShown`, `loadCatalog`) go through `hooks.js`, which the root fills in during `init()`.
+
+Static shell text is worded from `data-i18n` attributes in one pass; nodes the scripts create word themselves with `t()` as they are built. New keys are added to both dictionaries in the same change. `style.css` is one layer: design tokens first, then the reset, layout, components in the order the page meets them, and the two viewport breakpoints. A selector is written once per scope, so no rule quietly overrides an earlier one, and `web/assets_test.go` keeps that true. Viewport-level layout (the drawer, grid columns, page padding) belongs to media queries; component-internal adaptation belongs to a container query. Text is only ever written with `textContent`, so no plugin-supplied string can run as HTML.
 
 ## Plugins
 

@@ -63,7 +63,13 @@ flowchart LR
 | `internal/onetime` | 清除服务缓存用的一次性令牌。 |
 | `internal/catalog` | 供插件页使用：列出 hostdeck 自带的插件，并把其中一个复制到插件文件夹；列出已安装的插件，并通过给文件夹改名来停用或启用。 |
 | `examples` | 自带的插件：disk、Grafana、Syncthing 和 Ollama，编进程序里。 |
-| `web` | 控制台页面：`index.html`、`app.js`（原生 ES 模块，不需要构建）、`style.css` 和 `i18n/*.json`。编进程序里。 |
+| `web` | 控制台页面：`index.html`、无构建步骤的纯 ES 模块、`style.css` 和 `i18n/*.json`。编进程序里。 |
+
+## 页面代码
+
+`web/app.js` 是组合根：它绑定页面自身的控件、填入否则会形成导入环的钩子，并掌管 hash 路由和所有视图共用的那一个 `render()`。其余页面按领域拆分，每个模块只导入层级低于自己的模块：`state`（常量与唯一的可变状态对象）、`dom` 与 `api`（元素构建、JSON 读写）、`i18n`（词典、错误文案、`data-i18n` 一遍刷新）、`panel` 与 `nav`（操作面板、抽屉及其键盘规则）、`layout`（已保存布局与写布局的行内控件）、`plugins` 与 `overview`（侧栏与总览卡片）、`monitor`、`service` 与 `catalog`（三个视图）、`editor`（允许字段编辑对话框）、`dnd`（拖拽）。跨视图共用的小件放在 `frag`、`confirm` 和 `hooks`。模块不导入层级高于自己的模块；少数向上的调用（`render`、`reloadShown`、`loadCatalog`）经过 `hooks.js`，由组合根在 `init()` 时填入。
+
+静态外壳文案经 `data-i18n` 属性一遍刷新；脚本创建的节点在构建时用 `t()` 自行取词。新增键必须在同一改动中加入两份词典。`style.css` 只有一层：先是设计令牌，然后是重置、布局、按页面遇见顺序排列的组件，最后是两个视口断点。每个选择器在每个作用域只写一次，任何规则都不会悄悄覆盖先前的规则，`web/assets_test.go` 负责守住这一点。视口级布局（抽屉、栅格列数、页面内边距）归媒体查询；组件内部自适应归容器查询。文字只经 `textContent` 写入，插件提供的任何字符串都不会作为 HTML 执行。
 
 ## 插件
 
