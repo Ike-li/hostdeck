@@ -112,5 +112,10 @@
   "error.trash_failed": "Could not update the trash: {detail}",
   "more.for": "More actions for {name}",
   "overview.add": "Manage plugins",
-  "overview.refreshing": "Refreshing…"
+  "overview.refreshing": "Refreshing…",
+  "page.mode": "Open as",
+  "catalog.page.drop": "Drag an address from your browser to embed it directly.",
+  "catalog.page.embedHint": "Embed a page on this machine or your local network inside hostdeck.",
+  "catalog.page.linkHint": "Open any web address in a new tab. The page will not be embedded.",
+  "catalog.noResults": "No plugins match your search."
 }

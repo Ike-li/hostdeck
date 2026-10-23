@@ -15,6 +15,17 @@ function el(tag, className, text) {
   return e;
 }
 
+function feedback(note, text, failed = false) {
+  note.setAttribute('role', failed ? 'alert' : 'status');
+  note.dataset.kind = failed ? 'error' : 'success';
+  if (note.textContent !== text) note.textContent = text;
+  note.hidden = false;
+}
+
+function pageHint() {
+  $('page-hint').textContent = t($('page-kind').value === 'link' ? 'catalog.page.linkHint' : 'catalog.page.embedHint');
+}
+
 // Action panels stay next to their owner in the DOM, but the browser's top
 // layer keeps them outside scrolling and clipped containers.
 let openPanel = null;
@@ -29,6 +40,17 @@ function closePanel(restore = false) {
   panel.hidden = true;
   trigger.setAttribute('aria-expanded', 'false');
   if (restore && trigger.isConnected) trigger.focus();
+}
+
+function positionPanel() {
+  if (!openPanel) return;
+  const { panel, trigger } = openPanel;
+  if (!trigger.isConnected) return closePanel();
+  const r = trigger.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > innerHeight) return closePanel();
+  const size = panel.getBoundingClientRect();
+  panel.style.left = `${Math.max(8, Math.min(r.right - size.width, innerWidth - size.width - 8))}px`;
+  panel.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - size.height - 8))}px`;
 }
 
 function moreActions(name, controls) {
@@ -51,10 +73,7 @@ function moreActions(name, controls) {
     panel.showPopover();
     openPanel = { panel, trigger };
     trigger.setAttribute('aria-expanded', 'true');
-    const r = trigger.getBoundingClientRect();
-    const size = panel.getBoundingClientRect();
-    panel.style.left = `${Math.max(8, Math.min(r.right - size.width, innerWidth - size.width - 8))}px`;
-    panel.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - size.height - 8))}px`;
+    positionPanel();
   });
   panel.addEventListener('click', (e) => e.stopPropagation());
   wrap.append(trigger, panel);
@@ -212,6 +231,7 @@ function render() {
 
   // Redrawing the sidebar or the cards would drop what is being dragged.
   if (dragging) return;
+  pageHint();
   renderNav();
   $('overview').hidden = !!current || catalogOpen;
   $('catalog').hidden = !catalogOpen;
@@ -806,6 +826,7 @@ async function loadCatalog() {
 
 function renderCatalog(loaded) {
   if (!catalog || (!loaded && catalog.lang === lang)) return;
+  if (openPanel && $('catalog').contains(openPanel.trigger)) closePanel();
   parkCatalogNote();
   catalog.lang = lang;
   document.title = `${t('catalog.title')} · hostdeck`;
@@ -842,6 +863,7 @@ function updateCatalogSearch() {
   const search = $('catalog-search');
   const many = (catalog?.installed.length ?? 0) + (catalog?.available.length ?? 0) > SEARCH_AFTER;
   search.hidden = !many;
+  $('catalog-search-wrap').hidden = !many;
   if (!many) search.value = '';
   filterCatalog();
 }
@@ -857,6 +879,7 @@ function filterCatalog() {
   }
   const available = [...document.querySelectorAll('#catalog-available .catalog-item')];
   if (available.length) $('catalog-available-heading').hidden = available.every((card) => card.hidden);
+  $('catalog-no-results').hidden = !q || [...document.querySelectorAll('#catalog .catalog-item')].some((card) => !card.hidden);
   const trash = $('catalog-trash');
   if (trash) {
     const items = [...trash.querySelectorAll('.catalog-item')];
@@ -920,6 +943,7 @@ async function postCatalog(btn, url, noteOf, id) {
   btn.disabled = true;
   btn.textContent = t('catalog.working');
   let note;
+  let failed = false;
   try {
     const resp = await fetch(url, { method: 'POST' });
     const body = await resp.json().catch(() => ({}));
@@ -927,11 +951,11 @@ async function postCatalog(btn, url, noteOf, id) {
     note = noteOf(body);
   } catch (err) {
     note = explain(err);
+    failed = true;
   }
   catalogNoteFor = id;
   const n = $('catalog-note');
-  n.textContent = note;
-  n.hidden = false;
+  feedback(n, note, failed);
   await loadPlugins();
   render();
   refreshStatus();
@@ -980,8 +1004,7 @@ async function addPage(address, name = '', mode = '') {
     return true;
   } catch (err) {
     const n = $('catalog-note');
-    n.textContent = explain(err);
-    n.hidden = false;
+    feedback(n, explain(err), true);
     location.hash = `#/${CATALOG}`;
     return false;
   }
@@ -994,6 +1017,7 @@ async function onPageSubmit(e) {
   btn.disabled = true;
   if (await addPage($('page-address').value.trim(), $('page-name').value, $('page-kind').value)) form.reset();
   btn.disabled = false;
+  pageHint();
 }
 
 // An address dragged from the browser onto the console is embedded. Dragging
@@ -1046,15 +1070,14 @@ function installedItem(p) {
   }
   const name = pick(p.name);
   const verb = p.disabled ? 'enable' : 'disable';
-  actions.append(
-    catalogButton(
+  const toggle = catalogButton(
       t(`catalog.${verb}`),
       t(`catalog.${verb}.confirm`),
       `/api/plugins/${encodeURIComponent(p.id)}/${verb}`,
       () => t(`catalog.${verb}d.note`, { name }),
       p.id,
-    ),
-  );
+    );
+  toggle.classList.add('catalog-toggle');
   const trash = catalogOnce(
     t('catalog.trash'),
     `/api/plugins/${encodeURIComponent(p.id)}/trash`,
@@ -1062,8 +1085,9 @@ function installedItem(p) {
     p.id,
   );
   trash.classList.add('trash');
-  actions.append(trash);
-  item.append(actions, pageEdit(p));
+  item.querySelector('.card-head').append(moreActions(name, [toggle, trash]));
+  if (actions.childElementCount) item.append(actions);
+  item.append(pageEdit(p));
   return item;
 }
 
@@ -1088,7 +1112,8 @@ function trashItem(p) {
     p.id,
   );
   purge.classList.add('purge');
-  actions.append(restore, purge);
+  item.querySelector('.card-head').append(moreActions(name, [purge]));
+  actions.append(restore);
   item.append(actions);
   return item;
 }
@@ -1123,7 +1148,9 @@ function pageEdit(p) {
     kind.value = p.link ? 'link' : 'proxy';
     const address = labeled('address', t('page.address'), p.proxy || p.link || '');
     address.querySelector('input').required = true;
-    form.append(kind, address);
+    const mode = el('label', 'edit-field');
+    mode.append(el('span', null, t('page.mode')), kind);
+    form.append(mode, address);
   }
   if (p.cardUrl) form.append(labeled('cardUrl', t('page.card'), p.cardUrl));
   const save = el('button', 'btn', t('page.save'));
@@ -1154,15 +1181,13 @@ async function savePage(e, id) {
     });
     const got = await resp.json().catch(() => ({}));
     if (!resp.ok) throw got.error || { code: '', detail: `HTTP ${resp.status}` };
-    note.textContent = t('page.saved');
-    note.hidden = false;
+    feedback(note, t('page.saved'));
     await loadPlugins();
     render();
     refreshStatus();
     await loadCatalog();
   } catch (err) {
-    note.textContent = explain(err);
-    note.hidden = false;
+    feedback(note, explain(err), true);
     const card = form.closest('.catalog-item');
     if (card) card.insertBefore(note, card.firstChild);
     btn.disabled = false;
@@ -1341,6 +1366,11 @@ async function init() {
   }
   $('service-clear').addEventListener('click', onClearClick);
   $('page-form').addEventListener('submit', onPageSubmit);
+  $('page-kind').addEventListener('change', pageHint);
+  $('catalog-add-open').addEventListener('click', () => {
+    $('catalog-add').scrollIntoView({ block: 'start' });
+    $('page-address').focus();
+  });
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('drop', onDrop);
   $('catalog-search').addEventListener('input', filterCatalog);
@@ -1380,7 +1410,7 @@ async function init() {
   });
   addEventListener('resize', () => closePanel());
   document.addEventListener('scroll', (e) => {
-    if (openPanel && !openPanel.panel.contains(e.target)) closePanel();
+    if (openPanel && !openPanel.panel.contains(e.target)) positionPanel();
   }, true);
   setNavigation(false);
   sortable($('nav'), '.nav-row', (order, previous) => {

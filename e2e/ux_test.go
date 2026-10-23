@@ -147,3 +147,40 @@ func TestAFailedLayoutSaveRestoresTheVisibleCards(t *testing.T) {
 		t.Fatalf("a refused save should restore the visible layout and remove undo: %v %v", got, err)
 	}
 }
+
+func TestPluginManagementLabelsItsFormsAndConfirmsInsideMoreActions(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "site", "schema: 1\nname: Site\npage: {link: 'https://example.test/'}\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#catalog-installed .catalog-item`)))
+	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`['page-kind','page-address','page-name'].every(id => document.getElementById(id).labels.length > 0) && !!document.querySelector('#catalog-add-open') && document.querySelector('#catalog-installed .catalog-toggle')?.getClientRects().length === 0`))
+	if err != nil || !got {
+		t.Fatalf("want labelled fields, an add shortcut and a hidden disable action: %v %v", got, err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#catalog-add-open`)))
+	got, err = chromedp.Run(ctx, chromedp.Evaluate[bool](`document.activeElement.id === 'page-address'`))
+	if err != nil || !got {
+		t.Fatalf("the add shortcut must focus the address: %v %v", got, err)
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`document.querySelector('#page-kind').value = 'link'; document.querySelector('#page-kind').dispatchEvent(new Event('change', {bubbles: true}))`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#page-hint').textContent.includes('new tab')`)); err != nil {
+		t.Fatal(err)
+	}
+	const site = `#catalog-installed .catalog-item[data-id="site"]`
+	do(t, ctx, chromedp.Click(chromedp.CSS(site+` .more-trigger`)), chromedp.Click(chromedp.CSS(site+` .catalog-toggle`)))
+	got, err = chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('#catalog-installed .more-trigger').getAttribute('aria-expanded') === 'true' && document.querySelector('#catalog-installed .catalog-toggle').textContent.includes('again')`))
+	if err != nil || !got {
+		state, _ := chromedp.Run(ctx, chromedp.Evaluate[string](`JSON.stringify({expanded:document.querySelector('#catalog-installed .more-trigger').getAttribute('aria-expanded'),text:document.querySelector('#catalog-installed .catalog-toggle').textContent})`))
+		t.Fatalf("the first disable click should keep the panel open for confirmation: %v %v %s", got, err, state)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plugins", "site")); err != nil {
+		t.Fatalf("one click disabled the plugin: %v", err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(site+` .catalog-toggle`)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#catalog-installed .catalog-state')?.dataset.state === 'disabled'`)); err != nil {
+		t.Fatal(err)
+	}
+}

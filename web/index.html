@@ -43,9 +43,10 @@
       <div id="cards" class="cards" aria-busy="false"></div>
     </section>
     <section id="catalog" class="overview" hidden>
-      <h1 data-i18n="catalog.title"></h1>
+      <div class="overview-head"><h1 data-i18n="catalog.title"></h1><button type="button" class="btn primary" id="catalog-add-open" data-i18n="catalog.page"></button></div>
       <p id="catalog-intro" class="empty"></p>
-      <input id="catalog-search" class="catalog-search" type="search" hidden data-i18n-placeholder="catalog.search">
+      <label id="catalog-search-wrap" class="search-field" hidden><span data-i18n="catalog.search"></span><input id="catalog-search" class="catalog-search" type="search" hidden data-i18n-placeholder="catalog.search"></label>
+      <p id="catalog-no-results" class="empty" hidden data-i18n="catalog.noResults"></p>
       <h2 class="catalog-heading" data-i18n="catalog.installed"></h2>
       <div id="catalog-installed"></div>
       <section id="catalog-trash" hidden>
@@ -56,15 +57,16 @@
         <h2 class="catalog-heading" data-i18n="catalog.page"></h2>
         <p id="catalog-note" class="catalog-note" hidden></p>
         <form id="page-form" class="page-form">
-          <select id="page-kind">
+          <label class="edit-field"><span data-i18n="page.mode"></span><select id="page-kind" aria-describedby="page-hint">
             <option value="proxy" data-i18n="page.embed"></option>
             <option value="link" data-i18n="page.link"></option>
-          </select>
-          <input id="page-address" type="text" inputmode="url" autocomplete="off" spellcheck="false" required data-i18n-placeholder="catalog.page.address">
-          <input id="page-name" type="text" autocomplete="off" data-i18n-placeholder="catalog.page.name">
+          </select></label>
+          <label class="edit-field"><span data-i18n="page.address"></span><input id="page-address" type="text" inputmode="url" autocomplete="off" spellcheck="false" required data-i18n-placeholder="catalog.page.address"></label>
+          <label class="edit-field"><span data-i18n="catalog.page.name"></span><input id="page-name" type="text" autocomplete="off" data-i18n-placeholder="catalog.page.name"></label>
           <button class="btn" type="submit" data-i18n="catalog.add"></button>
         </form>
-        <p class="page-hint" data-i18n="catalog.page.hint"></p>
+        <p id="page-hint" class="page-hint"></p>
+        <p class="page-hint" data-i18n="catalog.page.drop"></p>
         <h2 id="catalog-available-heading" class="catalog-heading" data-i18n="catalog.available"></h2>
         <div id="catalog-available" class="cards"></div>
       </section>

@@ -808,7 +808,7 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	url := startConsole(t, dir)
 	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
 	const site = `#catalog-installed .catalog-item[data-id="site"]`
-	button := site + " button"
+	button := site + " .catalog-toggle"
 	waitLabel := func(want string) {
 		t.Helper()
 		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector(%q)?.textContent === %q`, button, want))); err != nil {
@@ -817,7 +817,7 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	}
 	enabled, disabled := filepath.Join(dir, "plugins", "site"), filepath.Join(dir, "plugins", ".site")
 
-	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(button)))
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(site+" .more-trigger")), chromedp.Click(chromedp.CSS(site+" .more-trigger")))
 	if got := text(t, ctx, site+" .catalog-state"); got != "使用中" {
 		t.Errorf("site shows %q, want it in use", got)
 	}
@@ -840,7 +840,7 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	}
 	gone(t, ctx, `.nav-item[data-id="site"]`)
 
-	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(site+" .more-trigger")), chromedp.Click(chromedp.CSS(button)))
 	waitLabel("再点一次启用")
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
 	waitLabel("停用")
@@ -1567,11 +1567,12 @@ func TestTheResultSitsOnThePluginJustChanged(t *testing.T) {
 	writePlugin(t, dir, "site", "schema: 1\nname: Site\npage: {link: 'https://site.example/'}\n")
 	url := startConsole(t, dir)
 	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
-	const button = `.catalog-item[data-id="site"] button`
+	const button = `.catalog-item[data-id="site"] .catalog-toggle`
 
 	do(t, ctx,
 		chromedp.Navigate(url+"#/.plugins"),
-		chromedp.WaitVisible(chromedp.CSS(button)),
+		chromedp.WaitVisible(chromedp.CSS(`.catalog-item[data-id="site"] .more-trigger`)),
+		chromedp.Click(chromedp.CSS(`.catalog-item[data-id="site"] .more-trigger`)),
 		chromedp.Click(chromedp.CSS(button)),
 	)
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
@@ -1585,7 +1586,7 @@ func TestTheResultSitsOnThePluginJustChanged(t *testing.T) {
 	if !onCard {
 		t.Errorf("the note is not on Site's card: %q", text(t, ctx, "#catalog-note"))
 	}
-	do(t, ctx, chromedp.Click(chromedp.CSS(button)), chromedp.Click(chromedp.CSS(button)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.catalog-item[data-id="site"] .more-trigger`)), chromedp.Click(chromedp.CSS(button)), chromedp.Click(chromedp.CSS(button)))
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('.catalog-item[data-id="site"]')?.contains(document.querySelector('#catalog-note')) && document.querySelector('#catalog-note')?.textContent.includes('已启用')`)); err != nil {
 		t.Fatal(err)
 	}
@@ -1962,7 +1963,7 @@ func TestThePluginsPageMovesAPluginToTheTrashAndPurgesItFromThere(t *testing.T) 
 	const trashed = `#catalog-trash .catalog-item[data-id="meter"]`
 	const purge = trashed + ` button.purge`
 
-	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(trashBtn)))
+	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(card+` .more-trigger`)), chromedp.Click(chromedp.CSS(card+` .more-trigger`)))
 	do(t, ctx, chromedp.Click(chromedp.CSS(trashBtn)))
 	gone(t, ctx, `.nav-item[data-id="meter"]`)
 	gone(t, ctx, card)
@@ -1975,7 +1976,7 @@ func TestThePluginsPageMovesAPluginToTheTrashAndPurgesItFromThere(t *testing.T) 
 	}
 
 	do(t, ctx, chromedp.Click(chromedp.CSS(trashed+` button.restore`)))
-	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="meter"]`)), chromedp.WaitVisible(chromedp.CSS(trashBtn)))
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="meter"]`)), chromedp.WaitVisible(chromedp.CSS(card+` .more-trigger`)), chromedp.Click(chromedp.CSS(card+` .more-trigger`)))
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#catalog-trash').hidden`)); err != nil {
 		t.Fatalf("the trash is still shown: %v", err)
 	}
@@ -1984,7 +1985,7 @@ func TestThePluginsPageMovesAPluginToTheTrashAndPurgesItFromThere(t *testing.T) 
 	}
 
 	do(t, ctx, chromedp.Click(chromedp.CSS(trashBtn)))
-	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(purge)))
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(trashed+` .more-trigger`)), chromedp.Click(chromedp.CSS(trashed+` .more-trigger`)))
 	doubleClick(t, ctx, purge)
 	time.Sleep(1500 * time.Millisecond)
 	entries, err := os.ReadDir(filepath.Join(dir, "plugins", ".trash"))
