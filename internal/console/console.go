@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -384,6 +385,11 @@ func portError(err error) *card.Error {
 }
 
 func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin, builtIn []catalog.Entry, trashed []catalog.Trashed) {
+	pluginDir, err := filepath.Abs(s.cfg.PluginDir)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "catalog_failed", Detail: err.Error()})
+		return
+	}
 	type listed struct {
 		catalog.Plugin
 		Loaded bool        `json:"loaded"`
@@ -395,7 +401,7 @@ func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin,
 		Installed []listed          `json:"installed"`
 		Available []catalog.Entry   `json:"available"`
 		Trash     []catalog.Trashed `json:"trash"`
-	}{s.cfg.PluginDir, []listed{}, []catalog.Entry{}, trashed}
+	}{pluginDir, []listed{}, []catalog.Entry{}, trashed}
 	for _, p := range installed {
 		_, loaded := s.plugin(p.ID)
 		var problem *card.Error

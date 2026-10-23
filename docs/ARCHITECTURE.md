@@ -124,6 +124,10 @@ The service toolbar keeps Refresh and Open in new tab visible; Clear cache lives
 
 Detail items separate the name and written status, the main value, labelled fields, scrollable logs and action buttons. Long values and paths wrap inside the item; logs have their own bounded scroll area reachable by keyboard. Narrow windows stack field labels above values. Reloading a detail view keeps its current content while busy and disables repeated refreshes; action results use the shared status/error feedback.
 
+## Connection help
+
+The add area has a native disclosure with human instructions for web pages, built-in plugins and custom plugin folders. Separate web page and plugin prompts are generated in the selected language from the current console origin and `/api/catalog`’s `pluginDir`, which is reported as an absolute path even when hostdeck starts with a relative `--dir`. Prompts include shell and PowerShell examples with literal path quoting, the current manifest/JSON contracts where applicable, backups and validation instructions, and the distinction between immediate API reloads and restarting after manual file changes. New plugin examples refuse existing enabled or disabled IDs. One-click buttons copy the text with the Clipboard API; failure opens, focuses and selects a labelled read-only preview with an error announcement. Reading or copying help does not send a mutation request or write any file. No endpoint, command execution UI or reload command is added.
+
 ## Security model
 
 Everything rests on hostdeck being reachable from this machine only.

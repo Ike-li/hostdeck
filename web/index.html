@@ -64,6 +64,41 @@
       <section id="catalog-add">
         <h2 class="catalog-heading" data-i18n="catalog.addContent"></h2>
         <p class="catalog-guidance" data-i18n="catalog.addContentHint"></p>
+        <details id="connection-help" class="connection-help">
+          <summary data-i18n="help.title"></summary>
+          <p data-i18n="help.intro"></p>
+          <section id="help-pages" aria-labelledby="help-pages-title">
+            <h3 id="help-pages-title" data-i18n="help.pages.title"></h3>
+            <ol>
+              <li data-i18n="help.pages.step1"></li>
+              <li data-i18n="help.pages.step2"></li>
+              <li data-i18n="help.pages.step3"></li>
+            </ol>
+          </section>
+          <section id="help-plugins" aria-labelledby="help-plugins-title">
+            <h3 id="help-plugins-title" data-i18n="help.plugins.title"></h3>
+            <ol>
+              <li data-i18n="help.plugins.step1"></li>
+              <li><span data-i18n="help.plugins.step2"></span><code id="help-plugin-dir"></code><pre id="help-plugin-example" tabindex="0"></pre></li>
+              <li data-i18n="help.plugins.step3"></li>
+            </ol>
+            <p data-i18n="help.plugins.trust"></p>
+          </section>
+          <section class="agent-help" aria-labelledby="help-agent-title">
+            <h3 id="help-agent-title" data-i18n="help.agent.title"></h3>
+            <p data-i18n="help.agent.intro"></p>
+            <div class="agent-prompt">
+              <button type="button" class="btn" id="copy-page-prompt" data-i18n="help.agent.copyPage"></button>
+              <p id="copy-page-note" class="note" role="status" hidden></p>
+              <details id="page-prompt-preview"><summary data-i18n="help.agent.previewPage"></summary><label for="page-agent-prompt" data-i18n="help.agent.pageLabel"></label><textarea id="page-agent-prompt" rows="10" readonly spellcheck="false"></textarea></details>
+            </div>
+            <div class="agent-prompt">
+              <button type="button" class="btn" id="copy-plugin-prompt" data-i18n="help.agent.copyPlugin"></button>
+              <p id="copy-plugin-note" class="note" role="status" hidden></p>
+              <details id="plugin-prompt-preview"><summary data-i18n="help.agent.previewPlugin"></summary><label for="plugin-agent-prompt" data-i18n="help.agent.pluginLabel"></label><textarea id="plugin-agent-prompt" rows="10" readonly spellcheck="false"></textarea></details>
+            </div>
+          </section>
+        </details>
         <h3 class="catalog-subheading" data-i18n="catalog.page"></h3>
         <p id="catalog-note" class="catalog-note" hidden></p>
         <form id="page-form" class="page-form">

@@ -1,3 +1,5 @@
+import { connectionPrompts, examplePlugin } from './connection-help.js';
+
 const LANGS = ['en', 'zh-CN'];
 const LANG_KEY = 'hostdeck.lang';
 const STATUS_EVERY = 15_000;
@@ -913,6 +915,13 @@ function renderCatalog(loaded) {
   document.title = `${t('catalog.title')} · hostdeck`;
   $('catalog-intro').textContent = t('catalog.intro');
   $('catalog-directory').textContent = catalog.pluginDir;
+  $('help-plugin-dir').textContent = catalog.pluginDir;
+  $('help-plugin-example').textContent = examplePlugin;
+  const prompts = connectionPrompts(t, catalog.pluginDir, location.origin);
+  for (const kind of ['page', 'plugin']) {
+    $(`${kind}-agent-prompt`).value = prompts[kind];
+    $(`copy-${kind}-note`).hidden = true;
+  }
   const byName = (a, b) => pick(a.name).localeCompare(pick(b.name), lang);
   const groups = [
     ['use', 'catalog.group.use', (p) => !p.disabled && !p.broken && !p.error],
@@ -936,6 +945,24 @@ function renderCatalog(loaded) {
   $('catalog-available').replaceChildren(...[...catalog.available].sort(byName).map(availableItem));
   placeCatalogNote();
   updateCatalogSearch();
+}
+
+async function copyAgentPrompt(kind) {
+  const prompt = $(`${kind}-agent-prompt`);
+  const button = $(`copy-${kind}-prompt`);
+  const note = $(`copy-${kind}-note`);
+  button.disabled = true;
+  try {
+    await navigator.clipboard.writeText(prompt.value);
+    feedback(note, t('help.agent.copied'));
+  } catch {
+    $(`${kind}-prompt-preview`).open = true;
+    prompt.focus();
+    prompt.select();
+    feedback(note, t('help.agent.copyFailed'), true);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 // The search box is for a long page. Fewer plugins than this stay a plain list.
@@ -1513,6 +1540,9 @@ async function init() {
   $('service-more').append(moreActions('hostdeck', [$('service-clear')]));
   $('service-clear').addEventListener('click', onClearClick);
   $('page-form').addEventListener('submit', onPageSubmit);
+  for (const kind of ['page', 'plugin']) {
+    $(`copy-${kind}-prompt`).addEventListener('click', () => copyAgentPrompt(kind));
+  }
   $('page-kind').addEventListener('change', pageHint);
   $('catalog-add-open').addEventListener('click', focusCatalogAdd);
   $('empty-add').addEventListener('click', (e) => {

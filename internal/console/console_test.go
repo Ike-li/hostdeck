@@ -329,6 +329,22 @@ func TestAMissingVariableIsItsOwnErrorAndNamesTheVariable(t *testing.T) {
 	}
 }
 
+func TestThePluginsPageReportsAnAbsoluteDirectoryForAgentCommands(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.Mkdir("plugins", 0700); err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs("plugins")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{PluginDir: "plugins", BuiltIn: fstest.MapFS{}})
+	body, _ := io.ReadAll(get(h, "http://127.0.0.1:4678/api/catalog", nil).Body)
+	if got := gjson.GetBytes(body, "pluginDir").String(); got != want {
+		t.Fatalf("pluginDir %q; want absolute directory %q for commands run elsewhere", got, want)
+	}
+}
+
 func TestThePluginsPageCarriesTheLoadError(t *testing.T) {
 	pluginDir := t.TempDir()
 	writeManifest(t, pluginDir, "sync", "schema: 1\nname: Syncthing\npage: {link: 'https://example/'}\n")

@@ -906,3 +906,19 @@ body:has(.page-editor[open]) main { overflow: hidden; }
  .editor-body { padding: 0 20px 20px; }
  .editor-actions { padding: 16px 20px; }
 }
+
+/* Connection instructions remain readable without expanding the add form. */
+.connection-help { border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 24px; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.connection-help > summary { cursor: pointer; font-weight: 600; min-height: 44px; align-content: center; }
+.connection-help section { margin-block: 24px; }
+.connection-help h3 { font-size: 15px; }
+.connection-help ol { padding-inline-start: 24px; }
+.connection-help li { margin-block: 12px; }
+.connection-help code { display: block; margin-block: 8px; white-space: pre-wrap; }
+.connection-help pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+
+.agent-help { border-top: 1px solid var(--line); padding-top: 12px; }
+.agent-prompt { margin-block: 16px; min-width: 0; }
+.agent-prompt summary { cursor: pointer; min-height: 44px; align-content: center; }
+.agent-prompt label { display: block; margin-block: 8px; }
+.agent-prompt textarea { display: block; box-sizing: border-box; width: 100%; min-height: 180px; resize: vertical; padding: 12px; background: var(--bg); color: inherit; border: 1px solid var(--line); border-radius: 6px; font: 13px/1.6 ui-monospace, monospace; }

@@ -71,6 +71,8 @@ The UI/UX pass has started: navigation now has compact rows, More actions panels
 
 Management now uses the Pages & plugins entry and separates Added from Add content. Uniform rows distinguish declared features, enablement and workspace visibility. Hide from workspace is neutral, Restore to workspace is explicit, and enabling preserves hidden preferences without controlling external services. The plugin directory is secondary disclosure content. Editing now uses a native modal dialog with labelled allowlisted fields, full descriptions, mode guidance, Cancel/Save, focus containment and restoration. Refused saves keep the draft and show a local error; successful saves close and announce on the updated row. Long content scrolls above visible actions.
 
+Connection help now explains web page, built-in plugin and custom plugin setup in both languages. Separate one-click agent prompts include the current console origin, absolute plugin directory, shell and PowerShell commands, manifest/JSON contracts and verification; clipboard failure selects a read-only preview. Manual file changes still require restart, while existing API changes reload immediately. Copying help writes no data.
+
 Left for S8, the last M0 slice:
 
 - a release workflow run by a `v*` tag;
