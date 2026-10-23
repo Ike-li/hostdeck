@@ -12,6 +12,9 @@
   --muted: #606975;
   --line: #e3e6ea;
   --accent: #2f6fde;
+  --accent-strong: #2a5fc0;
+  --accent-pressed: #24559f;
+  --line-strong: #c9ced6;
   --ok: #247a46;
   --warn: #946313;
   --error: #bf3636;
@@ -23,6 +26,8 @@
   --tint-active: color-mix(in srgb, var(--accent) 14%, transparent);
   --tint-error-soft: color-mix(in srgb, var(--error) 14%, transparent);
   --tint-error-panel: color-mix(in srgb, var(--error) 10%, var(--panel));
+  --tint-pressed: color-mix(in srgb, var(--accent) 22%, transparent);
+  --opacity-disabled: .5;
 
   /* Spacing: a four-point scale. */
   --space-1: 4px;
@@ -107,13 +112,15 @@
     --muted: #9aa1ab;
     --line: #2d3138;
     --accent: #6c9cf0;
+    --accent-strong: #8ab0f5;
+    --accent-pressed: #a3c3f8;
+    --line-strong: #3d434d;
     --ok: #4cc27f;
     --warn: #e0a83a;
     --error: #ef6b6b;
     --on-accent: #15171b;
     color-scheme: dark;
   }
-  .btn.primary { color: var(--on-accent); }
 }
 
 /* ---- Reset and base -------------------------------------------------- */
@@ -134,7 +141,7 @@ body {
 :is(button, a, input, select, summary) { touch-action: manipulation; }
 :is(button:not(.move):not(.card-width), input, select, summary) { min-height: var(--control-h); }
 button { justify-content: center; }
-button:disabled { cursor: default; opacity: .45; }
+:is(button, .btn, input, select, textarea):disabled { cursor: default; opacity: var(--opacity-disabled); }
 
 /* ---- Layout ---------------------------------------------------------- */
 .app {
@@ -191,6 +198,9 @@ main {
   cursor: pointer;
 }
 
+.menu:hover { background: var(--bg); }
+.menu:active { background: var(--tint-pressed); }
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -239,6 +249,7 @@ nav {
 }
 
 .nav-item:hover { background: var(--bg); }
+.nav-item:active { background: var(--tint-pressed); }
 .nav-item.active { background: var(--tint-active); }
 .nav-row:hover { background: var(--bg); }
 .nav-row:has(.nav-item.active) { background: var(--tint-active); }
@@ -316,6 +327,8 @@ nav {
   cursor: pointer;
 }
 
+.lang button:hover { border-color: var(--line-strong); color: var(--text); }
+.lang button:active { background: var(--tint-pressed); }
 .lang button[aria-pressed="true"] {
   background: var(--panel);
   color: var(--accent);
@@ -340,10 +353,12 @@ nav {
 }
 
 .btn:hover { border-color: var(--accent); }
+.btn:active:not(:disabled) { background: var(--tint-pressed); }
 .btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-.btn.primary:hover { filter: brightness(.94); }
+.btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn.primary:active { background: var(--accent-pressed); border-color: var(--accent-pressed); }
 .btn.armed { border-color: var(--error); color: var(--error); }
-.btn:disabled { opacity: .6; cursor: default; }
+.btn.armed:hover { background: var(--tint-error-soft); }
 
 /* ---- Notices --------------------------------------------------------- */
 .banner {
@@ -461,6 +476,7 @@ h1 {
 }
 
 .add-card:hover { border-color: var(--accent); color: var(--accent); }
+.add-card:active { background: var(--tint-pressed); }
 .add-card strong { color: var(--text); font-size: var(--text-md); }
 .add-card-hint { font-size: var(--text-sm); }
 .add-card-symbol {
@@ -604,7 +620,7 @@ h1 {
 .error-file + .btn { margin-top: var(--space-3); }
 
 /* ---- Form controls --------------------------------------------------- */
-:is(.edit-field input, .edit-field select, .catalog-search) {
+:is(.edit-field input, .edit-field select, .catalog-search, .agent-prompt textarea) {
   width: 100%;
   min-width: 0;
   padding: var(--space-2) var(--space-3);
@@ -616,6 +632,8 @@ h1 {
   font-size: var(--text-base);
 }
 
+:is(.edit-field input, .edit-field select, .catalog-search, .agent-prompt textarea):hover:not(:focus-visible) { border-color: var(--line-strong); }
+
 #catalog-search { margin: 0 0 var(--space-3); }
 
 .search-field { display: flex; flex-direction: column; gap: var(--space-2); max-width: 360px; font-size: var(--text-sm); color: var(--muted); }
@@ -624,15 +642,8 @@ h1 {
 
 .agent-prompt textarea {
   display: block;
-  box-sizing: border-box;
-  width: 100%;
   min-height: 180px;
   resize: vertical;
-  padding: var(--space-3);
-  background: var(--bg);
-  color: inherit;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
   font: var(--text-sm)/var(--leading-relaxed) ui-monospace, monospace;
 }
 
@@ -945,6 +956,7 @@ h1 {
 }
 
 .more-trigger:hover, .more-trigger[aria-expanded="true"] { background: var(--bg); border-color: var(--line); color: var(--text); }
+.more-trigger:active { background: var(--tint-pressed); }
 
 /* Action panels stay next to their owner in the DOM, but the browser's top
    layer keeps them outside scrolling and clipped containers. */
@@ -984,6 +996,7 @@ h1 {
 }
 
 .action-panel > button:hover:not(:disabled), .action-panel > a:hover { background: var(--bg); }
+.action-panel > button:active:not(:disabled), .action-panel > a:active { background: var(--tint-pressed); }
 .action-panel > .trash, .action-panel > .purge { color: var(--error); }
 .action-panel .armed { background: var(--tint-error-panel); color: var(--error); }
 
