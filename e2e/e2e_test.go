@@ -768,7 +768,8 @@ func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
 	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
 
 	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS("#empty")))
-	if got := text(t, ctx, "#empty"); !strings.Contains(got, "「插件」") {
+	label := text(t, ctx, "#nav-catalog .nav-name")
+	if got := text(t, ctx, "#empty"); label == "" || !strings.Contains(got, label) {
 		t.Errorf("empty overview %q does not point to the plugins page", got)
 	}
 

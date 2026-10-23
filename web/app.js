@@ -917,7 +917,7 @@ function renderCatalog(loaded) {
   $('catalog-directory').textContent = catalog.pluginDir;
   $('help-plugin-dir').textContent = catalog.pluginDir;
   $('help-plugin-example').textContent = examplePlugin;
-  const prompts = connectionPrompts(t, catalog.pluginDir, location.origin);
+  const prompts = connectionPrompts(t, catalog.pluginDir, location.origin, catalog.executable);
   for (const kind of ['page', 'plugin']) {
     $(`${kind}-agent-prompt`).value = prompts[kind];
     $(`copy-${kind}-note`).hidden = true;

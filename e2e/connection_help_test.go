@@ -103,6 +103,13 @@ func TestAgentPromptsCopyTheCurrentConnectionContextAndOfferManualCopyOnFailure(
 			if err != nil || !strings.Contains(copied, url) || !strings.Contains(copied, filepath.Join(dir, "plugins")) || !strings.Contains(copied, "```sh") || !strings.Contains(copied, "```powershell") {
 				t.Fatalf("%s %s prompt lacks runnable commands or current context: %q %v", language, kind, copied, err)
 			}
+			verb := " page add --url "
+			if kind == "plugin" {
+				verb = " plugin install --url "
+			}
+			if !strings.Contains(copied, binary) || !strings.Contains(copied, verb) {
+				t.Fatalf("%s prompt must invoke this running executable's native CLI: %q", kind, copied)
+			}
 			_, err = chromedp.Run(ctx, chromedp.Evaluate[bool](`(navigator.clipboard.writeText=async()=>{throw new Error('denied');},true)`))
 			if err != nil {
 				t.Fatal(err)

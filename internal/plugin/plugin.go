@@ -317,6 +317,21 @@ type Located struct {
 func (e *Located) Error() string { return e.Path + ": " + e.Err.Error() }
 func (e *Located) Unwrap() error { return e.Err }
 
+// ReadFolder checks one plugin with the same rules as loading the console.
+// It reads only the manifest and never runs a program or contacts a service.
+func ReadFolder(dir string) (Plugin, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return Plugin{}, err
+	}
+	p, err := load(filepath.Join(abs, "plugin.yaml"))
+	if err != nil {
+		return Plugin{}, err
+	}
+	p.Dir, p.ID = abs, filepath.Base(abs)
+	return p, nil
+}
+
 func load(path string) (Plugin, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

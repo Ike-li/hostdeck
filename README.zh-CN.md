@@ -83,9 +83,9 @@ go run .
 
 然后在浏览器里打开 http://127.0.0.1:4678/ 。
 
-插件放在 hostdeck 文件夹下的 `plugins/` 里：macOS 上是 `~/.config/hostdeck`，Windows 上是 `%LOCALAPPDATA%\hostdeck`。用 `--dir` 或 `HOSTDECK_DIR` 可以换一个文件夹，用 `--addr` 可以换成 127.0.0.1 上的另一个端口。总览的「＋ 添加页面或插件」卡片可以直达网页、链接和内置插件的添加区域。侧栏的「页面与插件」页分为「已添加」和「添加内容」，可以添加 hostdeck 自带的插件，也能停用和启用已安装的插件，改动立即生效：停用就是把插件文件夹改名成以点开头，hostdeck 会跳过它，里面的内容不变。隐藏只影响总览和侧栏，「恢复到工作区」可以恢复显示；启停接入不会启动或关闭外部服务。手动增加或修改的插件文件夹，要重启 hostdeck 或等插件页下一次改动时才会读取。本机或局域网里的网页可以在同一页按网址内嵌，也可以把网址拖到 hostdeck 上；这会生成一个插件文件夹，其中的 `plugin.yaml` 只有 `page.proxy`。拖动控制台内部的链接，或拖入控制台自身的网址，不会添加页面。
+插件放在 hostdeck 文件夹下的 `plugins/` 里：macOS 上是 `~/.config/hostdeck`，Windows 上是 `%LOCALAPPDATA%\hostdeck`。用 `--dir` 或 `HOSTDECK_DIR` 可以换一个文件夹，用 `--addr` 可以换成 127.0.0.1 上的另一个端口。总览的「＋ 添加页面或插件」卡片可以直达网页、链接和内置插件的添加区域。侧栏的「页面与插件」页分为「已添加」和「添加内容」，可以添加 hostdeck 自带的插件，也能停用和启用已安装的插件，改动立即生效：停用就是把插件文件夹改名成以点开头，hostdeck 会跳过它，里面的内容不变。隐藏只影响总览和侧栏，「恢复到工作区」可以恢复显示；启停接入不会启动或关闭外部服务。手动增加或修改的插件文件夹，可以运行 `hostdeck plugin reload` 读取，也可以重启 hostdeck 或等插件页下一次改动。本机或局域网里的网页可以在同一页按网址内嵌，也可以把网址拖到 hostdeck 上；这会生成一个插件文件夹，其中的 `plugin.yaml` 只有 `page.proxy`。拖动控制台内部的链接，或拖入控制台自身的网址，不会添加页面。
 
-“添加内容”里的“接入教程”说明网页、内置插件和自定义插件的接入步骤。网页与插件各有一键复制按钮，给本机 agent 的提示词包含当前控制台的实际 Origin、插件绝对目录、macOS shell 和 Windows PowerShell 命令，以及验证步骤。复制不会修改数据；无法访问剪贴板时，展开并选中提示词以便手动复制。通过 API 添加立即生效，手动改文件则需要使用相同数据目录和监听地址重启 hostdeck。
+“添加内容”里的“接入教程”说明网页、内置插件和自定义插件的接入步骤。网页与插件各有一键复制按钮，给本机 agent 的提示词包含当前控制台的实际 Origin、插件绝对目录和运行程序路径、macOS shell 和 Windows PowerShell 的原生 CLI 示例，以及验证步骤。复制不会修改数据；无法访问剪贴板时，展开并选中提示词以便手动复制。通过 API 或 CLI 添加立即生效，手动改文件后可以用 `plugin reload` 重新加载。
 
 一个插件就是一个放着 `plugin.yaml` 的文件夹。两个小例子：
 
@@ -140,6 +140,35 @@ card:
 路径的写法见 [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md)。[`examples/`](examples) 里有可以直接复制的完整插件，其中一个的卡片和详情页由脚本生成。
 
 发布第一个版本之前，清单格式还可能变。
+
+## 给 agent 使用的 CLI
+
+保持控制台运行，CLI 使用相同版本的 hostdeck。接入命令不会启动另一个控制台。`--url` 选择控制台 Origin，默认 `http://127.0.0.1:4678`；只接受 `127.0.0.1` 上的 HTTP，拒绝其他主机、凭据、URL 路径和重定向。界面里的复制提示词会使用当前程序的绝对路径，即使用 `go run` 启动也一样。
+
+从本仓库运行时，把下面的 `hostdeck` 换成 `go run .`。编译后的程序不在 PATH 时使用实际路径，例如 macOS 的 `./hostdeck`，或 PowerShell 的 `& .\hostdeck.exe`。
+
+```sh
+hostdeck help
+hostdeck page add --url http://127.0.0.1:4678 --address http://127.0.0.1:3000/ --name Grafana --mode proxy
+hostdeck page add --url http://127.0.0.1:4678 --address https://example.com/ --name Notes --mode link
+hostdeck page update --url http://127.0.0.1:4678 --id PAGE_ID --name "New name" --icon N
+hostdeck plugin list --url http://127.0.0.1:4678
+hostdeck plugin catalog --url http://127.0.0.1:4678
+hostdeck plugin install --url http://127.0.0.1:4678 --id ollama
+hostdeck plugin validate --from /path/to/my-plugin
+hostdeck plugin install --url http://127.0.0.1:4678 --id my-plugin --from /path/to/my-plugin
+hostdeck plugin disable --url http://127.0.0.1:4678 --id my-plugin
+hostdeck plugin enable --url http://127.0.0.1:4678 --id my-plugin
+hostdeck plugin reload --url http://127.0.0.1:4678
+```
+
+命令后使用具名参数。`page update` 只修改传入的 `--name`、`--icon`、`--proxy` 或 `--link`，以及用于已有 HTTP 卡片的 `--card-url`；proxy 与 link 不能同时传入。注释、命令和无关配置会保留。`plugin list` 与 `plugin catalog` 都返回完整目录信息，包括实际路径、已安装条目和可用内置插件。
+
+`plugin validate` 离线运行，使用与服务端相同的 `schema: 1` 解析器和 CLI 进程环境，不执行插件程序，也不访问服务。自定义安装的源文件夹必须在本机，包含 `plugin.yaml`；CLI 向选定控制台查询实际插件目录，校验后先复制到隐藏的临时文件夹，再放到目标位置并重新加载。已有启用或停用的同名 ID、符号链接、特殊文件，以及包含目标目录的源文件夹都会被拒绝。不下载插件。每个 ID 有安装锁，CLI 安装相互串行；进程中断可能留下锁或隐藏临时文件夹，确认进程结束后再手动清理。备份和源文件夹应放在活动插件目录之外。
+
+所有接入命令，包括 `help`，都向 stdout 输出一份 JSON。成功包含 `ok: true` 和 `data`，失败包含 `ok: false` 和 `error.code`、`error.message`，有时还有恢复信息。退出码 **0** 为成功，**1** 为操作或校验失败，**2** 为参数错误。PowerShell 每次调用原生命令后都要检查 `$LASTEXITCODE`。文件已保存但重载失败时，`data.saved` 为 true；本机自定义安装还会用 `data.path` 给出文件位置，API 修改在 ID 已知时返回 ID；修复报错后重新加载，不要重复安装。`plugin reload` 遇到损坏插件或转发错误返回非零；重载发生致命错误时保留之前的加载状态。
+
+`loaded` 只表示 hostdeck 加载了清单，不代表外部服务健康，需要打开卡片或网页验证实际读数。CLI 校验与服务端加载分别使用各自的环境变量；新增密钥必须提供给运行中的服务端，必要时经过授权重启。普通文件改动可以通过 `plugin reload` 生效，无需重启。校验和复制本身不运行脚本，之后的卡片或详情请求仍按原协议执行可信插件程序。网页仍然不能提交或写入命令。
 
 ## 工作原理
 

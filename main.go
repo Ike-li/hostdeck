@@ -12,9 +12,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Ike-li/hostdeck/examples"
+	"github.com/Ike-li/hostdeck/internal/cli"
 	"github.com/Ike-li/hostdeck/internal/console"
 	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/onetime"
@@ -25,17 +27,31 @@ import (
 
 func main() {
 	log.SetFlags(0)
+	if args := os.Args[1:]; len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		os.Exit(cli.Run(args, os.Stdout))
+	}
 	if err := run(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
 		log.Fatal(err)
 	}
 }
 
 func run(args []string) error {
 	flags := flag.NewFlagSet("hostdeck", flag.ContinueOnError)
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: hostdeck [--dir DATA_DIRECTORY] [--addr 127.0.0.1:4678]")
+		flags.PrintDefaults()
+		fmt.Fprintln(flags.Output(), "Connection commands for agents: hostdeck help")
+	}
 	addr := flags.String("addr", "127.0.0.1:4678", "address the console listens on; the host must be 127.0.0.1")
 	dirFlag := flags.String("dir", "", "folder holding plugins/ (default: $HOSTDECK_DIR, else the per-user config folder)")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("unexpected server arguments; connection commands start with page or plugin")
 	}
 	if err := checkAddr(*addr); err != nil {
 		return err

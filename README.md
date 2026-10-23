@@ -83,9 +83,9 @@ go run .
 
 Then open http://127.0.0.1:4678/.
 
-Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. The overview's **+ Add a page or plugin** card opens the add area for web pages, links and built-in plugins. The **Pages & plugins** page in the sidebar separates added connections from adding content, and adds the ones that come with hostdeck, and disables or enables installed ones, each change taking effect at once: a disabled plugin's folder is renamed to start with a dot, which hostdeck skips, and nothing in it changes. Hiding only removes a connection from the overview and sidebar; **Restore to workspace** brings it back. Enabling or disabling does not start or stop its external service. A plugin folder added or changed by hand is read when hostdeck restarts, or with the next change on that page. A web page on this machine or the local network is embedded from the same page by its address, or by dragging the address onto hostdeck; that writes a plugin folder whose `plugin.yaml` holds only `page.proxy`. Dragging a link from within the console, or dropping the console's own address, does not add a page.
+Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. The overview's **+ Add a page or plugin** card opens the add area for web pages, links and built-in plugins. The **Pages & plugins** page in the sidebar separates added connections from adding content, and adds the ones that come with hostdeck, and disables or enables installed ones, each change taking effect at once: a disabled plugin's folder is renamed to start with a dot, which hostdeck skips, and nothing in it changes. Hiding only removes a connection from the overview and sidebar; **Restore to workspace** brings it back. Enabling or disabling does not start or stop its external service. A plugin folder added or changed by hand is read with `hostdeck plugin reload`, when hostdeck restarts, or with the next change on that page. A web page on this machine or the local network is embedded from the same page by its address, or by dragging the address onto hostdeck; that writes a plugin folder whose `plugin.yaml` holds only `page.proxy`. Dragging a link from within the console, or dropping the console's own address, does not add a page.
 
-The **Connection help** disclosure in **Add content** explains web page, built-in plugin and custom plugin setup. Separate one-click buttons copy web page and plugin prompts for a local agent, including this console’s actual origin and absolute plugin directory, macOS shell and Windows PowerShell commands, and verification steps. Copying changes no data. If clipboard access fails, the prompt opens and is selected for manual copying. API additions take effect immediately; file changes require restarting hostdeck with the same data directory and address.
+The **Connection help** disclosure in **Add content** explains web page, built-in plugin and custom plugin setup. Separate one-click buttons copy web page and plugin prompts for a local agent, including this console’s actual origin, absolute plugin directory and running executable, native CLI examples for macOS shell and Windows PowerShell, and verification steps. Copying changes no data. If clipboard access fails, the prompt opens and is selected for manual copying. API and CLI additions take effect immediately; use `plugin reload` after manual file changes.
 
 A plugin is a folder holding a `plugin.yaml`. Two small ones:
 
@@ -140,6 +140,35 @@ card:
 Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`examples/`](examples) has complete plugins to copy, including one whose card and detail page come from a script.
 
 The manifest format may still change before the first release.
+
+## CLI for agents
+
+Keep the console running and use the same version of hostdeck for its CLI. Commands never start another console. `--url` selects its origin and defaults to `http://127.0.0.1:4678`; only HTTP on `127.0.0.1` is accepted. Credentials, other hosts, URL paths and redirects are refused. The UI’s copyable prompts use the running executable’s absolute path, including when the console was started with `go run`.
+
+From this checkout, replace `hostdeck` below with `go run .`. For a built executable outside PATH, use its path (`./hostdeck` on macOS or `& .\hostdeck.exe` in PowerShell).
+
+```sh
+hostdeck help
+hostdeck page add --url http://127.0.0.1:4678 --address http://127.0.0.1:3000/ --name Grafana --mode proxy
+hostdeck page add --url http://127.0.0.1:4678 --address https://example.com/ --name Notes --mode link
+hostdeck page update --url http://127.0.0.1:4678 --id PAGE_ID --name "New name" --icon N
+hostdeck plugin list --url http://127.0.0.1:4678
+hostdeck plugin catalog --url http://127.0.0.1:4678
+hostdeck plugin install --url http://127.0.0.1:4678 --id ollama
+hostdeck plugin validate --from /path/to/my-plugin
+hostdeck plugin install --url http://127.0.0.1:4678 --id my-plugin --from /path/to/my-plugin
+hostdeck plugin disable --url http://127.0.0.1:4678 --id my-plugin
+hostdeck plugin enable --url http://127.0.0.1:4678 --id my-plugin
+hostdeck plugin reload --url http://127.0.0.1:4678
+```
+
+Use named flags after the command. `page update` accepts only supplied `--name`, `--icon`, `--proxy` or `--link`, and `--card-url` for an existing HTTP card. Proxy and link cannot be combined. It preserves comments, commands and unrelated values. `plugin list` and `plugin catalog` both return the full catalog: actual paths, installed entries and available built-ins.
+
+`plugin validate` is offline: it uses the same `schema: 1` parser and the CLI process environment without executing plugin programs or contacting services. A custom install needs a local source folder with `plugin.yaml`; it queries the selected console for its actual plugin directory, validates and copies the folder under a hidden staging name, publishes it, then reloads. It refuses existing enabled or disabled IDs, symlinks, special files and sources containing the destination. Nothing is downloaded. A per-ID lock serializes CLI installations; an interrupted process can leave a lock or hidden staging folder for manual cleanup after that process has ended. Backups and source folders belong outside the active plugin directory.
+
+All connection commands, including `help`, write one JSON result to stdout. Success has `ok: true` and `data`; failure has `ok: false` and `error.code` / `error.message`, sometimes with recovery data. Exit **0** means success, **1** an operation/validation failure, and **2** invalid command arguments. In PowerShell, inspect `$LASTEXITCODE` after each native call. If files were saved but reloading failed, `data.saved` is true. A local custom install also returns `data.path`; API changes include the ID when it is known: fix the error and reload rather than install a duplicate. `plugin reload` returns nonzero for broken plugins or forwarding failures while retaining the loaded state on a fatal reload error.
+
+`loaded` means hostdeck loaded the manifest, not that the external service is healthy. Open its card/page to verify actual readings. CLI validation and server loading use their respective environments; a new secret must be supplied to the running server, which may need an authorized restart. Manual edits can be activated with `plugin reload` without a restart. Validation and copying themselves do not run scripts; later card/detail requests run trusted plugin programs as before. The web UI still cannot submit or write commands.
 
 ## How it works
 

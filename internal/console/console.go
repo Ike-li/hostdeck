@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -108,6 +109,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
 	mux.HandleFunc("POST /api/action/{id}", s.serveAction)
 	mux.HandleFunc("GET /api/catalog", s.serveCatalog)
+	mux.HandleFunc("POST /api/plugins/reload", s.serveReload)
 	mux.HandleFunc("POST /api/catalog/{id}", s.serveAdd)
 	mux.HandleFunc("POST /api/pages", s.serveAddPage)
 	mux.HandleFunc("POST /api/plugins/{id}/disable", s.serveRename(catalog.Disable))
@@ -390,6 +392,11 @@ func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin,
 		writeError(w, http.StatusInternalServerError, &card.Error{Code: "catalog_failed", Detail: err.Error()})
 		return
 	}
+	executable, err := os.Executable()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "catalog_failed", Detail: err.Error()})
+		return
+	}
 	type listed struct {
 		catalog.Plugin
 		Loaded bool        `json:"loaded"`
@@ -397,21 +404,29 @@ func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin,
 		Error  *card.Error `json:"error,omitempty"`
 	}
 	listing := struct {
-		PluginDir string            `json:"pluginDir"`
-		Installed []listed          `json:"installed"`
-		Available []catalog.Entry   `json:"available"`
-		Trash     []catalog.Trashed `json:"trash"`
-	}{pluginDir, []listed{}, []catalog.Entry{}, trashed}
+		PluginDir  string            `json:"pluginDir"`
+		Executable string            `json:"executable"`
+		Installed  []listed          `json:"installed"`
+		Available  []catalog.Entry   `json:"available"`
+		Trash      []catalog.Trashed `json:"trash"`
+	}{pluginDir, executable, []listed{}, []catalog.Entry{}, trashed}
 	for _, p := range installed {
 		_, loaded := s.plugin(p.ID)
 		var problem *card.Error
+		broken := false
 		for _, b := range s.loaded().Broken {
 			if b.ID == p.ID {
 				problem = manifestError(b)
+				broken = true
 				break
 			}
 		}
-		listing.Installed = append(listing.Installed, listed{p, loaded || problem != nil, problem != nil, problem})
+		if problem == nil {
+			if served := s.loaded().Served[p.ID]; served.Err != nil {
+				problem = portError(served.Err)
+			}
+		}
+		listing.Installed = append(listing.Installed, listed{p, loaded || broken, broken, problem})
 	}
 	for _, e := range builtIn {
 		if !e.Added {
@@ -602,6 +617,19 @@ func (s *server) serveRename(rename func(pluginDir, id string) error) http.Handl
 		default:
 			writeJSON(w, struct{}{})
 		}
+	}
+}
+
+// serveReload loads trusted on-disk plugins without changing their files.
+func (s *server) serveReload(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	s.changing.Lock()
+	defer s.changing.Unlock()
+	if s.reload(w) {
+		s.serveCatalog(w, r)
 	}
 }
 
