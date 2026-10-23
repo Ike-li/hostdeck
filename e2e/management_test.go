@@ -163,9 +163,20 @@ func TestBuiltInPluginsUseAlignedRowsAndKeepTheirSetupInstructionsReadable(t *te
 		t.Fatalf("built-ins should use full-width rows with aligned identity, features and actions: %v %v", aligned, err)
 	}
 	for _, language := range []string{"en", "zh-CN"} {
-		do(t, ctx, chromedp.EmulateViewport(1280, 900), chromedp.Click(chromedp.CSS(`[data-lang="`+language+`"]`)))
-		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === `+fmt.Sprintf("%q", language))); err != nil {
+		do(t, ctx, chromedp.EmulateViewport(1280, 900))
+		// Resizing paints the desktop sidebar before its media-query event
+		// removes the narrow drawer's inert state. Wait before clicking it.
+		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!document.querySelector('.side-menu').inert`)); err != nil {
+			t.Fatalf("the desktop language controls remain inert: %v", err)
+		}
+		before, err := chromedp.Run(ctx, chromedp.Evaluate[string](`JSON.stringify({language:document.documentElement.lang,inert:document.querySelector('.side-menu').inert,width:innerWidth})`))
+		if err != nil {
 			t.Fatal(err)
+		}
+		t.Logf("before switching to %s: %s", language, before)
+		do(t, ctx, chromedp.Click(chromedp.CSS(`[data-lang="`+language+`"]`)))
+		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === `+fmt.Sprintf("%q", language))); err != nil {
+			t.Fatalf("switching to %s from %s: %v", language, before, err)
 		}
 		for _, width := range []int{1280, 768, 520} {
 			do(t, ctx, chromedp.EmulateViewport(int64(width), 900))
