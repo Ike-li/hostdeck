@@ -56,6 +56,9 @@ export function renderNav() {
     row.querySelector('.more-trigger').setAttribute('aria-label', t('more.for', { name: pick(p.name) }));
   });
   placeMoves(nav, '.nav-row');
+  // The list is where the plugins are not: an empty sidebar says why, in the
+  // sidebar itself rather than only in a banner the eye may not find.
+  $('nav-empty').hidden = state.plugins.length > 0;
 }
 
 function navItem(p) {

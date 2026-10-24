@@ -16,9 +16,14 @@ export function stopCardsRetry() {
 export function renderOverview() {
   document.title = 'hostdeck';
   const cards = state.overview ? state.overview.cards : [];
-  const noCards = !state.overview || cards.length === 0;
-  $('empty').hidden = !state.overview || !noCards;
-  if (state.overview && noCards) {
+  // A first reading that never arrived is not an empty overview, and must not
+  // read like one: the two ask for different things of the reader. While the
+  // first reading is still on its way there is nothing to say either.
+  const failed = !state.overview && !!state.failure;
+  const empty = !!state.overview && cards.length === 0;
+  $('empty').hidden = !failed && !empty;
+  if (failed) $('empty').textContent = t('overview.unavailable', { detail: state.failure });
+  else if (empty) {
     $('empty').textContent = state.stored.hidden.length ? t('overview.hidden') : t('overview.empty', { dir: state.overview.pluginDir });
   }
   // The cards are rebuilt only when they are read or rearranged or the

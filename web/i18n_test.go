@@ -2,7 +2,11 @@ package web
 
 import (
 	"encoding/json"
+	"io/fs"
 	"maps"
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -46,6 +50,58 @@ func dict(t *testing.T, path string) map[string]string {
 		t.Fatalf("%s: %v", path, err)
 	}
 	return m
+}
+
+var errorCode = regexp.MustCompile(`Code:\s*"([a-z_]+)"`)
+
+// errorCodes reads every code the Go side answers an error with. A code added
+// to a handler cannot reach the page unworded: explain() would fall back to
+// the English detail the server sent.
+func errorCodes(t *testing.T) []string {
+	t.Helper()
+	var codes []string
+	seen := map[string]bool{}
+	err := filepath.WalkDir("../internal", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range errorCode.FindAllStringSubmatch(string(data), -1) {
+			if !seen[m[1]] {
+				seen[m[1]] = true
+				codes = append(codes, m[1])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(codes)
+	return codes
+}
+
+func TestEveryErrorCodeTheBackendAnswersIsWorded(t *testing.T) {
+	en, zh := dict(t, "i18n/en.json"), dict(t, "i18n/zh-CN.json")
+	for _, code := range errorCodes(t) {
+		// reported carries a plugin's own words, which explain() reads
+		// straight from the error instead of from the dictionary.
+		if code == "reported" {
+			continue
+		}
+		if _, ok := en["error."+code]; !ok {
+			t.Errorf("en.json lacks error.%s", code)
+		}
+		if _, ok := zh["error."+code]; !ok {
+			t.Errorf("zh-CN.json lacks error.%s", code)
+		}
+	}
 }
 
 func TestAgentPromptsClarifyPageIDsExecKeysOptionalFieldsAndVerification(t *testing.T) {

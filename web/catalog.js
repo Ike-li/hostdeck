@@ -257,7 +257,7 @@ function catalogIdentity(p) {
 
 function catalogFeatures(p) {
   const features = el('div', 'catalog-summary');
-  features.append(el('span', 'catalog-field-label', t('catalog.features')), providesList(p) || el('p', null, t('catalog.features.none')));
+  features.append(el('span', 'catalog-field-label', t('catalog.features')), providesList(p) || el('p', 'empty', t('catalog.features.none')));
   return features;
 }
 
