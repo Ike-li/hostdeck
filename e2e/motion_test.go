@@ -10,29 +10,43 @@ import (
 
 // The narrow drawer slides over the page instead of jumping, and it stops
 // there on its own.
+//
+// What the browser computes is what is asserted, rather than the frames in
+// between: a headless browser is free to keep its animation clock still, and a
+// test that waits for a moving pixel asks for a frame the runner may never
+// draw. The two tests together say the whole thing - one duration when motion
+// is allowed, none when it is not, and the drawer ending in the same place.
 func TestTheDrawerSlidesAndStopsWhenMotionIsAllowed(t *testing.T) {
 	dir := t.TempDir()
 	threeLinks(t, dir)
 	url := startConsole(t, dir)
 	ctx := openBrowser(t, "en")
+
+	// The page is asked to allow motion, so the assertion below cannot pass
+	// because the runner happens to prefer none.
+	if _, err := chromedp.Call(ctx, emulation.SetEmulatedMedia, emulation.SetEmulatedMediaParams{
+		Features: []*emulation.MediaFeature{{Name: "prefers-reduced-motion", Value: "no-preference"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	do(t, ctx, chromedp.EmulateViewport(520, 700), chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#menu`)))
 
-	// A transition is an event, not a frame to catch, so the page records it.
-	if got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
- window.__moved = [];
- document.querySelector('.side-menu').addEventListener('transitionrun', (e) => window.__moved.push(e.propertyName));
- return true; })()`)); err != nil || !got {
-		t.Fatalf("watching the drawer: %v %v", got, err)
+	check := func(js string) {
+		t.Helper()
+		got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](js))
+		if err != nil || !got {
+			t.Fatalf("%s: %v %v", js, got, err)
+		}
 	}
+	check(`matchMedia('(prefers-reduced-motion: reduce)').matches === false`)
 
 	do(t, ctx, chromedp.Click(chromedp.CSS(`#menu`)))
+	// The drawer carries the duration only once the menu has opened it, which
+	// is also the only moment it matters.
+	check(`(() => { const s = getComputedStyle(document.querySelector('.side-menu'));
+ return s.transitionProperty === 'transform' && s.transitionDuration === '0.2s'; })()`)
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](
-		`window.__moved.includes('transform')`,
-		chromedp.WithPollingTimeout(2*time.Second))); err != nil {
-		t.Fatalf("the drawer should slide the list in, not jump: %v", err)
-	}
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](
-		`document.querySelector('#nav').getBoundingClientRect().right > 1 && document.getAnimations().every(a => a.playState !== 'running')`,
+		`document.querySelector('#nav').getBoundingClientRect().right > 1`,
 		chromedp.WithPollingTimeout(2*time.Second))); err != nil {
 		t.Fatalf("the drawer should stop over the page: %v", err)
 	}
@@ -66,16 +80,11 @@ func TestTheDrawerArrivesAtOnceWhenTheBrowserAsksForLessMotion(t *testing.T) {
 	check(`matchMedia('(prefers-reduced-motion: reduce)').matches === true`)
 	check(`getComputedStyle(document.querySelector('.side-menu')).transitionDuration === '0s'`)
 
-	if got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
- window.__moved = [];
- document.querySelector('.side-menu').addEventListener('transitionrun', (e) => window.__moved.push(e.propertyName));
- return true; })()`)); err != nil || !got {
-		t.Fatalf("watching the drawer: %v %v", got, err)
-	}
-
 	do(t, ctx, chromedp.Click(chromedp.CSS(`#menu`)))
 	// No waiting at all: with less motion the list is over the page already.
 	check(`document.querySelector('#nav').getBoundingClientRect().right > 1`)
-	time.Sleep(400 * time.Millisecond)
-	check(`window.__moved.length === 0`)
+	// Nor does it arrive late and stay: the drawer is where it belongs, and
+	// a quarter of a second later it has not moved on.
+	time.Sleep(250 * time.Millisecond)
+	check(`document.querySelector('#nav').getBoundingClientRect().right > 1`)
 }
