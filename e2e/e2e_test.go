@@ -1240,6 +1240,13 @@ func TestANarrowWindowStartsUnderABarAndTheMenuEndsStayPut(t *testing.T) {
 	inView := func(b box, vh float64) bool {
 		return seen(b) && b.Top >= -1 && b.Bottom <= vh+1
 	}
+	// The drawer slides, so where the list stands means something only once it
+	// has stopped. settled waits for that and then measures.
+	settled := func(open bool) layout {
+		t.Helper()
+		drawerSettled(t, ctx, open)
+		return measure()
+	}
 
 	do(t, ctx,
 		chromedp.EmulateViewport(1280, 640),
@@ -1273,7 +1280,7 @@ func TestANarrowWindowStartsUnderABarAndTheMenuEndsStayPut(t *testing.T) {
 	}
 
 	do(t, ctx, chromedp.Click(chromedp.CSS("#menu")))
-	open := measure()
+	open := settled(true)
 	if open.Nav.Right <= 1 || open.H1.Top < 40 || open.H1.Top > 96 {
 		t.Errorf("open menu at 520: list %+v heading %+v, want the list over the page and the heading still under the bar", open.Nav, open.H1)
 	}
@@ -1284,6 +1291,25 @@ func TestANarrowWindowStartsUnderABarAndTheMenuEndsStayPut(t *testing.T) {
 	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)), chromedp.WaitVisible(chromedp.CSS("#catalog h1")))
 	if after := measure(); after.Nav.Right > 1 {
 		t.Errorf("the menu stays open over the plugins page: list right %.0f", after.Nav.Right)
+	}
+}
+
+// drawerSettled waits until the narrow drawer has stopped sliding and is over
+// the page, or off it. The drawer slides, so anything aimed at a point inside
+// it has to wait for the slide to end first.
+func drawerSettled(t *testing.T, ctx context.Context, open bool) {
+	t.Helper()
+	want := "false"
+	if open {
+		want = "true"
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(() => {
+ const list = document.querySelector('.side-menu');
+ const shown = document.querySelector('#nav').getBoundingClientRect().right > 1;
+ const moving = list.getAnimations().some(a => a.playState === 'running');
+ return shown === `+want+` && !moving;
+ })()`, chromedp.WithPollingTimeout(2*time.Second))); err != nil {
+		t.Fatalf("the drawer never settled open=%v: %v", open, err)
 	}
 }
 

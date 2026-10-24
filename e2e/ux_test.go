@@ -64,7 +64,11 @@ func TestTheNarrowNavigationKeepsFocusInsideAndRestoresItWhenClosed(t *testing.T
 	check(`document.activeElement.matches('.brand')`)
 	do(t, ctx, chromedp.KeyEvent(kb.Escape))
 	check(`document.querySelector('.side-menu').inert && !document.querySelector('main').inert && document.activeElement.id === 'menu'`)
-	do(t, ctx, chromedp.Click(chromedp.CSS(`#menu`)), chromedp.Click(chromedp.CSS(`[data-lang="zh-CN"]`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#menu`)))
+	// The language switch is inside the drawer, so it is worth clicking only
+	// once the drawer has stopped sliding.
+	drawerSettled(t, ctx, true)
+	do(t, ctx, chromedp.Click(chromedp.CSS(`[data-lang="zh-CN"]`)))
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === 'zh-CN'`)); err != nil {
 		t.Fatal(err)
 	}

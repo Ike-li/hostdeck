@@ -182,11 +182,13 @@ func TestTheStyleSheetKeepsOneLayerWithNoDuplicatedSelectors(t *testing.T) {
 	}
 }
 
-// rootTokens returns the custom properties the light :root block declares.
-func rootTokens(rules []cssRule) map[string]string {
+// themeTokens returns the custom properties a :root block declares under one
+// media condition: "" for the light theme, darkMedia for the dark one, and
+// reduceMedia for a browser that asked for less motion.
+func themeTokens(rules []cssRule, media string) map[string]string {
 	tokens := map[string]string{}
 	for _, r := range rules {
-		if r.media != "" || r.selector != ":root" {
+		if r.media != media || r.selector != ":root" {
 			continue
 		}
 		for _, d := range r.decls {
@@ -196,6 +198,11 @@ func rootTokens(rules []cssRule) map[string]string {
 		}
 	}
 	return tokens
+}
+
+// rootTokens returns the custom properties the light :root block declares.
+func rootTokens(rules []cssRule) map[string]string {
+	return themeTokens(rules, "")
 }
 
 // The console's rhythm is one four-point scale: every gap, inset and row step
@@ -297,6 +304,81 @@ func TestTheConsolesTypeStaysOnItsScale(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+const reduceMedia = "(prefers-reduced-motion: reduce)"
+
+// zeroDuration reports whether a duration is nothing at all, however it is
+// written, including the !important a catch-all needs to win.
+func zeroDuration(value string) bool {
+	return strings.HasPrefix(value, "0ms") || strings.HasPrefix(value, "0s")
+}
+
+// Motion keeps to the duration tokens, so a one-off 250ms cannot appear beside
+// the console's own three steps, and "all" cannot quietly animate a property a
+// test reads the moment it changes, such as a disabled control's fade.
+func TestMotionKeepsToTheDurationTokens(t *testing.T) {
+	bare := regexp.MustCompile(`^[\d.]+m?s$`)
+	motion := map[string]bool{
+		"transition": true, "transition-duration": true,
+		"animation": true, "animation-duration": true,
+	}
+	for _, r := range styleRules(t) {
+		for _, d := range r.decls {
+			if !motion[d.prop] {
+				continue
+			}
+			for _, part := range strings.Fields(d.value) {
+				if part == "all" {
+					t.Errorf("line %d: %s sets %s: %s; name the properties, never \"all\"", r.line, r.selector, d.prop, d.value)
+					continue
+				}
+				if bare.MatchString(part) && !zeroDuration(part) {
+					t.Errorf("line %d: %s sets %s: %s, and %s is not a --dur-* token", r.line, r.selector, d.prop, d.value, part)
+				}
+			}
+		}
+	}
+}
+
+// Reduced motion takes the durations down to nothing at the source: the tokens
+// every transition reads, and a catch-all for a rule that names one of its own.
+func TestReducedMotionTurnsEveryDurationOff(t *testing.T) {
+	rules := styleRules(t)
+
+	tokens := themeTokens(rules, reduceMedia)
+	if len(tokens) == 0 {
+		t.Fatalf("no :root rules under %s: the sheet ignores a browser that asks for less motion", reduceMedia)
+	}
+	for _, name := range []string{"--dur-fast", "--dur-base", "--dur-slow"} {
+		got, ok := tokens[name]
+		if !ok {
+			t.Errorf("%s is not zeroed under %s: a transition that reads it still plays", name, reduceMedia)
+			continue
+		}
+		if !zeroDuration(got) {
+			t.Errorf("%s is %s under %s, want 0ms", name, got, reduceMedia)
+		}
+	}
+
+	catchAll := false
+	for _, r := range rules {
+		if r.media != reduceMedia || r.selector != "*" {
+			continue
+		}
+		for _, d := range r.decls {
+			if d.prop != "transition-duration" && d.prop != "animation-duration" {
+				continue
+			}
+			if !zeroDuration(d.value) {
+				t.Errorf("line %d: * sets %s: %s under %s, want 0ms", r.line, d.prop, d.value, reduceMedia)
+			}
+			catchAll = true
+		}
+	}
+	if !catchAll {
+		t.Errorf("%s has no * rule zeroing transition-duration: a rule that names its own duration keeps it", reduceMedia)
 	}
 }
 

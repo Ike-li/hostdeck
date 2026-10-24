@@ -196,6 +196,7 @@ main {
   font: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
 }
 
 .menu:hover { background: var(--bg); }
@@ -246,6 +247,7 @@ nav {
   color: var(--text);
   text-decoration: none;
   flex-shrink: 0;
+  transition: background-color var(--dur-fast) var(--ease-standard);
 }
 
 .nav-item:hover { background: var(--bg); }
@@ -325,6 +327,7 @@ nav {
   font: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 
 .lang button:hover { border-color: var(--line-strong); color: var(--text); }
@@ -350,6 +353,7 @@ nav {
   font-size: var(--text-sm);
   text-decoration: none;
   cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
 
 .btn:hover { border-color: var(--accent); }
@@ -367,6 +371,7 @@ nav {
   border-radius: var(--radius-md);
   background: var(--tint-error-soft);
   overflow-wrap: anywhere;
+  transition: opacity var(--dur-base) var(--ease-standard);
 }
 
 .note {
@@ -375,6 +380,7 @@ nav {
   background: color-mix(in srgb, var(--accent) 8%, var(--panel));
   border-bottom: 1px solid var(--line);
   font-size: var(--text-sm);
+  transition: opacity var(--dur-base) var(--ease-standard);
 }
 
 .detail-note {
@@ -382,6 +388,7 @@ nav {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   background: var(--tint-accent);
+  transition: opacity var(--dur-base) var(--ease-standard);
 }
 
 .catalog-note {
@@ -390,6 +397,7 @@ nav {
   border-radius: var(--radius-md);
   background: var(--tint-accent);
   overflow-wrap: anywhere;
+  transition: opacity var(--dur-base) var(--ease-standard);
 }
 
 [data-kind="error"] { background: var(--tint-error-panel); color: var(--error); }
@@ -473,6 +481,7 @@ h1 {
   color: var(--muted);
   text-align: center;
   text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 
 .add-card:hover { border-color: var(--accent); color: var(--accent); }
@@ -630,6 +639,7 @@ h1 {
   color: var(--text);
   font: inherit;
   font-size: var(--text-base);
+  transition: border-color var(--dur-fast) var(--ease-standard);
 }
 
 :is(.edit-field input, .edit-field select, .catalog-search, .agent-prompt textarea):hover:not(:focus-visible) { border-color: var(--line-strong); }
@@ -953,6 +963,7 @@ h1 {
   font: inherit;
   font-size: var(--glyph-lg);
   cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 
 .more-trigger:hover, .more-trigger[aria-expanded="true"] { background: var(--bg); border-color: var(--line); color: var(--text); }
@@ -993,6 +1004,7 @@ h1 {
   text-align: left;
   justify-content: start;
   cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
 }
 
 .action-panel > button:hover:not(:disabled), .action-panel > a:hover { background: var(--bg); }
@@ -1014,7 +1026,7 @@ h1 {
 }
 
 .page-editor::backdrop { background: var(--scrim-dialog); }
-.page-editor[open] { display: flex; flex-direction: column; }
+.page-editor[open] { display: flex; flex-direction: column; transition: opacity var(--dur-base) var(--ease-standard); }
 
 .editor-head { padding: var(--space-5) var(--space-5) var(--space-4); flex: none; }
 .editor-head h2 {
@@ -1065,6 +1077,20 @@ body:has(.page-editor[open]) main { overflow: hidden; }
 .monitor-view { overflow-y: auto; padding: var(--space-5); background: var(--bg); }
 .monitor-view .card { max-width: 720px; }
 
+/* ---- Motion: entrances ---------------------------------------------- */
+/* Something that appears fades in instead of flashing on. Only opacity moves,
+   so nothing that measures a box is affected: a panel is placed by measured
+   pixels and a dialog is measured the moment it opens. The blocks below hold
+   nothing but opacity, because they sit outside the rules the sheet's own
+   tests read. A browser without @starting-style simply shows the element. */
+@starting-style {
+  .note, .banner, .detail-note, .catalog-note { opacity: 0; }
+  .action-panel:popover-open { opacity: 0; }
+  .page-editor[open] { opacity: 0; }
+}
+
+.action-panel:popover-open { transition: opacity var(--dur-fast) var(--ease-standard); }
+
 /* ---- Responsive: viewport breakpoints -------------------------------- */
 /* Media queries own viewport-level layout: the drawer, grid columns, page
    padding and row reflow. Component-internal adaptation (the wide card
@@ -1108,7 +1134,10 @@ body:has(.page-editor[open]) main { overflow: hidden; }
     transform: translateX(-105%);
   }
 
-  .app.nav-open .side-menu { transform: none; }
+  /* The transition belongs to the open state, so the list slides in when the
+     menu opens and leaves at once when it closes. A drawer on its way out
+     still covers the page, and would swallow a click aimed at it. */
+  .app.nav-open .side-menu { transform: none; transition: transform var(--dur-base) var(--ease-standard); }
 
   main { padding-top: var(--topbar-h); height: 100dvh; }
   .overview { padding: var(--space-4); }
@@ -1144,4 +1173,23 @@ body:has(.page-editor[open]) main { overflow: hidden; }
   .catalog-entry .catalog-status { grid-column: 2; }
   .catalog-entry .catalog-actions { grid-column: 1 / -1; }
   .catalog-offer .catalog-actions { grid-column: 2; }
+}
+
+/* ---- Motion: reduced ------------------------------------------------- */
+/* Someone who asked their browser for less motion gets the same places at
+   once. The durations go to zero where every transition reads them, and the
+   catch-all covers a rule that named a duration of its own. Nothing here
+   changes where anything ends up, only how long it takes to get there. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+
+  *, *::before, *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

@@ -23,7 +23,10 @@ func TestTheSidebarAlignsBrandIconsNamesAndActionsAcrossLanguagesAndWidths(t *te
 		for _, width := range []int64{1280, 768, 520} {
 			do(t, ctx, chromedp.EmulateViewport(width, 800))
 			if width == 520 {
+				// The drawer slides in, so the columns are worth comparing
+				// only once it has stopped.
 				do(t, ctx, chromedp.Click(chromedp.CSS(`#menu`)))
+				drawerSettled(t, ctx, true)
 			}
 			result, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
  const issues = [], rect = e => e.getBoundingClientRect(), close = (a,b) => Math.abs(a-b) < 1;
