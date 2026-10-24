@@ -539,7 +539,7 @@ func TestClearingCacheEmptiesOneServiceAndKeepsCookies(t *testing.T) {
 	serviceState(t, ctx, c, siteState.full)
 	do(t, ctx,
 		chromedp.Click(chromedp.CSS(`.nav-item[data-id="b"]`)),
-		chromedp.WaitVisible(chromedp.Search(`//span[@id="service-name" and text()="B"]`)),
+		chromedp.WaitVisible(chromedp.Search(`//h1[@id="service-name" and text()="B"]`)),
 	)
 	before := serviceState(t, ctx, b, func(s siteState) bool { return s.full() && s.Page == "?deeper=1" })
 
@@ -569,7 +569,7 @@ func TestClearingCacheEmptiesOneServiceAndKeepsCookies(t *testing.T) {
 	// The console routes on hashchange, which comes after the click returns.
 	do(t, ctx,
 		chromedp.Click(chromedp.CSS(`.nav-item[data-id="c"]`)),
-		chromedp.WaitVisible(chromedp.Search(`//span[@id="service-name" and text()="C"]`)),
+		chromedp.WaitVisible(chromedp.Search(`//h1[@id="service-name" and text()="C"]`)),
 		chromedp.Click(chromedp.CSS("#service-reload")),
 	)
 	if s := serviceState(t, ctx, c, func(s siteState) bool { return s.Page == "" }); !s.full() {
@@ -734,7 +734,7 @@ func TestARefusedClearingSaysItFailed(t *testing.T) {
 
 	do(t, ctx,
 		chromedp.Navigate(console+"#/b"),
-		chromedp.WaitVisible(chromedp.Search(`//span[@id="service-name" and text()="B"]`)),
+		chromedp.WaitVisible(chromedp.Search(`//h1[@id="service-name" and text()="B"]`)),
 	)
 	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`
 		const realFetch = window.fetch;

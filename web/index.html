@@ -11,14 +11,14 @@
 <body>
 <a class="skip-link" href="#main" data-i18n="a11y.skip"></a>
 <div class="app">
-  <aside class="sidebar">
+  <aside class="sidebar" data-i18n-label="a11y.sidebar">
     <div class="side-head">
       <a class="brand" href="#/" draggable="false"><span class="icon brand-mark" aria-hidden="true">h</span><span>hostdeck</span></a>
       <button type="button" id="menu" class="menu" aria-controls="side-menu" aria-expanded="false" data-i18n="nav.menu"></button>
     </div>
-    <div class="side-menu" id="side-menu">
+    <nav class="side-menu" id="side-menu" data-i18n-label="nav.label">
       <a class="nav-item" id="nav-overview" href="#/"><span class="icon nav-slot" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span class="nav-name"></span></a>
-      <nav id="nav" data-i18n-label="nav.label"></nav>
+      <div id="nav" role="group" data-i18n-label="nav.plugins"></div>
       <p id="nav-empty" class="empty" hidden data-i18n="nav.empty"></p>
       <div class="side-footer">
         <a class="nav-item" id="nav-catalog" href="#/.plugins"><span class="icon nav-slot" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4m6-4v4M7 7h10v5a5 5 0 0 1-10 0V7zM12 17v4"/></svg></span><span class="nav-name"></span></a>
@@ -27,15 +27,15 @@
           <button type="button" data-lang="zh-CN" lang="zh-CN">简体中文</button>
         </div>
       </div>
-    </div>
+    </nav>
   </aside>
   <div id="nav-backdrop" class="nav-backdrop" hidden></div>
   <main id="main" tabindex="-1">
     <p id="banner" class="banner" role="alert" hidden></p>
     <p id="layout-note" class="note" role="status" hidden><span data-i18n="layout.saved"></span> <button type="button" id="layout-undo" class="btn" data-i18n="layout.undo"></button></p>
-    <section id="overview" class="overview">
+    <section id="overview" class="overview" aria-labelledby="overview-title">
       <div class="overview-head">
-        <h1 data-i18n="overview.title"></h1>
+        <h1 id="overview-title" data-i18n="overview.title"></h1>
         <div class="overview-actions">
           <button type="button" id="layout-reset" class="btn" data-i18n="layout.reset"></button>
           <button type="button" id="refresh" class="btn primary" data-i18n="overview.refresh"></button>
@@ -51,8 +51,8 @@
         </a>
       </div>
     </section>
-    <section id="catalog" class="overview" hidden>
-      <div class="overview-head"><h1 data-i18n="catalog.title"></h1><button type="button" class="btn primary" id="catalog-add-open" data-i18n="catalog.addContent"></button></div>
+    <section id="catalog" class="overview" aria-labelledby="catalog-title" hidden>
+      <div class="overview-head"><h1 id="catalog-title" data-i18n="catalog.title"></h1><button type="button" class="btn primary" id="catalog-add-open" data-i18n="catalog.addContent"></button></div>
       <p id="catalog-intro" class="empty"></p>
       <label id="catalog-search-wrap" class="search-field" hidden><span data-i18n="catalog.search"></span><input id="catalog-search" class="catalog-search" type="search" hidden data-i18n-placeholder="catalog.search"></label>
       <p id="catalog-no-results" class="empty" role="status" hidden data-i18n="catalog.noResults"></p>
@@ -79,7 +79,7 @@
             <h3 id="help-plugins-title" data-i18n="help.plugins.title"></h3>
             <ol>
               <li data-i18n="help.plugins.step1"></li>
-              <li><span data-i18n="help.plugins.step2"></span><code id="help-plugin-dir"></code><pre id="help-plugin-example" tabindex="0"></pre></li>
+              <li><span data-i18n="help.plugins.step2"></span><code id="help-plugin-dir"></code><pre id="help-plugin-example" tabindex="0" data-i18n-label="help.example"></pre></li>
               <li data-i18n="help.plugins.step3"></li>
             </ol>
             <p data-i18n="help.plugins.trust"></p>
@@ -117,11 +117,11 @@
       </section>
       <details class="catalog-directory"><summary data-i18n="catalog.directory"></summary><p id="catalog-directory"></p></details>
     </section>
-    <section id="service" class="service" hidden>
+    <section id="service" class="service" aria-labelledby="service-name" hidden>
       <header class="service-bar">
         <span class="service-title">
           <span id="service-icon" class="icon"></span>
-          <span id="service-name" role="heading" aria-level="1"></span>
+          <h1 id="service-name"></h1>
           <span id="service-dot" class="dot"></span>
         </span>
         <div class="service-actions"><button id="service-reload" class="btn" type="button" data-i18n="service.reload"></button>

@@ -36,18 +36,25 @@ export function renderNav() {
     nav.dataset.entries = entries;
     nav.replaceChildren(...state.plugins.map(navItem));
   }
+  // The class is how the page shows which entry is open; aria-current is how
+  // it says so to a reader jumping between landmarks.
+  const mark = (item, open) => {
+    item.classList.toggle('active', open);
+    if (open) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  };
   const overviewItem = $('nav-overview');
   const catalogItem = $('nav-catalog');
   overviewItem.querySelector('.nav-name').textContent = t('nav.overview');
-  overviewItem.classList.toggle('active', !state.current && !state.catalogOpen);
+  mark(overviewItem, !state.current && !state.catalogOpen);
   catalogItem.querySelector('.nav-name').textContent = t('nav.catalog');
-  catalogItem.classList.toggle('active', state.catalogOpen);
+  mark(catalogItem, state.catalogOpen);
   [...nav.querySelectorAll('.nav-row')].forEach((row, i) => {
     const p = state.plugins[i];
     const a = row.querySelector('.nav-item');
     a.querySelector('.nav-name').textContent = pick(p.name);
     a.querySelector('.icon').textContent = iconOf(p);
-    a.classList.toggle('active', state.current?.id === p.id);
+    mark(a, state.current?.id === p.id);
     const d = a.querySelector('.dot');
     if (d) paintDot(d, p);
     row.querySelector('.move-up').textContent = t('move.up');
@@ -73,6 +80,7 @@ function navItem(p) {
     a.href = p.url;
     a.target = '_blank';
     a.rel = 'noopener';
+    a.setAttribute('aria-label', t('nav.opensNew', { name: pick(p.name) }));
     a.append(el('span', 'nav-ext', '↗'));
   } else {
     a.href = `#/${encodeURIComponent(p.id)}`;

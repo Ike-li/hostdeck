@@ -149,7 +149,7 @@ function catalogCard(p) {
   const item = el('article', 'card catalog-item');
   item.dataset.id = p.id;
   const head = el('header', 'card-head');
-  head.append(el('span', 'icon', iconOf(p)), el('h2', 'card-name', pick(p.name)));
+  head.append(el('span', 'icon', iconOf(p)), el('h3', 'card-name', pick(p.name)));
   item.append(head);
   if (p.description) item.append(el('p', 'catalog-description', pick(p.description)));
   return item;
@@ -243,11 +243,13 @@ export async function onPageSubmit(e) {
 }
 
 // Management rows share the same identity and capability presentation.
-function catalogIdentity(p) {
+// level is the heading the row sits under: h3 below a group's h2, h4 below
+// the built-in plugins' own h3.
+function catalogIdentity(p, level = 'h3') {
   const name = pick(p.name);
   const identity = el('div', 'catalog-identity');
   const head = el('header', 'card-head');
-  const title = el('h4', 'card-name', name);
+  const title = el(level, 'card-name', name);
   title.title = name;
   const kind = p.page && !p.card && !p.detail && !p.actions ? (p.link ? 'link' : 'page') : 'plugin';
   head.append(el('span', 'icon', iconOf(p)), title, el('span', 'catalog-kind', t(`catalog.kind.${kind}`)));
@@ -346,7 +348,7 @@ function availableItem(p) {
   );
   btn.classList.add('add');
   actions.append(btn);
-  item.append(catalogIdentity(p), catalogFeatures(p), actions);
+  item.append(catalogIdentity(p, 'h4'), catalogFeatures(p), actions);
   return item;
 }
 

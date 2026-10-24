@@ -38,8 +38,13 @@ export function moreActions(label, controls) {
   const panel = el('div', 'action-panel');
   panel.id = `actions-${++panelSequence}`;
   panel.setAttribute('popover', 'manual');
+  // A group, not a menu: the panel holds buttons the Tab key walks through,
+  // and a menu would owe them arrow keys and menuitem roles as well.
+  panel.setAttribute('role', 'group');
+  panel.setAttribute('aria-label', label);
   panel.hidden = true;
   trigger.setAttribute('aria-controls', panel.id);
+  trigger.setAttribute('aria-haspopup', 'true');
   panel.append(...controls);
   trigger.addEventListener('click', (e) => {
     e.stopPropagation();

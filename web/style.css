@@ -247,7 +247,9 @@ main {
 
 .brand .brand-mark { background: var(--accent); color: var(--panel); font-size: var(--text-base); font-weight: var(--weight-bold); }
 
-nav {
+/* The plugin list is the part that scrolls; the menu around it is a nav
+   element now, so this names the list rather than the tag. */
+#nav {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -741,7 +743,7 @@ h1 {
   font-weight: var(--weight-semibold);
 }
 
-#service-name { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-lg); }
+#service-name { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: var(--text-lg); }
 .service-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 #clear-note { line-height: var(--leading-relaxed); overflow-wrap: anywhere; }
 .service-error { flex: none; }
