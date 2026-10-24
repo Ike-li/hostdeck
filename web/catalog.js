@@ -1,4 +1,4 @@
-import { $, el, feedback } from './dom.js';
+import { $, announce, el, feedback } from './dom.js';
 import { getJSON, postJSON } from './api.js';
 import { t, pick, explain } from './i18n.js';
 import { closePanel, moreActions, openPanelTrigger } from './panel.js';
@@ -119,7 +119,9 @@ export function filterCatalog() {
   }
   const available = [...document.querySelectorAll('#catalog-available .catalog-item')];
   if (available.length) $('catalog-available-heading').hidden = available.every((card) => card.hidden);
-  $('catalog-no-results').hidden = !q || [...document.querySelectorAll('#catalog .catalog-item')].some((card) => !card.hidden);
+  const matches = [...document.querySelectorAll('#catalog .catalog-item')].filter((card) => !card.hidden);
+  $('catalog-no-results').hidden = !q || matches.length > 0;
+  if (q) announce(t('catalog.results', { n: matches.length }));
   const trash = $('catalog-trash');
   if (trash) {
     const items = [...trash.querySelectorAll('.catalog-item')];

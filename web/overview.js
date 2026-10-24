@@ -1,4 +1,4 @@
-import { $, el } from './dom.js';
+import { $, announce, el } from './dom.js';
 import { getJSON } from './api.js';
 import { t, pick, explain, setStaticText } from './i18n.js';
 import { closePanel, moreActions, openPanelTrigger } from './panel.js';
@@ -26,6 +26,7 @@ export function renderOverview() {
   else if (empty) {
     $('empty').textContent = state.stored.hidden.length ? t('overview.hidden') : t('overview.empty', { dir: state.overview.pluginDir });
   }
+  announce(failed || empty ? $('empty').textContent : t('overview.loaded', { n: cards.length }));
   // The cards are rebuilt only when they are read or rearranged or the
   // language changes: a periodic render would swallow a click on a card's
   // button that lands while the card is replaced.
@@ -170,6 +171,7 @@ export async function refreshOverview() {
     const resp = await fetch('/api/cards/refresh', { method: 'POST' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     await loadCards();
+    announce(t('overview.refreshed'));
   } catch (e) {
     state.failure = e.message;
     callRender();
