@@ -64,6 +64,11 @@
   --shadow-dialog: 0 24px 80px #0003;
   --scrim: #0005;
   --scrim-dialog: #11182770;
+  --shadow-card-lift: 0 4px 16px #0002;
+  /* A hover is neutral, so it never reads as the blue of a selection. */
+  --tint-card-hover: color-mix(in srgb, var(--text) 3%, var(--panel));
+  --tint-row-hover: color-mix(in srgb, var(--text) 4%, var(--panel));
+  --rail-w: 3px;
 
   /* Motion. */
   --dur-fast: 120ms;
@@ -464,6 +469,31 @@ h1 {
 
 .card[data-status="error"] { border-color: var(--error); }
 .card[data-status="warn"] { border-color: var(--warn); }
+
+/* One ladder of surfaces: the page, a card on it, a floating panel above it and
+   the editor above everything. A card only rises while the pointer is on it, so
+   a grid of cards stays flat and quiet. */
+.card:hover { border-color: var(--line-strong); }
+.catalog-entry:hover { border-color: var(--line-strong); background: var(--tint-row-hover); }
+.card:has(.card-name a):hover {
+  background: var(--tint-card-hover);
+  box-shadow: var(--shadow-card-lift);
+  transition: background-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+/* A card that reported a state carries a rail in that state's colour. The rail
+   is drawn, not laid out: the card keeps the box the grid gave it, so a number
+   inside it and the grid around it stay where they were. */
+.card[data-status] { position: relative; }
+
+.card[data-status]::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--rail-w);
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  background: var(--status, var(--line));
+}
 
 .card .icon { width: var(--icon-lg); height: var(--icon-lg); border: 1px solid var(--line); font-weight: var(--weight-semibold); }
 
