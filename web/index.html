@@ -9,6 +9,7 @@
 <script type="module" src="/app.js"></script>
 </head>
 <body>
+<a class="skip-link" href="#main" data-i18n="a11y.skip"></a>
 <div class="app">
   <aside class="sidebar">
     <div class="side-head">
@@ -29,7 +30,7 @@
     </div>
   </aside>
   <div id="nav-backdrop" class="nav-backdrop" hidden></div>
-  <main>
+  <main id="main" tabindex="-1">
     <p id="banner" class="banner" role="alert" hidden></p>
     <p id="layout-note" class="note" role="status" hidden><span data-i18n="layout.saved"></span> <button type="button" id="layout-undo" class="btn" data-i18n="layout.undo"></button></p>
     <section id="overview" class="overview">

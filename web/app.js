@@ -122,6 +122,14 @@ async function init() {
   sortable($('nav'), '.nav-row', onSidebarMoved);
   sortable($('cards'), '.card', onCardsMoved);
   $('service-reload').addEventListener('click', reloadService);
+  // #main is not an address. Read as one it would name a plugin that does not
+  // exist, and the route would put the reader back on the overview.
+  document.querySelector('.skip-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    const main = document.querySelector('main');
+    if (main.inert) setNavigation(false);
+    main.focus();
+  });
 
   await setLang(initialLang(), false);
   await loadPlugins();
