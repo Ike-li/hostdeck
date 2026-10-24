@@ -1,8 +1,10 @@
 package web
 
 import (
+	"math"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -302,6 +304,102 @@ func TestTheConsolesTypeStaysOnItsScale(t *testing.T) {
 				if !leadingToken.MatchString(d.value) && d.value != "1" {
 					t.Errorf("line %d: %s sets line-height: %s; use a --leading-* token", r.line, r.selector, d.value)
 				}
+			}
+		}
+	}
+}
+
+// srgbChannel turns one 0-255 channel into its linear contribution to a
+// colour's relative luminance.
+func srgbChannel(v float64) float64 {
+	c := v / 255
+	if c <= 0.04045 {
+		return c / 12.92
+	}
+	return math.Pow((c+0.055)/1.055, 2.4)
+}
+
+// luminance is the WCAG relative luminance of a #rgb or #rrggbb literal. A
+// token written any other way cannot be measured here, and says so.
+func luminance(hex string) (float64, bool) {
+	hex = strings.TrimPrefix(strings.TrimSpace(hex), "#")
+	if len(hex) != 3 && len(hex) != 6 {
+		return 0, false
+	}
+	digits := hex
+	if len(hex) == 3 {
+		digits = string(hex[0]) + string(hex[0]) + string(hex[1]) + string(hex[1]) + string(hex[2]) + string(hex[2])
+	}
+	var sum float64
+	for i, weight := range []float64{0.2126, 0.7152, 0.0722} {
+		n, err := strconv.ParseUint(digits[i*2:i*2+2], 16, 8)
+		if err != nil {
+			return 0, false
+		}
+		sum += weight * srgbChannel(float64(n))
+	}
+	return sum, true
+}
+
+// contrast is the WCAG contrast ratio of two colour literals.
+func contrast(a, b string) (float64, bool) {
+	la, okA := luminance(a)
+	lb, okB := luminance(b)
+	if !okA || !okB {
+		return 0, false
+	}
+	hi, lo := la, lb
+	if hi < lo {
+		hi, lo = lo, la
+	}
+	return (hi + 0.05) / (lo + 0.05), true
+}
+
+// The console's words stay readable on the surfaces they are written on: a
+// token is measured against the backgrounds it is drawn over, in both themes,
+// and the ratio has to clear WCAG AA. Only the literal colours are measured:
+// the tints are mixed by the browser, and what is written over them is always
+// one of these tokens.
+func TestTheConsolesColoursStayReadableOnTheirOwnBackgrounds(t *testing.T) {
+	pairs := []struct {
+		fg, bg string
+		why    string
+	}{
+		{"--text", "--panel", "body text on a card"},
+		{"--text", "--bg", "body text on the page"},
+		{"--muted", "--panel", "muted text on a card"},
+		{"--muted", "--bg", "muted text on the page"},
+		{"--accent", "--panel", "a selected control on a card"},
+		{"--accent", "--bg", "a selected control on the page"},
+		{"--on-accent", "--accent", "the label of a primary button"},
+		{"--error", "--panel", "an error on a card"},
+		{"--ok", "--panel", "a healthy status on a card"},
+		{"--warn", "--panel", "a warning status on a card"},
+	}
+
+	rules := styleRules(t)
+	light := themeTokens(rules, "")
+	dark := themeTokens(rules, darkMedia)
+	for _, theme := range []struct {
+		name   string
+		tokens map[string]string
+	}{{"light", light}, {"dark", dark}} {
+		// A token the dark theme leaves alone keeps its light value.
+		value := func(token string) string {
+			if v, ok := theme.tokens[token]; ok {
+				return v
+			}
+			return light[token]
+		}
+		for _, p := range pairs {
+			fg, bg := value(p.fg), value(p.bg)
+			got, ok := contrast(fg, bg)
+			if !ok {
+				t.Errorf("%s: %s is %q or %s is %q, and only plain hex colours can be measured", theme.name, p.fg, fg, p.bg, bg)
+				continue
+			}
+			if got < 4.5 {
+				t.Errorf("%s: %s (%s) on %s (%s) is %.2f:1, want at least 4.5:1 for %s", theme.name, p.fg, fg, p.bg, bg, got, p.why)
 			}
 		}
 	}

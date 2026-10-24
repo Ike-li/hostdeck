@@ -11,9 +11,9 @@
   --text: #1c1f24;
   --muted: #606975;
   --line: #e3e6ea;
-  --accent: #2f6fde;
-  --accent-strong: #2a5fc0;
-  --accent-pressed: #24559f;
+  --accent: #2b64c6;
+  --accent-strong: #2556a9;
+  --accent-pressed: #1f4988;
   --line-strong: #c9ced6;
   --ok: #247a46;
   --warn: #946313;
@@ -86,6 +86,7 @@
   --icon-lg: 28px;
   --icon-xl: 32px;
   --icon-2xl: 48px;
+  --dot-row: 6px;
   --glyph-lg: 24px;
 
   /* Layout geometry. The breakpoints themselves (640px drawer, 1100px
@@ -311,7 +312,7 @@ nav {
   gap: var(--space-1);
   padding: var(--space-1);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--bg);
   flex-shrink: 0;
 }
@@ -377,7 +378,7 @@ nav {
 .note {
   margin: 0;
   padding: var(--space-2) var(--space-3);
-  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  background: var(--tint-accent);
   border-bottom: 1px solid var(--line);
   font-size: var(--text-sm);
   transition: opacity var(--dur-base) var(--ease-standard);
@@ -506,7 +507,8 @@ h1 {
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
-  background: color-mix(in srgb, var(--status, var(--muted)) 16%, transparent);
+  --tint-status: color-mix(in srgb, var(--status, var(--muted)) 16%, transparent);
+  background: var(--tint-status);
   color: var(--status, var(--muted));
 }
 
@@ -529,8 +531,8 @@ h1 {
 }
 
 .row-dot {
-  width: 6px;
-  height: 6px;
+  width: var(--dot-row);
+  height: var(--dot-row);
   border-radius: 50%;
   background: var(--line);
 }
@@ -1052,7 +1054,7 @@ body:has(.page-editor[open]) main { overflow: hidden; }
 /* Connection instructions remain readable without expanding the add form. */
 .connection-help {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   margin-bottom: var(--space-5);
   font-size: var(--text-base);
