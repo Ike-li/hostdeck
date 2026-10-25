@@ -7,7 +7,7 @@ function Test-JobName([string]$name) {
 }
 
 function Get-ServiceProgram([string]$pathName) {
-	$s = [Environment]::ExpandEnvironmentVariables($pathName.Trim())
+	$s = $pathName.Trim()
 	if ([string]::IsNullOrWhiteSpace($s) -or $s -match '%[^%]+%') { return '' }
 	if ($s.StartsWith('"')) {
 		$end = $s.IndexOf('"', 1)
