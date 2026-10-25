@@ -141,6 +141,8 @@ card:
 
 路径的写法见 [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md)。[`examples/`](examples) 里有可以直接复制的完整插件，其中一个的卡片和详情页由脚本生成。`examples/jobs` 列出当前用户已加载的 launchd 任务，不含 Apple 自己的，也不含普通应用；在 Windows 上则是程序不在 Windows 目录里的服务。正在运行的可以重启，没在运行的可以运行。
 
+在 Windows 上，后台任务数量同时计入警告和错误。只有可再次启动、允许停止且正在运行或已暂停的服务才提供重启。路径会先展开和规范化，再过滤 Windows 系统服务。
+
 发布第一个版本之前，清单格式还可能变。
 
 ## 给 agent 使用的 CLI

@@ -1,20 +1,36 @@
-# Shared by the jobs plugin's Windows scripts. A service counts when its
+﻿# Shared by the jobs plugin's Windows scripts. A service counts when its
 # program lives outside the Windows directory.
+# This file keeps a UTF-8 byte order mark for Windows PowerShell 5.1.
 
 function Test-JobName([string]$name) {
 	return $name -cmatch '\A[A-Za-z0-9._-]+\z'
 }
 
 function Get-ServiceProgram([string]$pathName) {
-	$s = $pathName.Trim()
+	$s = [Environment]::ExpandEnvironmentVariables($pathName.Trim())
+	if ([string]::IsNullOrWhiteSpace($s) -or $s -match '%[^%]+%') { return '' }
 	if ($s.StartsWith('"')) {
 		$end = $s.IndexOf('"', 1)
-		if ($end -lt 0) { return $s.Trim('"') }
-		return $s.Substring(1, $end - 1)
+		if ($end -le 1) { return '' }
+		$program = $s.Substring(1, $end - 1)
+	} elseif ($s -match '(?i)^(.+?\.(?:exe|com|sys))(?=\s|$)') {
+		$program = $matches[1]
+	} else {
+		$program = ($s -split '\s+', 2)[0]
 	}
-	$space = $s.IndexOf(' ')
-	if ($space -lt 0) { return $s }
-	return $s.Substring(0, $space)
+	$cmp = [StringComparison]::OrdinalIgnoreCase
+	if ($program.StartsWith('\SystemRoot\', $cmp)) {
+		$root = $env:SystemRoot
+		if ([string]::IsNullOrWhiteSpace($root)) { $root = 'C:\Windows' }
+		$program = $root.TrimEnd('\') + '\' + $program.Substring(12)
+	} elseif ($program.StartsWith('\\?\UNC\', $cmp) -or $program.StartsWith('\??\UNC\', $cmp)) {
+		$program = '\\' + $program.Substring(8)
+	} elseif ($program.StartsWith('\\?\', $cmp) -or $program.StartsWith('\??\', $cmp)) {
+		$program = $program.Substring(4)
+	}
+	# Relative or unresolved paths cannot establish that a service is outside Windows.
+	if ($program -notmatch '^(?:[A-Za-z]:\\|\\\\[^\\]+\\[^\\]+\\)') { return '' }
+	try { return [IO.Path]::GetFullPath($program) } catch { return '' }
 }
 
 function Test-OutsideWindows([string]$pathName) {

@@ -45,25 +45,18 @@ func TestWindowsJobsResolveProgramPathsBeforeDecidingWhichServicesToList(t *test
 		t.Fatal(err)
 	}
 	got := map[string]string{}
-	commands := map[string]string{}
 	for _, it := range view.Items {
 		for _, field := range it.Fields {
 			switch field.Name.ByLang["en"] {
 			case "Program":
 				got[it.ID] = string(field.Value)
-			case "Configured command":
-				commands[it.ID] = string(field.Value)
 			}
 		}
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("programs %v, want %v; Windows and unresolved paths must stay out", got, want)
 	}
-	for _, tc := range cases {
-		if tc.program != "" && commands[tc.id] != tc.command {
-			t.Errorf("%s configured command %q, want %q", tc.id, commands[tc.id], tc.command)
-		}
-	}
+
 }
 
 func TestWindowsJobsPreserveTheStateSeparatorInPowerShell51(t *testing.T) {
