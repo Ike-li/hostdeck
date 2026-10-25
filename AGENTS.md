@@ -4,6 +4,7 @@ hostdeck is one Go program serving a console on 127.0.0.1, for macOS and Windows
 
 - `README.md`: goals, **Not planned**, roadmap, the plugin manifest. Its scope is the owner's to decide.
 - `docs/ARCHITECTURE.md`: the packages, what each request does, the **security model**, tests and CI.
+- `docs/DESIGN.md`: the design system: tokens, components, patterns and accessibility, with values, reasons and the tests that keep them. A change to the console's look updates it in the same commit.
 
 Both also exist as `*.zh-CN.md`. Change both languages in the same commit.
 
@@ -85,6 +86,7 @@ A sidebar dot whose address did not answer is now a red ring rather than a disc,
 A disabled button no longer changes its edge or fill under the pointer.
 The editor's title, the plugins page's subheadings, the help's headings and the plus card's title are now semibold like every other heading, instead of the browser's bold.
 Stylesheet tests now keep colours inside the theme's `:root` blocks and radii, weights and easing on their tokens; the unused exit curve is gone.
+`docs/DESIGN.md` and its Chinese twin now write the design system down from the shipped console: tokens, components, patterns, accessibility and how to extend it, each rule with its value, its reason and the test that keeps it. The one item it leaves reserved is tying a server error to its field, which waits for an error whose words cannot name the field. TestOneClickCopiesTheCompletePromptIntoTheBrowserClipboard once read an empty clipboard in Edge on macOS CI (run 40235433558) and passed when rerun; the cause is unknown, and a second occurrence is worth a look.
 
 M1 has started. The built-in jobs plugin lists this user's loaded launchd jobs, or on Windows the services whose program is outside the Windows directory. The overview counts how many need attention, including warnings as well as errors on Windows. The detail page can restart a running one or run one that is not. Whole job names must pass the ASCII allowlist, including trailing newlines. Windows actions require a startable service; Restart additionally requires a running or paused state and AcceptStop, so disabled or transitional services cannot be stopped through Restart. Windows program paths are expanded and normalized before filtering; unresolved paths are excluded, and the shared PowerShell helper keeps UTF-8 state text intact. The system domain is not listed. Failed or malformed launchd listings and failed individual reads report bilingual errors without invented counts or actions. Never-run jobs are idle; terminating signals remain visible and count as failures while the job is not running. The launchd JSON encoder preserves control characters and Unicode safely. Which process listens on which port, and Docker, are still ahead.
 

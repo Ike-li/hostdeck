@@ -202,7 +202,7 @@ All connection commands, including `help`, write one JSON result to stdout. Succ
 
 ## How it works
 
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes the pieces, what happens on each request, and the security model.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes the pieces, what happens on each request, and the security model. [docs/DESIGN.md](docs/DESIGN.md) is the console's design system: its tokens, components and patterns, with their values, their reasons and the tests that keep them.
 
 ## Platforms
 

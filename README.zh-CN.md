@@ -202,7 +202,7 @@ hostdeck plugin reload --url http://127.0.0.1:4678
 
 ## 工作原理
 
-[docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md) 讲了各个组成部分、每种请求的经过，以及安全模型。
+[docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md) 讲了各个组成部分、每种请求的经过，以及安全模型。[docs/DESIGN.zh-CN.md](docs/DESIGN.zh-CN.md) 是控制台的设计规范：令牌、组件和通用模式，每项都写了取值、理由和守住它的测试。
 
 ## 平台
 
