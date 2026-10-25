@@ -106,6 +106,7 @@
   --editor-w: min(560px, calc(100vw - 32px));
   --add-card-min-h: 192px;
   --card-min: 220px;
+  --cards-per-row: 4;
   --card-min-catalog: 280px;
   --panel-min: 176px;
   --detail-log-max: 240px;
@@ -463,9 +464,11 @@ h1 {
 
 .empty { color: var(--muted); overflow-wrap: anywhere; }
 
+/* A column is never narrower than --card-min, nor than its share of a row of
+   --cards-per-row, so a wide window gets wider cards rather than more of them. */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(var(--card-min), 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(max(min(var(--card-min), 100%), (100% - (var(--cards-per-row) - 1) * var(--space-4)) / var(--cards-per-row)), 1fr));
   gap: var(--space-4);
   container-type: inline-size;
 }
