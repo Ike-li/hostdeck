@@ -141,6 +141,8 @@ card:
 
 Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`examples/`](examples) has complete plugins to copy, including one whose card and detail page come from a script. `examples/jobs` lists this user's loaded launchd jobs, leaving out Apple's and ordinary applications, or on Windows the services whose program is outside the Windows directory, and can restart a running one or run one that is not.
 
+On Windows, the jobs count includes warnings and errors. Restart is offered only for a startable running or paused service that accepts Stop. Paths are expanded and normalized before Windows system services are filtered out.
+
 The manifest format may still change before the first release.
 
 ## CLI for agents

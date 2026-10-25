@@ -63,7 +63,7 @@ Agreed in the M0 plan, 2026-10-22:
 - Chrome and Edge are tested; Firefox and Safari are best effort.
 - Size and memory: CI is to report them, and a budget is set after five runs on main.
 
-## Where the work stands (2026-10-24)
+## Where the work stands (2026-10-25)
 
 M0 slices S1 to S8 are merged, and after them the plugins page, reloading plugins as that page changes them, and embedding a web page by its address.
 
@@ -79,7 +79,7 @@ The UI/UX pass closed with S8: a skip link reaches the main content from the fir
 
 Overview rows now leave room for long names beside long status text, keeping both readable inside the card. A browser fixture checks both languages at 1280, 2964 and 520px.
 
-M1 has started. The built-in jobs plugin lists this user's loaded launchd jobs, or on Windows the services whose program is outside the Windows directory. The overview counts how many need attention, including warnings as well as errors on Windows. The detail page can restart a running one or run one that is not. Whole job names must pass the ASCII allowlist, including trailing newlines. Windows actions require a startable service; Restart additionally requires a running or paused state and AcceptStop, so disabled or transitional services cannot be stopped through Restart. The system domain is not listed. Failed or malformed launchd listings and failed individual reads report bilingual errors without invented counts or actions. Never-run jobs are idle; terminating signals remain visible and count as failures while the job is not running. The launchd JSON encoder preserves control characters and Unicode safely. Which process listens on which port, and Docker, are still ahead.
+M1 has started. The built-in jobs plugin lists this user's loaded launchd jobs, or on Windows the services whose program is outside the Windows directory. The overview counts how many need attention, including warnings as well as errors on Windows. The detail page can restart a running one or run one that is not. Whole job names must pass the ASCII allowlist, including trailing newlines. Windows actions require a startable service; Restart additionally requires a running or paused state and AcceptStop, so disabled or transitional services cannot be stopped through Restart. Windows program paths are expanded and normalized before filtering; unresolved paths are excluded, and the shared PowerShell helper keeps UTF-8 state text intact. The system domain is not listed. Failed or malformed launchd listings and failed individual reads report bilingual errors without invented counts or actions. Never-run jobs are idle; terminating signals remain visible and count as failures while the job is not running. The launchd JSON encoder preserves control characters and Unicode safely. Which process listens on which port, and Docker, are still ahead.
 
 Browser assertions now verify their triggering events, jobs UI fixtures require concrete rows and actions, and Windows jobs scripts have deterministic query and action coverage. Test fixtures release blocked readers on failure and concurrent-action tests have bounded waits. Windows jobs action errors bypass success-output suppression so failures are reported instead of appearing successful.
 

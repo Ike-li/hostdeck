@@ -176,6 +176,8 @@ The launchd JSON encoder escapes control characters as well as quotes and backsl
 
 The Windows attention count includes both failed and warning services, matching the rows shown on the card.
 
+Windows program paths expand environment variables, normalize SystemRoot/native prefixes and resolve dot segments before the Windows-directory filter. Unquoted executable paths retain spaces up to their executable suffix. Relative or unresolved paths are excluded rather than resolved against the console directory. Detail shows the configured executable path without exposing command arguments. The shared PowerShell helper carries a UTF-8 BOM so Windows PowerShell 5.1 preserves its state text.
+
 ## Platforms
 
 Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `dir_windows.go`) how process trees end (`internal/run/tree_unix.go`, `tree_windows.go`), and how a file is replaced (`internal/atomicfile/replace_unix.go`, `replace_windows.go`). Windows PowerShell 5.1 can take many seconds to start the first time. This is why cards may come back pending, and why detail programs get 30 s.
