@@ -166,17 +166,38 @@ func TestAnActionFinishesWhenItsRequestGoesAway(t *testing.T) {
 	p, ran := fakePlugin(t, items, "")
 	p.Actions.Exec.Command[1] = "slow-act"
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	canceled := make(chan struct{})
+	finished := make(chan struct{})
+	defer close(finished)
 	go func() {
+		deadline := time.NewTimer(10 * time.Second)
+		defer deadline.Stop()
+		tick := time.NewTicker(10 * time.Millisecond)
+		defer tick.Stop()
 		for {
 			if _, err := os.Stat(ran + ".started"); err == nil {
 				cancel()
+				close(canceled)
 				return
 			}
-			time.Sleep(10 * time.Millisecond)
+			select {
+			case <-finished:
+				return
+			case <-deadline.C:
+				cancel()
+				return
+			case <-tick.C:
+			}
 		}
 	}()
 
 	Act(ctx, p, "svc", "restart")
+	select {
+	case <-canceled:
+	default:
+		t.Fatal("the request never went away while its action was running")
+	}
 
 	if got, err := os.ReadFile(ran); err != nil || string(got) != "restart svc" {
 		t.Errorf("the action did not finish: %q, %v", got, err)
@@ -198,16 +219,25 @@ func TestConcurrentActionsWaitAndReReadBeforeRunning(t *testing.T) {
 		}
 		firstErr <- nil
 	}()
+	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if _, err := os.Stat(ran + ".read"); err == nil {
 			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the first action did not read the detail within 10s")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
 	_, secondErr := Act(context.Background(), p, "svc", "restart")
-	if got := <-firstErr; got != nil {
-		t.Fatalf("first action error = %v, want nil", *got)
+	select {
+	case got := <-firstErr:
+		if got != nil {
+			t.Fatalf("first action error = %v, want nil", *got)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first action did not finish within 10s")
 	}
 	if secondErr == nil || secondErr.Code != "not_offered" {
 		t.Errorf("second action error = %+v, want not_offered after first action changed state", secondErr)

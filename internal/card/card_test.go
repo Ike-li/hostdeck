@@ -282,14 +282,22 @@ func TestAShortEnvValueDoesNotCorruptOrdinaryErrorWords(t *testing.T) {
 func counting(t *testing.T, gate <-chan struct{}) (string, *atomic.Int32) {
 	t.Helper()
 	var hits atomic.Int32
+	stopped := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := hits.Add(1)
 		if gate != nil {
-			<-gate
+			select {
+			case <-gate:
+			case <-stopped:
+				return
+			case <-r.Context().Done():
+				return
+			}
 		}
 		fmt.Fprintf(w, `{"v": %d}`, n)
 	}))
 	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(stopped) })
 	return srv.URL, &hits
 }
 

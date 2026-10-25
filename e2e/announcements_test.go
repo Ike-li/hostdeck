@@ -64,7 +64,9 @@ func TestEveryResultIsAnnouncedOnceWithTheUrgencyItDeserves(t *testing.T) {
 // What it says about itself must not be said again each time.
 func TestTheCardCountIsAnnouncedOnceAndNotOnEveryRebuild(t *testing.T) {
 	var healthy atomic.Bool
+	var reads atomic.Int32
 	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads.Add(1)
 		if !healthy.Load() {
 			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
 			return
@@ -94,8 +96,19 @@ func TestTheCardCountIsAnnouncedOnceAndNotOnEveryRebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Three rebuilds at least: a card that failed is asked again every 2 s.
-	time.Sleep(7 * time.Second)
+	// Establish the repeated reads before checking their announcements. A
+	// broken retry loop must not make this negative assertion pass vacuously.
+	first := reads.Load()
+	deadline := time.Now().Add(12 * time.Second)
+	for reads.Load() < first+3 {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d retries, want at least three", reads.Load()-first)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#cards').getAttribute('aria-busy') === 'false'`)); err != nil {
+		t.Fatal(err)
+	}
 	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
  const region = document.getElementById('live-region');
  const box = region.getBoundingClientRect();

@@ -1,14 +1,17 @@
 package e2e
 
 import (
-	"strings"
+	"fmt"
+	"os"
+	"reflect"
 	"testing"
 
 	"github.com/chromedp/chromedp"
 )
 
 func TestTheJobsPageCountsAttentionAndOffersRestartOrRun(t *testing.T) {
-	url := startConsole(t, t.TempDir())
+	dir := t.TempDir()
+	url := startConsole(t, dir)
 	ctx := openBrowser(t, "zh-CN")
 	do(t, ctx,
 		chromedp.EmulateViewport(1280, 800),
@@ -20,6 +23,24 @@ func TestTheJobsPageCountsAttentionAndOffersRestartOrRun(t *testing.T) {
 		chromedp.Click(chromedp.CSS(add)),
 		chromedp.Click(chromedp.CSS(add)),
 		chromedp.WaitVisible(chromedp.CSS(`#nav .nav-item[data-id="jobs"]`)),
+	)
+	// Installation is real; the plugin program is a boundary fake so every
+	// runner has the same jobs without restarting any real service.
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePlugin(t, dir, "jobs", fmt.Sprintf(`schema: 1
+name: {en: Background jobs, zh-CN: 后台任务}
+card:
+  exec: {command: [%q, fake-plugin, jobs-card]}
+detail:
+  exec: {command: [%q, fake-plugin, jobs-detail]}
+actions:
+  exec: {command: [%q, fake-plugin, action]}
+`, exe, exe, exe))
+	cliCommand(t, 0, "plugin", "reload", "--url", url)
+	do(t, ctx,
 		chromedp.Click(chromedp.CSS(`#nav-overview`)),
 		chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="jobs"]`)),
 	)
@@ -31,7 +52,7 @@ func TestTheJobsPageCountsAttentionAndOffersRestartOrRun(t *testing.T) {
 	})()`)); err != nil {
 		t.Fatal(err)
 	}
-	if got := text(t, ctx, `#cards .card[data-id="jobs"]`); !strings.Contains(got, "需要处理") {
+	if got := text(t, ctx, `#cards .card[data-id="jobs"] .card-value`); got != "1" {
 		t.Fatalf("card %q, want how many jobs need attention", got)
 	}
 
@@ -58,26 +79,28 @@ func TestTheJobsPageCountsAttentionAndOffersRestartOrRun(t *testing.T) {
 	if alert != "" {
 		t.Fatalf("detail says %q", alert)
 	}
-	listed, err := chromedp.Run(ctx, chromedp.Evaluate[jobsPage](`({
-		names: [...document.querySelectorAll('#service .detail-name')].map((n) => n.textContent),
-		buttons: [...document.querySelectorAll('#service .detail-actions .btn.action')].map((b) => b.textContent),
-	})`))
+	listed, err := chromedp.Run(ctx, chromedp.Evaluate[[]jobRow](`
+ [...document.querySelectorAll('#service .detail-item')].map(row => ({
+   name: row.querySelector('.detail-name').textContent,
+   buttons: [...row.querySelectorAll('.detail-actions .btn.action')].map(b => b.textContent)
+ }))`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range listed.Names {
-		if strings.HasPrefix(name, "com.apple.") || strings.HasPrefix(name, "application.") {
-			t.Errorf("listed %q, want Apple's agents and ordinary applications left out", name)
-		}
-	}
-	for _, label := range listed.Buttons {
-		if label != "重启" && label != "运行" {
-			t.Errorf("button %q, want 重启 or 运行", label)
-		}
+	want := []jobRow{{"Running job", []string{"重启"}}, {"Idle job", []string{"运行"}}, {"Failed job", []string{"运行"}}}
+	if !reflect.DeepEqual(listed, want) {
+		t.Fatalf("jobs %+v, want %+v", listed, want)
 	}
 }
 
-type jobsPage struct {
-	Names   []string `json:"names"`
+type jobRow struct {
+	Name    string   `json:"name"`
 	Buttons []string `json:"buttons"`
 }
+
+const jobsCard = `{"status":"error","value":"1","label":{"en":"need attention","zh-CN":"需要处理"}}`
+const jobsDetail = `{"items":[
+ {"id":"running","name":"Running job","status":"ok","actions":[{"id":"restart","label":{"en":"Restart","zh-CN":"重启"}}]},
+ {"id":"idle","name":"Idle job","status":"ok","actions":[{"id":"start","label":{"en":"Run","zh-CN":"运行"}}]},
+ {"id":"failed","name":"Failed job","status":"error","actions":[{"id":"start","label":{"en":"Run","zh-CN":"运行"}}]}
+]}`

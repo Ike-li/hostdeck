@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 )
@@ -203,6 +204,8 @@ func TestTheServiceToolbarKeepsThePageWhenItsMorePanelCloses(t *testing.T) {
 	do(t, ctx, chromedp.Navigate(url+"#/b"), chromedp.WaitVisible(chromedp.CSS(`#service-name`)))
 	collectStates(t, ctx)
 	before := serviceState(t, ctx, origin, siteState.full)
+	navigations, stopWatching := chromedp.FromContext(ctx).Target.Subscribe(cdppage.FrameStartedLoading.Method)
+	defer stopWatching()
 	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('#service-clear').getClientRects().length === 0 && !!document.querySelector('#service-more .more-trigger') && document.querySelector('#service-reload').getBoundingClientRect().height >= 44`))
 	if err != nil || !got {
 		t.Fatalf("want a visible refresh control and cache clearing inside More: %v %v", got, err)
@@ -213,6 +216,16 @@ func TestTheServiceToolbarKeepsThePageWhenItsMorePanelCloses(t *testing.T) {
 		t.Fatalf("the first clear click should show its explanation and keep the panel open: %v %v", got, err)
 	}
 	do(t, ctx, chromedp.KeyEvent(kb.Escape), chromedp.Click(chromedp.CSS(`[data-lang="zh-CN"]`)))
+	// A cached postMessage cannot prove the live frame stayed on its page.
+	// Observe navigation starts even when the replacement page is still loading.
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === 'zh-CN'`)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-navigations:
+		t.Fatal("console interaction started a frame navigation")
+	default:
+	}
 	after := serviceState(t, ctx, origin, siteState.full)
 	if after.Nonce != before.Nonce || after.Page != before.Page {
 		t.Fatalf("toolbar or language interaction reloaded the embedded page: before %+v after %+v", before, after)

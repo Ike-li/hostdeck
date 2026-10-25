@@ -717,7 +717,12 @@ func TestTheJobsRestartOnWindowsStopsThenStartsTheService(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	p := load(t, "jobs")
 
-	out, err := run.Output(context.Background(), p.Dir, append(p.Actions.Exec.Args(), "restart", "ExampleService"))
+	runAction := func(action, name string) ([]byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return run.Output(ctx, p.Dir, append(p.Actions.Exec.Args(), action, name))
+	}
+	out, err := runAction("restart", "ExampleService")
 	if err != nil || len(bytesTrim(out)) != 0 {
 		t.Fatalf("output %q, error %v; want a quiet success", out, err)
 	}
@@ -732,7 +737,7 @@ func TestTheJobsRestartOnWindowsStopsThenStartsTheService(t *testing.T) {
 	if err := os.WriteFile(record, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, err = run.Output(context.Background(), p.Dir, append(p.Actions.Exec.Args(), "start", "ExampleService"))
+	out, err = runAction("start", "ExampleService")
 	if err != nil || len(bytesTrim(out)) != 0 {
 		t.Fatalf("start output %q, error %v", out, err)
 	}
@@ -742,6 +747,53 @@ func TestTheJobsRestartOnWindowsStopsThenStartsTheService(t *testing.T) {
 	}
 	if string(got) != "start ExampleService\n" {
 		t.Errorf("sc.exe calls:\n%s", got)
+	}
+	for _, action := range []string{"start", "restart"} {
+		t.Run(action+" failure", func(t *testing.T) {
+			t.Setenv("JOBS_SC_FAIL", "1")
+			out, err := runAction(action, "ExampleService")
+			if err != nil || !strings.Contains(string(out), "Access is denied") {
+				t.Fatalf("output %s, error %v", out, err)
+			}
+			var result struct {
+				Error plugin.Text `json:"error"`
+			}
+			if err := run.Decode(out, &result); err != nil || result.Error.ByLang["en"] == "" || result.Error.ByLang["zh-CN"] == "" {
+				t.Fatalf("reported error %+v: %v", result, err)
+			}
+		})
+	}
+	for _, tc := range []struct{ action, name string }{{"start", "unsafe/name"}, {"delete", "ExampleService"}} {
+		if err := os.WriteFile(record, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runAction(tc.action, tc.name)
+		if tc.action == "start" && (err != nil || !strings.Contains(string(out), "cannot be passed")) {
+			t.Fatalf("refusal %s: %v", out, err)
+		}
+		if tc.action == "delete" && err == nil {
+			t.Fatal("unknown action succeeded")
+		}
+		if got, err := os.ReadFile(record); err != nil || len(got) != 0 {
+			t.Fatalf("refused action called sc.exe: %s %v", got, err)
+		}
+	}
+	// Advance only the OS clock boundary so the shipped 15-second timeout
+	// branch is exercised without waiting 15 seconds on every runner.
+	scriptPath, err := filepath.Abs(filepath.Join("jobs", "action.ps1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(t.TempDir(), "timeout.ps1")
+	body := "$script:clock = [datetime]'2026-01-01T00:00:00Z'\nfunction Get-Date { $script:clock = $script:clock.AddSeconds(20); return $script:clock }\n. '" + strings.ReplaceAll(scriptPath, "'", "''") + "' @args\n"
+	if err := os.WriteFile(wrapper, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p.Actions.Exec.Windows = []string{"powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", wrapper}
+	t.Setenv("JOBS_SC_PENDING", "1")
+	out, err = runAction("restart", "ExampleService")
+	if err != nil || !strings.Contains(string(out), "did not stop within 15 seconds") {
+		t.Fatalf("timeout output %s, error %v", out, err)
 	}
 }
 
@@ -764,8 +816,12 @@ func main() {
 	}
 	fmt.Fprintln(f, strings.Join(os.Args[1:], " "))
 	f.Close()
+	if os.Getenv("JOBS_SC_FAIL") == "1" {
+		fmt.Println("Access is denied")
+		os.Exit(5)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "query" {
-		fmt.Println("        STATE              : 1  STOPPED")
+		if os.Getenv("JOBS_SC_PENDING") == "1" { fmt.Println("        STATE              : 4  RUNNING") } else { fmt.Println("        STATE              : 1  STOPPED") }
 	}
 }
 `

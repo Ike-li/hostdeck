@@ -488,11 +488,25 @@ func collectStates(t *testing.T, ctx context.Context) {
 // serviceState waits until the service at origin reports a state that ok
 // accepts, and returns it.
 func serviceState(t *testing.T, ctx context.Context, origin string, ok func(siteState) bool) siteState {
+	return serviceStateSince(t, ctx, origin, 0, ok)
+}
+
+// stateCursor marks the messages already received before a navigation.
+func stateCursor(t *testing.T, ctx context.Context) int {
+	t.Helper()
+	n, err := chromedp.Run(ctx, chromedp.Evaluate[int](`reported.length`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func serviceStateSince(t *testing.T, ctx context.Context, origin string, cursor int, ok func(siteState) bool) siteState {
 	t.Helper()
 	var last siteState
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		states, err := chromedp.Run(ctx, chromedp.Evaluate[[]siteState](fmt.Sprintf(`reported.filter(r => r.origin === %q).map(r => r.state)`, origin)))
+		states, err := chromedp.Run(ctx, chromedp.Evaluate[[]siteState](fmt.Sprintf(`reported.slice(%d).filter(r => r.origin === %q).map(r => r.state)`, cursor, origin)))
 		if err == nil && len(states) > 0 {
 			if last = states[len(states)-1]; ok(last) {
 				return last
@@ -567,12 +581,13 @@ func TestClearingCacheEmptiesOneServiceAndKeepsCookies(t *testing.T) {
 		t.Errorf("the console's own storage holds %q (%v), want the language kept", lang, err)
 	}
 	// The console routes on hashchange, which comes after the click returns.
+	cursor := stateCursor(t, ctx)
 	do(t, ctx,
 		chromedp.Click(chromedp.CSS(`.nav-item[data-id="c"]`)),
 		chromedp.WaitVisible(chromedp.Search(`//h1[@id="service-name" and text()="C"]`)),
 		chromedp.Click(chromedp.CSS("#service-reload")),
 	)
-	if s := serviceState(t, ctx, c, func(s siteState) bool { return s.Page == "" }); !s.full() {
+	if s := serviceStateSince(t, ctx, c, cursor, func(s siteState) bool { return s.Page == "" }); !s.full() {
 		t.Errorf("another service lost its data: %+v", s)
 	}
 }
@@ -603,6 +618,10 @@ func TestTheDiskExampleShowsItsStatusAndRows(t *testing.T) {
 // its arguments in $HOSTDECK_E2E_RAN and prints a message.
 func fakePlugin(args []string) {
 	switch args[0] {
+	case "jobs-card":
+		fmt.Print(jobsCard)
+	case "jobs-detail":
+		fmt.Print(jobsDetail)
 	case "detail-long":
 		json.NewEncoder(os.Stdout).Encode(map[string]any{"items": []any{map[string]any{
 			"id": "long", "name": map[string]string{"en": "A local service with a long descriptive name", "zh-CN": "一个有很长名称的本机后台服务"},
