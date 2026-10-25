@@ -157,14 +157,19 @@ func (e *entry) card(targets []string, now time.Time) any {
 			continue
 		}
 		base, latest, compared := baseline(scans)
-		if _, known := difference(base, latest, "."); (compared && !known) || now.Sub(latest.Time) > 2*interval {
+		// An old reading is only a problem while hourly tracking should have
+		// replaced it.
+		if _, known := difference(base, latest, "."); (compared && !known) || (e.state.Tracking && now.Sub(latest.Time) > 2*interval) {
 			status = "warn"
 		}
 		if i != 0 {
 			continue
 		}
 		value = size(latest.Sizes["."].Bytes)
-		label = text("Disk space used · scan again to see changes", "占用空间 · 再次扫描后显示变化")
+		label = text("Scanned once · start hourly tracking to see changes", "已扫描 1 次 · 开启每小时跟踪后显示变化")
+		if e.state.Tracking {
+			label = text("Scanned once · the next hourly scan shows changes", "已扫描 1 次 · 下次每小时扫描后显示变化")
+		}
 		if compared {
 			if d, ok := difference(base, latest, "."); ok {
 				value = delta(d)
