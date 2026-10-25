@@ -139,7 +139,7 @@ card:
 - `${env:NAME}` works in `url` and `headers`. The value is sent to the service, and shows as `***` in any error on the card. hostdeck must be started with the variable set.
 - A plugin whose `plugin.yaml` has a mistake shows up as an error card that says what is wrong; the other plugins still load.
 
-Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`examples/`](examples) has complete plugins to copy, including one whose card and detail page come from a script.
+Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`examples/`](examples) has complete plugins to copy, including one whose card and detail page come from a script. `examples/jobs` lists this user's loaded launchd jobs, leaving out Apple's and ordinary applications, or on Windows the services whose program is outside the Windows directory, and can restart a running one or run one that is not.
 
 The manifest format may still change before the first release.
 

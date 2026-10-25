@@ -139,7 +139,7 @@ card:
 - `url` 和 `headers` 里可以写 `${env:NAME}`。它的值会发给服务，卡片上的报错里只显示成 `***`。启动 hostdeck 时这个环境变量必须已经设置。
 - 某个插件的 `plugin.yaml` 写错了，它会显示成一张写明哪里错了的错误卡片，其他插件照常加载。
 
-路径的写法见 [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md)。[`examples/`](examples) 里有可以直接复制的完整插件，其中一个的卡片和详情页由脚本生成。
+路径的写法见 [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md)。[`examples/`](examples) 里有可以直接复制的完整插件，其中一个的卡片和详情页由脚本生成。`examples/jobs` 列出当前用户已加载的 launchd 任务，不含 Apple 自己的，也不含普通应用；在 Windows 上则是程序不在 Windows 目录里的服务。正在运行的可以重启，没在运行的可以运行。
 
 发布第一个版本之前，清单格式还可能变。
 

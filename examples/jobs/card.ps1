@@ -6,35 +6,7 @@
 # without one in the system's code page, which would garble the Chinese below.
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-
-function Get-ServiceProgram([string]$pathName) {
-	$s = $pathName.Trim()
-	if ($s.StartsWith('"')) {
-		$end = $s.IndexOf('"', 1)
-		if ($end -lt 0) { return $s.Trim('"') }
-		return $s.Substring(1, $end - 1)
-	}
-	$space = $s.IndexOf(' ')
-	if ($space -lt 0) { return $s }
-	return $s.Substring(0, $space)
-}
-
-function Test-OutsideWindows([string]$pathName) {
-	if ([string]::IsNullOrWhiteSpace($pathName)) { return $false }
-	$program = Get-ServiceProgram $pathName
-	if ([string]::IsNullOrWhiteSpace($program)) { return $false }
-	$root = $env:SystemRoot
-	if ([string]::IsNullOrWhiteSpace($root)) { $root = 'C:\Windows' }
-	try {
-		$full = [System.IO.Path]::GetFullPath($program)
-		$rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd('\')
-	} catch {
-		return $false
-	}
-	$cmp = [StringComparison]::OrdinalIgnoreCase
-	if ($full.Equals($rootFull, $cmp)) { return $false }
-	return -not $full.StartsWith($rootFull + '\', $cmp)
-}
+. "$PSScriptRoot\jobs.ps1"
 
 try {
 	$services = @(Get-CimInstance -ClassName Win32_Service -ErrorAction Stop)
@@ -49,28 +21,12 @@ try {
 $errors = 0
 $warns = 0
 $pieces = New-Object System.Collections.Generic.List[string]
-foreach ($svc in $services) {
-	if (-not (Test-OutsideWindows $svc.PathName)) { continue }
-	$status = 'ok'
-	$text = ''
-	switch ($svc.State) {
-		'Running' { $status = 'ok' }
-		'Stopped' {
-			switch ($svc.StartMode) {
-				'Disabled' { $status = 'ok' }
-				'Manual' { $status = 'ok' }
-				default { $status = 'error'; $text = "Stopped · $($svc.StartMode)" }
-			}
-		}
-		default { $status = 'warn'; $text = [string]$svc.State }
-	}
-	if ($status -eq 'ok') { continue }
-	if ($status -eq 'error') { $errors++ } else { $warns++ }
-	$name = $svc.DisplayName
-	if ([string]::IsNullOrWhiteSpace($name)) { $name = $svc.Name }
-	$nameJson = $name | ConvertTo-Json -Compress
-	$textJson = $text | ConvertTo-Json -Compress
-	$pieces.Add("{`"name`":$nameJson,`"value`":$textJson,`"status`":`"$status`"}")
+foreach ($job in @(Get-IncludedServices $services)) {
+	if ($job.Status -eq 'ok') { continue }
+	if ($job.Status -eq 'error') { $errors++ } else { $warns++ }
+	$nameJson = $job.Name | ConvertTo-Json -Compress
+	$textJson = $job.Value | ConvertTo-Json -Compress
+	$pieces.Add("{`"name`":$nameJson,`"value`":$textJson,`"status`":`"$($job.Status)`"}")
 }
 
 $cardStatus = if ($errors -gt 0) { 'error' } elseif ($warns -gt 0) { 'warn' } else { 'ok' }

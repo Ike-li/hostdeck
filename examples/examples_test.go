@@ -5,12 +5,15 @@ package examples
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -23,6 +26,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/catalog"
 	"github.com/Ike-li/hostdeck/internal/detail"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/run"
 )
 
 const apiKey = "key-from-the-syncthing-settings"
@@ -491,3 +495,277 @@ func TestTheJobsExampleReadsThisMachinesJobs(t *testing.T) {
 		t.Errorf("label %+v", v.Label)
 	}
 }
+
+func TestTheJobsDetailListsLoadedJobsAndTheActionEachOneOffers(t *testing.T) {
+	withLaunchctl(t, `#!/bin/sh
+uid=$(id -u)
+case "$2" in
+"gui/$uid")
+cat <<'EOF'
+	services = {
+		10       - 	com.example.running
+		0        0 	com.example.idle
+		0        1 	com.example.failed
+		0        0 	com.example/evil
+		1        0 	com.apple.Finder
+		2        - 	application.com.example.App
+	}
+EOF
+;;
+"gui/$uid/com.example.running")
+printf '%s\n' '	state = running' '	last exit code = 255' '	program = /usr/bin/ssh' '	runs = 4' '	stdout path = /tmp/running.log' ;;
+"gui/$uid/com.example.idle")
+printf '%s\n' '	state = not running' '	last exit code = 0' '	program = /bin/true' '	runs = 1' ;;
+"gui/$uid/com.example.failed")
+printf '%s\n' '	state = not running' '	last exit code = 1' '	program = /bin/false' ;;
+"gui/$uid/com.example/evil")
+printf '%s\n' '	state = not running' '	last exit code = 0' '	program = /bin/echo' ;;
+*) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+`)
+
+	v := detail.Read(context.Background(), load(t, "jobs"))
+
+	if v.Error != nil {
+		t.Fatalf("error: %+v", v.Error)
+	}
+	var ids []string
+	for _, it := range v.Items {
+		ids = append(ids, it.ID)
+	}
+	want := []string{"com.example.running", "com.example.idle", "com.example.failed", "com.example/evil"}
+	if !slices.Equal(ids, want) {
+		t.Fatalf("items %q, want %q", ids, want)
+	}
+	running, idle, failed, evil := v.Items[0], v.Items[1], v.Items[2], v.Items[3]
+	if running.Status != "ok" || running.Value != "running" || len(running.Actions) != 1 || running.Actions[0].ID != "restart" || running.Actions[0].Label.ByLang["zh-CN"] != "重启" {
+		t.Errorf("running %+v, want a restart", running)
+	}
+	if idle.Status != "ok" || idle.Value != "idle" || len(idle.Actions) != 1 || idle.Actions[0].ID != "start" || idle.Actions[0].Label.ByLang["en"] != "Run" {
+		t.Errorf("idle %+v, want a run", idle)
+	}
+	if failed.Status != "error" || failed.Value != "not running · exit 1" || len(failed.Actions) != 1 || failed.Actions[0].ID != "start" {
+		t.Errorf("failed %+v, want it started", failed)
+	}
+	if len(evil.Actions) != 0 {
+		t.Errorf("actions %+v, want none for a name that could point at another job", evil.Actions)
+	}
+	if !slices.ContainsFunc(running.Fields, func(f detail.Field) bool {
+		return f.Name.ByLang["zh-CN"] == "程序" && f.Value == "/usr/bin/ssh"
+	}) || !slices.ContainsFunc(running.Fields, func(f detail.Field) bool {
+		return f.Name.ByLang["zh-CN"] == "上次退出" && f.Value == "255"
+	}) || !slices.ContainsFunc(running.Fields, func(f detail.Field) bool {
+		return f.Name.ByLang["zh-CN"] == "运行次数" && f.Value == "4"
+	}) || !slices.ContainsFunc(running.Fields, func(f detail.Field) bool {
+		return f.Name.ByLang["zh-CN"] == "标准输出" && f.Value == "/tmp/running.log"
+	}) {
+		t.Errorf("fields %+v, want the program, last exit, runs and stdout path", running.Fields)
+	}
+}
+
+func jobsCalls(t *testing.T) string {
+	t.Helper()
+	record := filepath.Join(t.TempDir(), "calls")
+	withLaunchctl(t, fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %q
+uid=$(id -u)
+case "$1" in
+kickstart)
+	if [ "${JOBS_KICK_FAIL:-}" = 1 ]; then echo "Operation not permitted" >&2; exit 1; fi
+	exit 0 ;;
+esac
+case "$2" in
+"gui/$uid")
+	printf '%%s\n' '	services = {' '		10       - 	com.example.running' '		0        0 	com.example.idle' '	}' ;;
+"gui/$uid/com.example.running")
+	printf '%%s\n' '	state = running' '	last exit code = 0' '	program = /usr/bin/ssh' ;;
+"gui/$uid/com.example.idle")
+	printf '%%s\n' '	state = not running' '	last exit code = 0' '	program = /bin/true' ;;
+*) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+`, record))
+	return record
+}
+
+func TestTheJobsRestartKicksTheRunningJob(t *testing.T) {
+	record := jobsCalls(t)
+
+	msg, err := detail.Act(context.Background(), load(t, "jobs"), "com.example.running", "restart")
+
+	if err != nil || !msg.IsZero() {
+		t.Fatalf("message %+v, error %+v; want a quiet success", msg, err)
+	}
+	got, readErr := os.ReadFile(record)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	uid := strconv.Itoa(os.Getuid())
+	want := "kickstart -k gui/" + uid + "/com.example.running\n"
+	if !strings.Contains(string(got), want) {
+		t.Errorf("launchctl calls:\n%s\nwant a line %q", got, want)
+	}
+	if strings.Contains(string(got), "kickstart gui/") {
+		t.Errorf("launchctl calls:\n%s\nrestart must pass -k", got)
+	}
+}
+
+func TestTheJobsStartRunsAnIdleJobWithoutKillingIt(t *testing.T) {
+	record := jobsCalls(t)
+
+	msg, err := detail.Act(context.Background(), load(t, "jobs"), "com.example.idle", "start")
+
+	if err != nil || !msg.IsZero() {
+		t.Fatalf("message %+v, error %+v; want a quiet success", msg, err)
+	}
+	got, readErr := os.ReadFile(record)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	uid := strconv.Itoa(os.Getuid())
+	if !strings.Contains(string(got), "kickstart gui/"+uid+"/com.example.idle\n") || strings.Contains(string(got), "kickstart -k") {
+		t.Errorf("launchctl calls:\n%s\nwant kickstart without -k", got)
+	}
+}
+
+func TestTheJobsActionReportsTheLaunchctlError(t *testing.T) {
+	t.Setenv("JOBS_KICK_FAIL", "1")
+	jobsCalls(t)
+
+	_, err := detail.Act(context.Background(), load(t, "jobs"), "com.example.running", "restart")
+
+	if err == nil || err.Code != "reported" || !strings.Contains(err.Text.ByLang["en"], "Operation not permitted") || !strings.Contains(err.Text.ByLang["zh-CN"], "Operation not permitted") {
+		t.Fatalf("error %+v, want the launchctl line in both languages", err)
+	}
+}
+
+func TestTheJobsActionRefusesANameThatCouldPointSomewhereElse(t *testing.T) {
+	record := filepath.Join(t.TempDir(), "calls")
+	withLaunchctl(t, fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nexit 1\n", record))
+
+	out, err := run.Output(context.Background(), load(t, "jobs").Dir, append(load(t, "jobs").Actions.Exec.Args(), "restart", "com.example/evil"))
+
+	if err != nil {
+		t.Fatalf("output %q, error %v; want the refusal on stdout", out, err)
+	}
+	if !strings.Contains(string(out), "cannot be passed to launchctl") || !strings.Contains(string(out), "不能传给 launchctl") {
+		t.Errorf("output %s", out)
+	}
+	if _, statErr := os.Stat(record); !os.IsNotExist(statErr) {
+		got, _ := os.ReadFile(record)
+		t.Errorf("launchctl was called:\n%s", got)
+	}
+}
+
+func TestTheJobsActionRejectsAnUnknownActionBeforeCallingLaunchctl(t *testing.T) {
+	record := filepath.Join(t.TempDir(), "calls")
+	withLaunchctl(t, fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nexit 1\n", record))
+
+	_, err := run.Output(context.Background(), load(t, "jobs").Dir, append(load(t, "jobs").Actions.Exec.Args(), "nope", "com.example.running"))
+
+	var exit *run.ExitError
+	if !errors.As(err, &exit) || exit.Code != 2 {
+		t.Fatalf("error %v, want exit 2", err)
+	}
+	if _, statErr := os.Stat(record); !os.IsNotExist(statErr) {
+		got, _ := os.ReadFile(record)
+		t.Errorf("launchctl was called:\n%s", got)
+	}
+}
+
+func TestTheJobsExampleListsThisMachinesJobs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	v := detail.Read(ctx, load(t, "jobs"))
+
+	if v.Error != nil {
+		t.Fatalf("error: %+v", v.Error)
+	}
+	seen := map[string]bool{}
+	for _, it := range v.Items {
+		if it.ID == "" || seen[it.ID] || !slices.Contains([]string{"ok", "warn", "error"}, it.Status) {
+			t.Errorf("item %+v, want a unique id and a status", it)
+		}
+		seen[it.ID] = true
+		if strings.HasPrefix(it.ID, "com.apple.") || strings.HasPrefix(it.ID, "application.") {
+			t.Errorf("item %s, want Apple's agents and ordinary applications left out", it.ID)
+		}
+		for _, a := range it.Actions {
+			if a.ID != "start" && a.ID != "restart" {
+				t.Errorf("item %s action %s, want start or restart", it.ID, a.ID)
+			}
+		}
+	}
+}
+
+func TestTheJobsRestartOnWindowsStopsThenStartsTheService(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the macOS script calls launchctl")
+	}
+	record := filepath.Join(t.TempDir(), "calls")
+	bin := t.TempDir()
+	src := filepath.Join(t.TempDir(), "sc.go")
+	if err := os.WriteFile(src, []byte(windowsSC), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "build", "-o", filepath.Join(bin, "sc.exe"), src)
+	cmd.Env = append(os.Environ(), "GOOS=windows")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build sc.exe: %v\n%s", err, out)
+	}
+	t.Setenv("JOBS_SC_RECORD", record)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	p := load(t, "jobs")
+
+	out, err := run.Output(context.Background(), p.Dir, append(p.Actions.Exec.Args(), "restart", "ExampleService"))
+	if err != nil || len(bytesTrim(out)) != 0 {
+		t.Fatalf("output %q, error %v; want a quiet success", out, err)
+	}
+	got, readErr := os.ReadFile(record)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != "stop ExampleService\nquery ExampleService\nstart ExampleService\n" {
+		t.Errorf("sc.exe calls:\n%s", got)
+	}
+
+	if err := os.WriteFile(record, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err = run.Output(context.Background(), p.Dir, append(p.Actions.Exec.Args(), "start", "ExampleService"))
+	if err != nil || len(bytesTrim(out)) != 0 {
+		t.Fatalf("start output %q, error %v", out, err)
+	}
+	got, readErr = os.ReadFile(record)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != "start ExampleService\n" {
+		t.Errorf("sc.exe calls:\n%s", got)
+	}
+}
+
+func bytesTrim(b []byte) []byte { return []byte(strings.TrimSpace(string(b))) }
+
+// windowsSC is a stand-in for sc.exe. It records its arguments and answers a
+// query with STOPPED so a restart does not wait.
+const windowsSC = `package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+func main() {
+	f, err := os.OpenFile(os.Getenv("JOBS_SC_RECORD"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		os.Exit(3)
+	}
+	fmt.Fprintln(f, strings.Join(os.Args[1:], " "))
+	f.Close()
+	if len(os.Args) > 1 && os.Args[1] == "query" {
+		fmt.Println("        STATE              : 1  STOPPED")
+	}
+}
+`
