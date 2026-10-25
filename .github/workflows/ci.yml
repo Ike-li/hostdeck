@@ -1,9 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  # main moves by fast-forward only, so a push there repeats what its PR ran.
+  # A nightly run still looks for flaky tests without taking the five macOS
+  # runners an account gets at once away from the next PR.
+  schedule:
+    - cron: "17 22 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,11 +17,82 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  # macOS does these in one job, leaving four of its five runners to the
+  # browser shards. Windows has runners to spare and splits them.
+  checks:
+    name: ${{ matrix.part }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, part: checks, race: true, unit: true }
+          - { os: windows-latest, part: race, race: true }
+          - { os: windows-latest, part: unit, unit: true }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        id: go
+        with:
+          # A release the runner image already holds; go.mod's exact 1.26.0 is
+          # downloaded and copied into the tool cache on every job.
+          go-version: 1.26.x
+          # setup-go saves one cache, from whichever job ends first, and the
+          # other kinds of job rebuild what it lacks. Each kind keeps its own.
+          cache: false
+      - name: Go cache folders
+        id: go-cache
+        shell: bash
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.modules }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ matrix.part }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ matrix.part }}-
+      - name: gofmt
+        if: matrix.race
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
+      - if: matrix.race
+        run: go vet ./...
+      - name: core race checks
+        if: matrix.race
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/core
+          go test -race -short -count=1 -json -timeout=8m . ./internal/... ./web | tee test-results/core/tests.jsonl
+      - name: all tests outside the browser suite
+        if: matrix.unit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/unit
+          packages=$(go list ./... | grep -v '/e2e$')
+          go test -count=1 -json -timeout=8m $packages | tee test-results/unit/tests.jsonl
+      - name: test timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.part }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  browsers:
+    name: browsers ${{ matrix.shard }}/4 (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
+        shard: [1, 2, 3, 4]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -26,21 +101,33 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
+        id: go
         with:
-          go-version-file: go.mod
-      - name: gofmt
+          go-version: 1.26.x
+          cache: false
+      - name: Go cache folders
+        id: go-cache
         shell: bash
         run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
-      - run: go vet ./...
-      - name: core race checks
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.modules }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-browsers-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-browsers-
+      - name: this shard's tests
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p test-results/core
-          go test -race -short -count=1 -json -timeout=8m . ./internal/... ./web | tee test-results/core/tests.jsonl
-      - name: all tests in Chrome
+          # Every fourth test in the package's list, so each test runs in
+          # exactly one of the four shards, including tests added later.
+          tests=$(go test -short -list . ./e2e/ | grep '^Test' | awk -v n=4 -v k=${{ matrix.shard }} 'NR % n == k % n' | paste -sd '|' -)
+          if [ -z "$tests" ]; then echo "shard ${{ matrix.shard }} has no tests"; exit 1; fi
+          echo "E2E_RUN=^($tests)\$" >> "$GITHUB_ENV"
+      - name: Chrome
         shell: bash
         env:
           HOSTDECK_ARTIFACT_DIR: ${{ github.workspace }}/test-results/chrome
@@ -52,8 +139,8 @@ jobs:
           else
             export HOSTDECK_BROWSER='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
           fi
-          go test -count=1 -json -timeout=8m ./... | tee test-results/chrome/tests.jsonl
-      - name: browser tests in Edge
+          go test -count=1 -json -timeout=8m -run "$E2E_RUN" ./e2e/ | tee test-results/chrome/tests.jsonl
+      - name: Edge
         shell: bash
         env:
           HOSTDECK_ARTIFACT_DIR: ${{ github.workspace }}/test-results/edge
@@ -65,12 +152,12 @@ jobs:
           else
             export HOSTDECK_BROWSER='/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
           fi
-          go test -count=1 -json -timeout=8m ./e2e/ | tee test-results/edge/tests.jsonl
+          go test -count=1 -json -timeout=8m -run "$E2E_RUN" ./e2e/ | tee test-results/edge/tests.jsonl
       - name: test timings and failure artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{ matrix.os }}
+          name: test-results-${{ matrix.os }}-browsers-${{ matrix.shard }}
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7

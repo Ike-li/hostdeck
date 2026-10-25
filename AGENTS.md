@@ -47,7 +47,7 @@ The owner approved this flow for every finished slice, without asking each time:
 
    Before pushing, `git log --format='%ad | %cd' --date=iso` shows `+0000` on every new commit.
 2. Push the branch; `gh pr create --fill`.
-3. Wait until `gh pr checks <n>` shows every check `pass` and none `pending`: `test (macos-latest)`, `test (windows-latest)`, `archives`. Fix red CI on the branch.
+3. Wait until `gh pr checks <n>` shows every check `pass` and none `pending`: `checks (macos-latest)`, `race (windows-latest)`, `unit (windows-latest)`, `browsers 1/4` to `browsers 4/4` on each system, and `archives`. Fix red CI on the branch.
 4. Run `git checkout main && git merge --ff-only <branch> && git push origin main` under `set -euo pipefail`, with no pipe after a git command. Once `gh pr view <n> --json state` says `MERGED`, delete the branch locally and on origin. Merge by fast-forward on this machine only, never by GitHub's merge buttons, so the UTC dates and trailers stay as written.
 
 Decisions live in the commit trailers, and `git log` is the design history. Add no decision files.
@@ -87,7 +87,7 @@ Browser suites now share one process while disposing an isolated browser context
 
 Timer-heavy browser tests now advance a network-aware DevTools virtual clock, including exact notice and confirmation boundaries. Layout-notice cases wait for the first card reading before freezing the browser scheduler, rather than treating sidebar visibility as completed startup. Waiting for a timer lets the paused clock run a microsecond at a time, because paused virtual time holds back a promise resolution Blink defers, which had left the layout-notice case waiting for a save's answer on slower runners. Product durations stay unchanged. Real-clock notice expiry, browser cache clearing/history restoration, motion and the backend pending-card boundary remain covered; the slow-card server is released by a gate.
 
-Fast checks now use go test -short ./... without building the console, starting browsers or reading real machine jobs/disks. Full acceptance explicitly disables the Go test-result cache because the child-built executable is outside the E2E dependency graph. CI selects Chrome and Edge explicitly on both systems, runs core race checks, keeps per-test JSON timings and failure HTML/PNG/console artifacts, bounds runs and cancels superseded PR checks.
+Fast checks now use go test -short ./... without building the console, starting browsers or reading real machine jobs/disks. Full acceptance explicitly disables the Go test-result cache because the child-built executable is outside the E2E dependency graph. CI selects Chrome and Edge explicitly on both systems, runs core race checks, keeps per-test JSON timings and failure HTML/PNG/console artifacts, bounds runs and cancels superseded PR checks. It runs for pull requests, nightly on main and on demand, not on pushes to main. Each system splits the browser suite into four shards that each run every fourth test in Chrome and then Edge; macOS keeps gofmt, vet, race and the other tests in a fifth job, the most macOS jobs an account runs at once.
 
 The overview now offers Reset layout only for nonempty saved layout preferences. Visibility follows successful loads/saves, undo and failed-save recovery without rebuilding cards; a focused reset control moves focus to Refresh when it disappears. Both languages and 1280/768/520px are covered.
 
