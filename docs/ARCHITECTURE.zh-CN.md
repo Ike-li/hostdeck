@@ -172,6 +172,8 @@ Tab 顺序上的第一项是一个跳到主要内容的链接：它是页面的�
 
 正在运行的任务不受上次退出结果影响。从未运行的任务视为空闲；未运行且上次由信号终止的任务会提示异常，并在详情字段中保留该信号。
 
+launchd 的 JSON 编码会转义控制字符、引号和反斜杠，保留 Unicode 与路径内容，避免一条路径使整个详情响应失效。
+
 ## 平台
 
 平台相关的代码用 build tag 分开：默认文件夹（`dir_unix.go`、`dir_windows.go`），结束进程树的方式（`internal/run/tree_unix.go`、`tree_windows.go`），以及替换文件的方式（`internal/atomicfile/replace_unix.go`、`replace_windows.go`）。Windows PowerShell 5.1 第一次启动可能要好几秒，所以卡片可能先显示「读取中」，详情程序的时限也定为 30 秒。

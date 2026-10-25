@@ -31,7 +31,20 @@ jobs_error() {
 }
 
 jobs_escape() {
-	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+	# The sentinel preserves trailing newlines through awk's record splitting.
+	printf '%s_' "$1" | LC_ALL=C awk '
+		BEGIN { for (i = 1; i < 32; i++) escaped[sprintf("%c", i)] = sprintf("\\u%04x", i) }
+		{ text = text (NR > 1 ? "\n" : "") $0 }
+		END {
+			for (i = 1; i < length(text); i++) {
+				c = substr(text, i, 1)
+				if (c == "\\") printf "\\\\"
+				else if (c == "\"") printf "\\\""
+				else if (c in escaped) printf "%s", escaped[c]
+				else printf "%s", c
+			}
+		}
+	'
 }
 
 # jobs_read sets jobs_state, jobs_code, jobs_signal, jobs_program, jobs_runs and jobs_stdout.
