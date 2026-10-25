@@ -102,7 +102,6 @@
   --sidebar-w: 240px;
   --drawer-w: min(280px, 88vw);
   --topbar-h: 48px;
-  --content-max: 1440px;
   --editor-w: min(560px, calc(100vw - 32px));
   --add-card-min-h: 192px;
   --card-min: 220px;
@@ -440,7 +439,6 @@ main {
 .overview {
   padding: var(--space-5) var(--space-6);
   width: 100%;
-  max-width: var(--content-max);
 }
 
 .overview-head {
