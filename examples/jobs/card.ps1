@@ -31,4 +31,4 @@ foreach ($job in @(Get-IncludedServices $services)) {
 
 $cardStatus = if ($errors -gt 0) { 'error' } elseif ($warns -gt 0) { 'warn' } else { 'ok' }
 $rowsJson = '[' + ($pieces -join ',') + ']'
-'{"status":"' + $cardStatus + '","value":"' + ($errors + $warns) + '","label":{"en":"need attention","zh-CN":"需要处理"},"rows":' + $rowsJson + '}'
+'{"status":"' + $cardStatus + '","value":"' + $errors + '","label":{"en":"need attention","zh-CN":"需要处理"},"rows":' + $rowsJson + '}'
