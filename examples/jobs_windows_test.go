@@ -76,8 +76,8 @@ func TestWindowsJobsClassifyFixedServicesAndOfferOnlyAllowedActions(t *testing.T
 	if err := run.Decode(windowsJobsOutput(t, "card.ps1", false), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != "error" || got.Value != "1" || len(got.Rows) != 3 {
-		t.Fatalf("card %+v, want one error and two warnings", got)
+	if got.Status != "error" || got.Value != "3" || len(got.Rows) != 3 {
+		t.Fatalf("card %+v, want three jobs needing attention: one error and two warnings", got)
 	}
 	for i, want := range []string{"error", "warn", "warn"} {
 		if got.Rows[i].Status != want {
@@ -158,5 +158,24 @@ func TestWindowsJobsNeverOfferRestartForDisabledOrUncontrollableServices(t *test
 		if len(item.Actions) != 0 {
 			t.Errorf("item %+v must not offer an unavailable action", item)
 		}
+	}
+}
+
+func TestWindowsJobsCountWarningsEvenWhenThereAreNoErrors(t *testing.T) {
+	services := []map[string]any{
+		{"Name": "paused", "PathName": `C:\Tools\paused.exe`, "State": "Paused", "StartMode": "Manual", "AcceptStop": true},
+		{"Name": "pending", "PathName": `C:\Tools\pending.exe`, "State": "Start Pending", "StartMode": "Auto", "AcceptStop": false},
+	}
+	var got struct {
+		Status string          `json:"status"`
+		Value  string          `json:"value"`
+		Rows   []card.Row      `json:"rows"`
+		Label  json.RawMessage `json:"label"`
+	}
+	if err := run.Decode(windowsJobsServicesOutput(t, "card.ps1", false, services), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "warn" || got.Value != "2" || len(got.Rows) != 2 {
+		t.Fatalf("card %+v, want two warning jobs needing attention", got)
 	}
 }
