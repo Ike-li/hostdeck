@@ -32,6 +32,9 @@ func pauseTime(t *testing.T, ctx context.Context) {
 
 // Saving the file does not prove the browser processed its response yet.
 // Observe timer creation at the clock boundary while virtual time is paused.
+// A paused clock also holds back tasks on most of Blink's queues, such as a
+// promise resolution Blink defers, so each look that finds no timer lets the
+// clock run for a microsecond.
 func waitForTimer(t *testing.T, ctx context.Context, delay, cursor int) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -46,6 +49,7 @@ func waitForTimer(t *testing.T, ctx context.Context, delay, cursor int) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the browser never armed its %d ms timer", delay)
 		}
+		advanceTime(t, ctx, time.Microsecond)
 		time.Sleep(10 * time.Millisecond)
 	}
 }
@@ -55,7 +59,7 @@ func advanceTime(t *testing.T, ctx context.Context, duration time.Duration) {
 	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	events := chromedp.Events(bounded, emulation.VirtualTimeBudgetExpired)
-	budget := float64(duration / time.Millisecond)
+	budget := float64(duration) / float64(time.Millisecond)
 	if _, err := chromedp.Call(bounded, emulation.SetVirtualTimePolicy, emulation.SetVirtualTimePolicyParams{
 		Policy: emulation.VirtualTimePolicyPauseIfNetworkFetchesPending, Budget: &budget, MaxVirtualTimeTaskStarvationCount: 1000,
 	}); err != nil {
@@ -68,6 +72,32 @@ func advanceTime(t *testing.T, ctx context.Context, duration time.Duration) {
 		return
 	}
 	t.Fatal("the browser clock did not finish its time budget")
+}
+
+// While virtual time is paused Blink holds back tasks on most queues,
+// including a promise resolution it had to defer, as a saved layout's answer
+// sometimes is. A message between two ports takes one of those queues.
+func TestWaitingForATimerRunsWorkThePausedClockHoldsBackWithoutMovingIt(t *testing.T) {
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate("about:blank"))
+	pauseTime(t, ctx)
+	before, err := chromedp.Run(ctx, chromedp.Evaluate[float64](`(() => {
+ const channel = new MessageChannel();
+ channel.port1.onmessage = () => setTimeout(() => {}, 1234);
+ channel.port2.postMessage(null);
+ return performance.now();
+})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForTimer(t, ctx, 1234, 0)
+	after, err := chromedp.Run(ctx, chromedp.Evaluate[float64](`performance.now()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved := after - before; moved >= 1 {
+		t.Fatalf("waiting for the timer moved the browser clock %.3f ms", moved)
+	}
 }
 
 func TestTheLayoutNoticeUsesEightWholeIdleSeconds(t *testing.T) {
