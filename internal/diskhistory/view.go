@@ -71,6 +71,16 @@ type row struct {
 	Value string `json:"value"`
 }
 
+// current keeps the readings measured the way the latest one was. Readings of
+// file lengths from before disk space was counted age out on their own.
+func current(scans []snapshot) []snapshot {
+	if len(scans) == 0 {
+		return scans
+	}
+	latest := scans[len(scans)-1].Allocated
+	return slices.DeleteFunc(slices.Clone(scans), func(s snapshot) bool { return s.Allocated != latest })
+}
+
 func baseline(scans []snapshot) (snapshot, snapshot, bool) {
 	latest := scans[len(scans)-1]
 	base := scans[0]
@@ -135,7 +145,7 @@ func (e *entry) card(targets []string, now time.Time) any {
 	label := text("No scans yet. Open to scan or start hourly tracking.", "尚无扫描记录，打开后可扫描或开始每小时跟踪。")
 	var rows []row
 	for i, target := range targets {
-		scans := e.state.Scans[target]
+		scans := current(e.state.Scans[target])
 		if len(scans) == 0 {
 			status = "warn"
 			continue
@@ -148,7 +158,7 @@ func (e *entry) card(targets []string, now time.Time) any {
 			continue
 		}
 		value = size(latest.Sizes["."].Bytes)
-		label = text("Logical file size · scan again to see changes", "文件逻辑大小 · 再次扫描后显示变化")
+		label = text("Disk space used · scan again to see changes", "占用空间 · 再次扫描后显示变化")
 		if compared {
 			if d, ok := difference(base, latest, "."); ok {
 				value = delta(d)
@@ -213,7 +223,7 @@ func (e *entry) view(targets []string) any {
 	var items []item
 	for index, target := range targets {
 		it := item{ID: id(target), Name: plugin.Text{All: target}, Status: "warn", Value: "—"}
-		it.Fields = []field{{text("Logical file bytes, not allocated disk space", "文件逻辑字节数，不等于磁盘占用"), "B"}}
+		it.Fields = []field{{text("Disk space the files occupy", "文件实际占用的磁盘空间"), "B"}}
 		if e.state.Tracking {
 			it.Fields = append(it.Fields, field{text("Tracking interval while hostdeck runs", "hostdeck 运行时的跟踪间隔"), "1h"})
 		} else {
@@ -235,7 +245,7 @@ func (e *entry) view(targets []string) any {
 		if e.state.Error != "" {
 			it.Fields = append(it.Fields, field{text("Last scan failed", "上次扫描失败"), e.state.Error})
 		}
-		scans := e.state.Scans[target]
+		scans := current(e.state.Scans[target])
 		if len(scans) == 0 {
 			it.Fields = append(it.Fields, field{text("No scans yet; scanning starts only after confirmation", "尚无记录，确认后才会开始扫描"), "—"})
 			items = append(items, it)

@@ -23,7 +23,7 @@ func TestDiskHistoryInstallsScansTracksAndShowsSavedChangesInBothLanguages(t *te
 				t.Fatal(err)
 			}
 			file := filepath.Join(target, "目录", "file")
-			if err := os.WriteFile(file, bytes.Repeat([]byte("a"), 1024), 0600); err != nil {
+			if err := os.WriteFile(file, bytes.Repeat([]byte("a"), 4096), 0600); err != nil {
 				t.Fatal(err)
 			}
 			url := startConsole(t, dir)
@@ -71,14 +71,14 @@ func TestDiskHistoryInstallsScansTracksAndShowsSavedChangesInBothLanguages(t *te
 			historyFile := filepath.Join(pluginDir, "data", "history.json")
 			waitDiskSnapshots(t, historyFile, target, 1)
 			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
-			waitDiskValue(t, ctx, "1.02 KB")
-			if err := os.WriteFile(file, bytes.Repeat([]byte("a"), 2048), 0600); err != nil {
+			waitDiskValue(t, ctx, "4.10 KB")
+			if err := os.WriteFile(file, bytes.Repeat([]byte("a"), 8192), 0600); err != nil {
 				t.Fatal(err)
 			}
 			do(t, ctx, chromedp.Click(chromedp.CSS(scan)), chromedp.Click(chromedp.CSS(scan)))
 			waitDiskSnapshots(t, historyFile, target, 2)
 			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
-			waitDiskValue(t, ctx, "2.05 KB")
+			waitDiskValue(t, ctx, "8.19 KB")
 			for _, width := range []int{1280, 520} {
 				do(t, ctx, chromedp.EmulateViewport(int64(width), 860))
 				fits, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.detail-item')].every(e => e.scrollWidth <= e.clientWidth + 1)`))
@@ -108,7 +108,7 @@ func TestDiskHistoryInstallsScansTracksAndShowsSavedChangesInBothLanguages(t *te
 				t.Fatalf("tracking did not pause: %s, %v", data, err)
 			}
 			do(t, ctx, chromedp.Click(chromedp.CSS(`#nav-overview`)), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="disk-history"] .card-value`)))
-			if got := text(t, ctx, `.card[data-id="disk-history"] .card-value`); got != "+1.02 KB" {
+			if got := text(t, ctx, `.card[data-id="disk-history"] .card-value`); got != "+4.10 KB" {
 				t.Fatalf("change card %q", got)
 			}
 			cliCommand(t, 0, "plugin", "disable", "--url", url, "--id", "disk-history")

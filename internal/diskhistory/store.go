@@ -31,6 +31,9 @@ type snapshot struct {
 	Sizes     map[string]measurement `json:"sizes"`
 	Skipped   int                    `json:"unreadable,omitempty"`
 	Truncated bool                   `json:"truncated,omitempty"`
+	// Allocated readings count disk space. Earlier readings counted file
+	// lengths, and the two are never compared.
+	Allocated bool `json:"allocated,omitempty"`
 }
 
 type saved struct {

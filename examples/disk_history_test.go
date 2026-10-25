@@ -87,14 +87,14 @@ func TestDiskHistoryRecordsChangesAndRetainsHistoryAfterReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := filepath.Join(target, "目录", "file")
-	if err := os.WriteFile(file, []byte(strings.Repeat("a", 1024)), 0600); err != nil {
+	if err := os.WriteFile(file, []byte(strings.Repeat("a", 4096)), 0600); err != nil {
 		t.Fatal(err)
 	}
 	v := scanHistory(t, p)
-	if v.Items[0].Value != "1.02 KB" {
+	if v.Items[0].Value != "4.10 KB" {
 		t.Fatalf("first scan %+v", v.Items[0])
 	}
-	if err := os.WriteFile(file, []byte(strings.Repeat("a", 2048)), 0600); err != nil {
+	if err := os.WriteFile(file, []byte(strings.Repeat("a", 8192)), 0600); err != nil {
 		t.Fatal(err)
 	}
 	_, actErr := detail.Act(context.Background(), p, v.Items[0].ID, "scan")
@@ -104,16 +104,16 @@ func TestDiskHistoryRecordsChangesAndRetainsHistoryAfterReload(t *testing.T) {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		v = readHistory(t, p)
-		if v.Items[0].Value == "2.05 KB" {
+		if v.Items[0].Value == "8.19 KB" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if v.Items[0].Value != "2.05 KB" || strings.Count(v.Items[0].Log, "UTC") != 2 {
+	if v.Items[0].Value != "8.19 KB" || strings.Count(v.Items[0].Log, "UTC") != 2 {
 		t.Fatalf("second scan %+v", v.Items[0])
 	}
 	c := card.Fetch(context.Background(), p)
-	if c.Error != nil || c.Value != "+1.02 KB" || len(c.Rows) != 1 || !strings.Contains(c.Rows[0].Value, "+1.02 KB") {
+	if c.Error != nil || c.Value != "+4.10 KB" || len(c.Rows) != 1 || !strings.Contains(c.Rows[0].Value, "+4.10 KB") {
 		t.Fatalf("change card %+v", c)
 	}
 	diskhistory.Sync(filepath.Dir(p.Dir), nil)

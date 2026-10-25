@@ -167,6 +167,24 @@ func TestReplacingThePluginFolderDoesNotReuseThePreviousFoldersHistory(t *testin
 	waitSaved(t, dir, func(s saved) bool { return len(s.Scans[target]) == 1 })
 }
 
+func TestReadingsOfFileLengthsAreNotComparedWithReadingsOfDiskSpace(t *testing.T) {
+	dir, target := nativeFixture(t)
+	lengths := snapshot{Time: time.Now().Add(-25 * time.Hour), Sizes: map[string]measurement{".": {Bytes: 99}}}
+	if err := save(dir, saved{Version: 1, Scans: map[string][]snapshot{target: {lengths}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := nativeCall(t, dir, "action", "scan", id(target)); got["error"] != nil {
+		t.Fatalf("scan %s", got["error"])
+	}
+	waitSaved(t, dir, func(s saved) bool { return len(s.Scans[target]) == 2 })
+	if got := nativeCall(t, dir, "card"); string(got["value"]) != `"0 B"` || len(got["rows"]) != 0 {
+		t.Fatalf("card compared a file-length reading with a disk-space one: %s", got)
+	}
+	if got := nativeCall(t, dir, "detail"); strings.Count(string(got["items"]), "UTC ·") != 1 {
+		t.Fatalf("detail log mixes file-length and disk-space readings: %s", got["items"])
+	}
+}
+
 func TestASecondWriterIsRefusedUntilTheOwnerReleasesTheHistory(t *testing.T) {
 	dir, target := nativeFixture(t)
 	if got := nativeCall(t, dir, "action", "scan", id(target)); got["error"] != nil {

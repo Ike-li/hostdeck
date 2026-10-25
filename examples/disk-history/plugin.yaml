@@ -2,8 +2,8 @@ schema: 1
 name: {en: Disk history, zh-CN: 磁盘变化}
 icon: 💽
 description:
-  en: Track folder sizes and changes without another service or interpreter. Open the detail page to scan your home folder or start hourly tracking. Optional config.json selects up to eight absolute folder paths. Measures logical file bytes, skips links and other volumes, and stores bounded history in this plugin's data folder. No scan starts on installation.
-  zh-CN: 无需其他服务或解释器，记录目录大小和增减。打开详情页可扫描主目录或开始每小时跟踪；可用 config.json 指定最多八个绝对目录路径。统计文件逻辑字节数，跳过链接和其他卷，历史有上限并保存在插件的 data 目录。安装时不会启动扫描。
+  en: Track folder sizes and changes without another service or interpreter. Open the detail page to scan your home folder or start hourly tracking. Optional config.json selects up to eight absolute folder paths. Measures the disk space files occupy, skips links and other volumes, and stores bounded history in this plugin's data folder. No scan starts on installation.
+  zh-CN: 无需其他服务或解释器，记录目录大小和增减。打开详情页可扫描主目录或开始每小时跟踪；可用 config.json 指定最多八个绝对目录路径。统计文件实际占用的磁盘空间，跳过链接和其他卷，历史有上限并保存在插件的 data 目录。安装时不会启动扫描。
 card:
   interval: 30s
   exec:

@@ -7,8 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+// block is one whole filesystem block, so a file of this length occupies
+// exactly as much disk space as it holds.
+var block = strings.Repeat("a", 4096)
 
 func TestAScanCountsFilesAtEveryDepthAndExcludesItsOwnDataAndLinks(t *testing.T) {
 	root := t.TempDir()
@@ -20,7 +25,7 @@ func TestAScanCountsFilesAtEveryDepthAndExcludesItsOwnDataAndLinks(t *testing.T)
 	if err := os.MkdirAll(pluginDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for path, bytes := range map[string]string{filepath.Join(deep, "file"): "12345", filepath.Join(pluginDir, "history"): "ignore me"} {
+	for path, bytes := range map[string]string{filepath.Join(deep, "file"): block, filepath.Join(pluginDir, "history"): block} {
 		if err := os.WriteFile(path, []byte(bytes), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -37,7 +42,7 @@ func TestAScanCountsFilesAtEveryDepthAndExcludesItsOwnDataAndLinks(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Sizes["."].Bytes != 5 || got.Sizes["目录"].Bytes != 5 || got.Sizes[filepath.Join("目录", "two", "three")].Bytes != 5 || len(got.Sizes) != 4 {
+	if got.Sizes["."].Bytes != 4096 || got.Sizes["目录"].Bytes != 4096 || got.Sizes[filepath.Join("目录", "two", "three")].Bytes != 4096 || len(got.Sizes) != 4 {
 		t.Fatalf("sizes %+v, want three directory levels and a root total excluding plugin files", got.Sizes)
 	}
 }
@@ -77,6 +82,18 @@ func TestAnUnreadableDirectoryCannotAppearAsADeletedDirectory(t *testing.T) {
 	}
 }
 
+func TestASparseFileCountsTheSpaceItOccupiesNotItsLength(t *testing.T) {
+	root := t.TempDir()
+	sparseFile(t, filepath.Join(root, "disk.raw"), 1<<30)
+	s, err := collect(context.Background(), root, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Sizes["."].Bytes; got >= 1<<20 {
+		t.Fatalf("an empty 1 GiB sparse file counted %d bytes", got)
+	}
+}
+
 func TestACancelledScanDoesNotReturnAPublishableSnapshot(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -93,7 +110,7 @@ func TestDirectorySummaryLimitsKeepTheFullRootTotal(t *testing.T) {
 		if err := os.Mkdir(dir, 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "file"), []byte("12345"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "file"), []byte(block), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -101,7 +118,7 @@ func TestDirectorySummaryLimitsKeepTheFullRootTotal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Sizes) != maxDirs || !s.Truncated || s.Sizes["."].Bytes != int64((maxDirs+5)*5) || s.Sizes["."].Partial {
+	if len(s.Sizes) != maxDirs || !s.Truncated || s.Sizes["."].Bytes != int64((maxDirs+5)*4096) || s.Sizes["."].Partial {
 		t.Fatalf("limited snapshot %+v", s)
 	}
 }
@@ -118,14 +135,14 @@ func TestDeepDirectoriesCannotCrowdTopLevelFoldersOutOfTheSummary(t *testing.T) 
 	if err := os.Mkdir(last, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(last, "file"), []byte("12345"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(last, "file"), []byte(block), 0600); err != nil {
 		t.Fatal(err)
 	}
 	s, err := collect(context.Background(), root, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, exists := s.Sizes["z-last"]; !exists || got.Bytes != 5 {
+	if got, exists := s.Sizes["z-last"]; !exists || got.Bytes != 4096 {
 		t.Fatalf("deep summaries crowded out a top-level folder: %+v, exists=%v", got, exists)
 	}
 }

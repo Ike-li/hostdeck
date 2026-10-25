@@ -10,11 +10,12 @@ import (
 	"time"
 )
 
-// collect counts logical bytes for regular file names, including hard-link
-// names separately. Links, special files, other volumes and plugin data are
-// excluded. Only directory summaries to depth three are retained.
+// collect counts the disk space regular files occupy, a hard-linked file once
+// where the platform says so. Links, special files, other volumes and plugin
+// data are excluded. Only directory summaries to depth three are retained.
 func collect(ctx context.Context, target, exclude string) (snapshot, error) {
-	result := snapshot{Time: time.Now().UTC(), Sizes: map[string]measurement{".": {}}}
+	result := snapshot{Time: time.Now().UTC(), Sizes: map[string]measurement{".": {}}, Allocated: true}
+	seen := map[fileKey]bool{}
 	base, err := os.Stat(target)
 	if err != nil {
 		return snapshot{}, err
@@ -94,7 +95,19 @@ func collect(ctx context.Context, target, exclude string) (snapshot, error) {
 			return nil
 		}
 		if info.Mode().IsRegular() {
-			mark(&result, rel, info.Size(), false)
+			if key, linked := hardLink(info); linked {
+				if seen[key] {
+					return nil
+				}
+				seen[key] = true
+			}
+			bytes, err := allocated(path, info)
+			if err != nil {
+				result.Skipped++
+				mark(&result, rel, 0, true)
+				return nil
+			}
+			mark(&result, rel, bytes, false)
 		}
 		return nil
 	})
