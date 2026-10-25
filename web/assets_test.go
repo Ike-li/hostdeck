@@ -558,6 +558,65 @@ func TestWordsStayReadableOnTheTintsTheyAreWrittenOn(t *testing.T) {
 	}
 }
 
+// colourOf picks the colour out of a shorthand such as "1px solid var(--line)".
+func colourOf(value string) string {
+	for _, part := range splitOutsideParens(value, " ") {
+		if strings.HasPrefix(part, "var(") || strings.HasPrefix(part, "#") || strings.HasPrefix(part, "color-mix(") {
+			return part
+		}
+	}
+	return value
+}
+
+// What tells a control or a state apart without words stands out from the
+// surface under it by 3:1, as WCAG 1.4.11 asks: the edge that says a field
+// can be typed into, at rest and under the pointer, the focus ring, and the
+// sidebar's status dots. A field sits on a card or a dialog, or on the page
+// itself, as the plugins page's search does; the dots sit in the sidebar.
+func TestFieldEdgesTheFocusRingAndStatusDotsStandOutFromTheirSurfaces(t *testing.T) {
+	const field = ":is(.edit-field input, .edit-field select, .catalog-search, .agent-prompt textarea)"
+	rules := styleRules(t)
+	v := func(selector, prop string) string { return colourOf(ruleValue(t, rules, selector, prop)) }
+	marks := []struct {
+		why, colour string
+		surfaces    []string
+	}{
+		{"the edge of a field", v(field, "border"), []string{"--panel", "--bg"}},
+		{"the edge of a field under the pointer", v(field+":hover:not(:focus-visible)", "border-color"), []string{"--panel", "--bg"}},
+		{"the focus ring", v(":focus-visible", "outline"), []string{"--panel", "--bg"}},
+		{"a status dot nothing has been heard from yet", v(".dot", "background"), []string{"--panel"}},
+		{"the dot of an address that answered", v(`.dot[data-status="up"]`, "background"), []string{"--panel"}},
+		{"the dot of an address that did not", v(`.dot[data-status="down"]`, "background"), []string{"--panel"}},
+	}
+
+	light := themeTokens(rules, "")
+	dark := themeTokens(rules, darkMedia)
+	for _, theme := range []struct {
+		name   string
+		tokens map[string]string
+	}{{"light", light}, {"dark", dark}} {
+		tokens := func(name string) string {
+			if value, ok := theme.tokens[name]; ok {
+				return value
+			}
+			return light[name]
+		}
+		for _, m := range marks {
+			for _, s := range m.surfaces {
+				surface, okS := paint("var("+s+")", tokens, "")
+				mark, okM := paint(m.colour, tokens, surface)
+				if !okS || !okM {
+					t.Errorf("%s: %s: cannot resolve %q over %s", theme.name, m.why, m.colour, s)
+					continue
+				}
+				if got, _ := contrast(mark, surface); got < 3 {
+					t.Errorf("%s: %s is %s (%s) on %s, %.3f:1; want at least 3:1", theme.name, m.why, mark, m.colour, s, got)
+				}
+			}
+		}
+	}
+}
+
 const reduceMedia = "(prefers-reduced-motion: reduce)"
 
 // zeroDuration reports whether a duration is nothing at all, however it is

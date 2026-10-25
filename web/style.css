@@ -15,6 +15,9 @@
   --accent-strong: #2556a9;
   --accent-pressed: #1f4988;
   --line-strong: #c9ced6;
+  /* The edge of a field you type into, and a dot nothing has been heard from:
+     3:1 on --panel and --bg, which --line is not. */
+  --line-control: #868d98;
   --ok: #247a46;
   --warn: #946313;
   --error: #bf3636;
@@ -125,6 +128,7 @@
     --accent-strong: #8ab0f5;
     --accent-pressed: #a3c3f8;
     --line-strong: #3d434d;
+    --line-control: #686e78;
     --ok: #4cc27f;
     --warn: #e0a83a;
     --error: #ef6b6b;
@@ -326,7 +330,7 @@ main {
   width: var(--space-2);
   height: var(--space-2);
   border-radius: 50%;
-  background: var(--line);
+  background: var(--line-control);
 }
 
 .dot[data-status="up"] { background: var(--ok); }
@@ -698,7 +702,7 @@ h1 {
   width: 100%;
   min-width: 0;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
@@ -707,7 +711,7 @@ h1 {
   transition: border-color var(--dur-fast) var(--ease-standard);
 }
 
-:is(.edit-field input, .edit-field select, .catalog-search, .agent-prompt textarea):hover:not(:focus-visible) { border-color: var(--line-strong); }
+:is(.edit-field input, .edit-field select, .catalog-search, .agent-prompt textarea):hover:not(:focus-visible) { border-color: var(--muted); }
 
 #catalog-search { margin: 0 0 var(--space-3); }
 
