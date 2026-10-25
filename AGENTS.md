@@ -16,8 +16,10 @@ Both also exist as `*.zh-CN.md`. Change both languages in the same commit.
 ## Commands
 
 ```sh
-go test ./...                              # unit tests; browser tests too if Chrome or Edge is found
-HOSTDECK_E2E=1 go test -count=1 ./e2e/     # browser tests; a missing browser fails instead of skipping
+go test -short ./...                        # fast: no console build, browser or real-machine reads
+HOSTDECK_E2E=1 go test -count=1 ./...        # full acceptance; never reuse an E2E result cache
+HOSTDECK_E2E=1 go test -count=1 ./e2e/       # browser suite only; HOSTDECK_BROWSER picks Chrome or Edge
+go test -race -short -count=1 . ./internal/... ./web
 gofmt -l . ; go vet ./... ; GOOS=windows go vet ./...
 go run . --dir "$(mktemp -d)" --addr 127.0.0.1:0   # a throwaway instance; it logs its URL
 ```
@@ -82,6 +84,8 @@ Browser assertions now verify their triggering events, jobs UI fixtures require 
 Browser suites now share one process while disposing an isolated browser context per case. Cookies, storage, HTTP cache, service workers and permissions are checked across consecutive visits to the same origin. Missing auto-discovered browsers may skip; configured or broken browsers fail, and startup logs the actual executable and version. Console processes and data directories remain per-case.
 
 Timer-heavy browser tests now advance a network-aware DevTools virtual clock, including exact notice and confirmation boundaries. Product durations stay unchanged. Real-clock notice expiry, browser cache clearing/history restoration, motion and the backend pending-card boundary remain covered; the slow-card server is released by a gate.
+
+Fast checks now use go test -short ./... without building the console, starting browsers or reading real machine jobs/disks. Full acceptance explicitly disables the Go test-result cache because the child-built executable is outside the E2E dependency graph. CI selects Chrome and Edge explicitly on both systems, runs core race checks, keeps per-test JSON timings and failure HTML/PNG/console artifacts, bounds runs and cancels superseded PR checks.
 
 Remaining M0 work, outside the UI/UX pass:
 

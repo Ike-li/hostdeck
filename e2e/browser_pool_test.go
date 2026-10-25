@@ -95,6 +95,9 @@ func closeBrowser() {
 // openBrowser starts a fresh isolated case in the suite's one browser process.
 func openBrowser(t *testing.T, langs string) context.Context {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("browser test")
+	}
 	browsers.once.Do(startBrowser)
 	if browsers.err != nil {
 		if errors.Is(browsers.err, noBrowser) && os.Getenv("HOSTDECK_E2E") != "1" {
@@ -113,5 +116,6 @@ func openBrowser(t *testing.T, langs string) context.Context {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	recordBrowserFailure(t, ctx)
 	return ctx
 }

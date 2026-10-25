@@ -63,6 +63,9 @@ func TestBrowserCasesShareAProcessButKeepStorageAndPermissionsApart(t *testing.T
 }
 
 func TestABrowserThatExistsButCannotStartFailsInsteadOfSkipping(t *testing.T) {
+	if testing.Short() {
+		t.Skip("console integration test")
+	}
 	if os.Getenv("HOSTDECK_TEST_BROWSER_FAILURE_PROBE") == "1" {
 		openBrowser(t, "en")
 		return

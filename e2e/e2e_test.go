@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,6 +36,11 @@ func TestMain(m *testing.M) {
 		fakePlugin(os.Args[2:])
 		return
 	}
+	flag.Parse()
+	if testing.Short() {
+		os.Exit(m.Run())
+	}
+
 	dir, err := os.MkdirTemp("", "hostdeck-e2e")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -61,6 +67,9 @@ var consoleURL = regexp.MustCompile(`^hostdeck: (http://127\.0\.0\.1:\d+)`)
 // the console's URL. What hostdeck logged is shown if the test fails.
 func startConsole(t *testing.T, dir string) string {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("console integration test")
+	}
 	cmd := exec.Command(binary, "--addr", "127.0.0.1:0", "--dir", dir)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {

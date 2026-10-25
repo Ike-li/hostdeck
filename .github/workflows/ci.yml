@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     strategy:
@@ -15,6 +19,7 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     env:
       # Browser tests fail here instead of skipping when no browser is found.
       HOSTDECK_E2E: "1"
@@ -29,16 +34,46 @@ jobs:
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
       - run: go vet ./...
-      - run: go test ./...
-      - name: browser tests in Edge
+      - name: core race checks
         shell: bash
         run: |
+          set -euo pipefail
+          mkdir -p test-results/core
+          go test -race -short -count=1 -json -timeout=8m . ./internal/... ./web | tee test-results/core/tests.jsonl
+      - name: all tests in Chrome
+        shell: bash
+        env:
+          HOSTDECK_ARTIFACT_DIR: ${{ github.workspace }}/test-results/chrome
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/chrome
+          if [ "$RUNNER_OS" = Windows ]; then
+            export HOSTDECK_BROWSER='C:\Program Files\Google\Chrome\Application\chrome.exe'
+          else
+            export HOSTDECK_BROWSER='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+          fi
+          go test -count=1 -json -timeout=8m ./... | tee test-results/chrome/tests.jsonl
+      - name: browser tests in Edge
+        shell: bash
+        env:
+          HOSTDECK_ARTIFACT_DIR: ${{ github.workspace }}/test-results/edge
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/edge
           if [ "$RUNNER_OS" = Windows ]; then
             export HOSTDECK_BROWSER='C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
           else
             export HOSTDECK_BROWSER='/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
           fi
-          go test -count=1 ./e2e/
+          go test -count=1 -json -timeout=8m ./e2e/ | tee test-results/edge/tests.jsonl
+      - name: test timings and failure artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Builds the release archives without publishing them, and checks that each
   # carries the examples next to the program.

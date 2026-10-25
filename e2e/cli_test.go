@@ -35,6 +35,9 @@ func cliCommand(t *testing.T, want int, args ...string) gjson.Result {
 }
 
 func TestTheBinaryExposesConnectionCommandsWithoutStartingAnotherServer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("console integration test")
+	}
 	help := exec.Command(binary, "--help")
 	out, err := help.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "hostdeck help") {

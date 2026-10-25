@@ -49,6 +49,9 @@ func load(t *testing.T, id string) plugin.Plugin {
 }
 
 func TestTheDiskExampleShowsTheFreeSpaceOfThisMachine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the real machine")
+	}
 	// Generous: Windows PowerShell took 6.4 s to start for the first time on
 	// an idle CI runner, and longer while other test packages ran.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -75,6 +78,9 @@ func TestTheDiskExampleShowsTheFreeSpaceOfThisMachine(t *testing.T) {
 // The open action itself is not run here: it would open a window on the
 // desktop of whoever runs the tests.
 func TestTheDiskExampleListsTheHomeFoldersDiskWithAnOpenAction(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the real machine")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
@@ -476,6 +482,9 @@ func TestTheJobsCardSaysWhenNeitherDomainCanBeRead(t *testing.T) {
 }
 
 func TestTheJobsExampleReadsThisMachinesJobs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the real machine")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
@@ -673,6 +682,9 @@ func TestTheJobsActionRejectsAnUnknownActionBeforeCallingLaunchctl(t *testing.T)
 }
 
 func TestTheJobsExampleListsThisMachinesJobs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the real machine")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
