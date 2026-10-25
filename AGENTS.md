@@ -89,6 +89,8 @@ Timer-heavy browser tests now advance a network-aware DevTools virtual clock, in
 
 Fast checks now use go test -short ./... without building the console, starting browsers or reading real machine jobs/disks. Full acceptance explicitly disables the Go test-result cache because the child-built executable is outside the E2E dependency graph. CI selects Chrome and Edge explicitly on both systems, runs core race checks, keeps per-test JSON timings and failure HTML/PNG/console artifacts, bounds runs and cancels superseded PR checks.
 
+The overview now offers Reset layout only for nonempty saved layout preferences. Visibility follows successful loads/saves, undo and failed-save recovery without rebuilding cards; a focused reset control moves focus to Refresh when it disappears. Both languages and 1280/768/520px are covered.
+
 Remaining M0 work, outside the UI/UX pass:
 
 - a release workflow run by a `v*` tag;

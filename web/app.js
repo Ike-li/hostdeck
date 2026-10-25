@@ -8,7 +8,7 @@ import {
 } from './panel.js';
 import { narrow, onInterfaceKey, setNavigation } from './nav.js';
 import {
-  loadLayout, pauseLayoutNote, resetLayout, scheduleLayoutNote, undoLayout,
+  loadLayout, pauseLayoutNote, renderLayoutControls, resetLayout, scheduleLayoutNote, undoLayout,
 } from './layout.js';
 import { sortable, wireDragAndDrop } from './dnd.js';
 import { loadPlugins, onSidebarMoved, refreshStatus, renderNav } from './plugins.js';
@@ -53,6 +53,7 @@ function route() {
 
 function render() {
   applyI18n();
+  renderLayoutControls();
 
   $('banner').hidden = !state.failure;
   if (state.failure) {

@@ -45,7 +45,7 @@
   "layout.undo": "Undo",
   "layout.hide": "Hide from workspace",
   "layout.show": "Restore to workspace",
-  "layout.reset": "Reset",
+  "layout.reset": "Reset layout",
   "error.command_timeout": "The command did not finish in time",
   "error.command_exit": "The command failed: {detail}",
   "error.command_start": "The command could not start: {detail}",

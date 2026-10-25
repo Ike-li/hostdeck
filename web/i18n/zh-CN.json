@@ -45,7 +45,7 @@
   "layout.undo": "撤销",
   "layout.hide": "从工作区隐藏",
   "layout.show": "恢复到工作区",
-  "layout.reset": "重置",
+  "layout.reset": "重置布局",
   "error.command_timeout": "命令没有按时结束",
   "error.command_exit": "命令出错：{detail}",
   "error.command_start": "命令启动不了：{detail}",

@@ -1837,7 +1837,7 @@ func TestHidingAPluginRemovesItUntilItIsShownOrReset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if kind != "ok 从工作区隐藏 重置" {
+	if kind != "ok 从工作区隐藏 重置布局" {
 		t.Fatalf("hide and reset: %s", kind)
 	}
 

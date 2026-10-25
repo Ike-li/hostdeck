@@ -11,6 +11,15 @@ export const byOrder = (order) => (a, b) => order.indexOf(a.id) - order.indexOf(
 
 let layoutNoteTimer = null;
 
+// Update the persistent control without rebuilding cards or moving their focus.
+export function renderLayoutControls() {
+  const reset = $('layout-reset');
+  const hidden = !state.layoutKnown || !['sidebar', 'cards', 'wide', 'hidden'].some((key) => state.stored[key].length);
+  const focused = document.activeElement === reset;
+  reset.hidden = hidden;
+  if (hidden && focused) $('refresh').focus();
+}
+
 export function applyStored(l) {
   state.stored = {
     sidebar: l.sidebar ?? [],
@@ -19,6 +28,7 @@ export function applyStored(l) {
     hidden: l.hidden ?? [],
   };
   state.layoutKnown = true;
+  renderLayoutControls();
 }
 
 export function dismissLayoutNote() {
