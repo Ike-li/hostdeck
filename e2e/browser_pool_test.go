@@ -117,5 +117,6 @@ func openBrowser(t *testing.T, langs string) context.Context {
 		t.Fatal(err)
 	}
 	recordBrowserFailure(t, ctx)
+	watchRequests(t, ctx)
 	return ctx
 }

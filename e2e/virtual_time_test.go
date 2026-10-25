@@ -3,10 +3,20 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"maps"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"regexp"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
@@ -54,9 +64,13 @@ func waitForTimer(t *testing.T, ctx context.Context, delay, cursor int) {
 	}
 }
 
+// clockBound is how long a budget may take in real time. Only the stalled-clock
+// probe, in a process of its own, shortens it.
+var clockBound = 10 * time.Second
+
 func advanceTime(t *testing.T, ctx context.Context, duration time.Duration) {
 	t.Helper()
-	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+	bounded, cancel := context.WithTimeout(ctx, clockBound)
 	defer cancel()
 	events := chromedp.Events(bounded, emulation.VirtualTimeBudgetExpired)
 	budget := float64(duration) / float64(time.Millisecond)
@@ -67,11 +81,183 @@ func advanceTime(t *testing.T, ctx context.Context, duration time.Duration) {
 	}
 	for _, err := range events {
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("the browser clock did not finish %v within %v: %v; %s", duration, clockBound, err, clockStall(ctx))
 		}
 		return
 	}
-	t.Fatal("the browser clock did not finish its time budget")
+	t.Fatalf("the browser clock did not finish %v: %s", duration, clockStall(ctx))
+}
+
+// clockStall says what may be holding the browser clock: the requests still
+// open, and whether the page answers at all.
+func clockStall(ctx context.Context) string {
+	report := "no request was open"
+	if log, ok := openRequests.Load(ctx); ok {
+		if open := log.(*requestLog).list(time.Now()); len(open) > 0 {
+			report = "requests still open: " + strings.Join(open, ", ")
+		}
+	}
+	probe, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	state, err := chromedp.Run(probe, chromedp.Evaluate[string](`performance.now().toFixed(3) + ' ms, ' + document.readyState`))
+	if err != nil {
+		return report + "; the page did not answer within 2 s"
+	}
+	return report + "; the page answered at " + state
+}
+
+// openRequests holds each browser case's requestLog, keyed by its context.
+var openRequests sync.Map
+
+// requestLog keeps the requests a case's page sent and has not finished. The
+// three events arrive on separate subscriptions, so an end can come first.
+type requestLog struct {
+	mu    sync.Mutex
+	open  map[network.RequestID]sentRequest
+	ended map[network.RequestID]bool
+}
+
+type sentRequest struct {
+	line  string
+	since time.Time
+}
+
+func (l *requestLog) sent(id network.RequestID, line string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.ended[id] {
+		l.open[id] = sentRequest{line, time.Now()}
+	}
+}
+
+func (l *requestLog) end(id network.RequestID) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.open, id)
+	l.ended[id] = true
+}
+
+func (l *requestLog) list(now time.Time) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	requests := slices.SortedFunc(maps.Values(l.open), func(a, b sentRequest) int { return a.since.Compare(b.since) })
+	lines := make([]string, len(requests))
+	for i, r := range requests {
+		lines[i] = fmt.Sprintf("%s (open %.1f s)", r.line, now.Sub(r.since).Seconds())
+	}
+	return lines
+}
+
+// watchRequests records a case's open requests from its start, so that one
+// sent before the clock was paused is named too.
+func watchRequests(t *testing.T, ctx context.Context) {
+	t.Helper()
+	watch, cancel := context.WithCancel(ctx)
+	log := &requestLog{open: map[network.RequestID]sentRequest{}, ended: map[network.RequestID]bool{}}
+	sent := chromedp.Events(watch, network.RequestWillBeSent)
+	finished := chromedp.Events(watch, network.LoadingFinished)
+	failed := chromedp.Events(watch, network.LoadingFailed)
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for ev, err := range sent {
+			if err != nil {
+				return
+			}
+			log.sent(ev.RequestID, ev.Request.Method+" "+ev.Request.URL)
+		}
+	})
+	wg.Go(func() {
+		for ev, err := range finished {
+			if err != nil {
+				return
+			}
+			log.end(ev.RequestID)
+		}
+	})
+	wg.Go(func() {
+		for ev, err := range failed {
+			if err != nil {
+				return
+			}
+			log.end(ev.RequestID)
+		}
+	})
+	openRequests.Store(ctx, log)
+	t.Cleanup(func() { openRequests.Delete(ctx); cancel(); wg.Wait() })
+}
+
+// An open request or a busy page can each keep the clock from finishing its
+// budget. The failure names both, so a stall on CI explains itself.
+func TestAStalledBrowserClockSaysWhichRequestsWereOpenAndWhetherThePageAnswered(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser clock diagnostics")
+	}
+	if os.Getenv("HOSTDECK_TEST_CLOCK_STALL_PROBE") == "1" {
+		clockBound = time.Second
+		sent, release := make(chan struct{}), make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/held" {
+				close(sent)
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
+				return
+			}
+			fmt.Fprint(w, "<!doctype html><title>stall</title>")
+		}))
+		t.Cleanup(server.Close)
+		t.Cleanup(func() { close(release) })
+		t.Run("open request", func(t *testing.T) {
+			ctx := openBrowser(t, "en")
+			do(t, ctx, chromedp.Navigate(server.URL))
+			pauseTime(t, ctx)
+			if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`fetch('/held'), undefined`)); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-sent:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the held request never reached the server")
+			}
+			advanceTime(t, ctx, time.Second)
+			t.Fatal("the open request let the clock finish its budget")
+		})
+		t.Run("busy page", func(t *testing.T) {
+			ctx := openBrowser(t, "en")
+			do(t, ctx, chromedp.Navigate(server.URL))
+			pauseTime(t, ctx)
+			// The paused clock holds the message back until the budget lets it run.
+			if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`(() => {
+ const channel = new MessageChannel();
+ channel.port1.onmessage = () => { for (let i = 0; i < 1e11; i++) {} };
+ channel.port2.postMessage(null);
+})()`)); err != nil {
+				t.Fatal(err)
+			}
+			advanceTime(t, ctx, time.Second)
+			t.Fatal("the busy page let the clock finish its budget")
+		})
+		return
+	}
+	// Use the same optional-browser policy as other browser tests.
+	openBrowser(t, "en")
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestAStalledBrowserClockSaysWhichRequestsWereOpenAndWhetherThePageAnswered$")
+	cmd.Env = append(os.Environ(), "HOSTDECK_ARTIFACT_DIR=", "HOSTDECK_E2E=1", "HOSTDECK_TEST_CLOCK_STALL_PROBE=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil || ctx.Err() != nil {
+		t.Fatalf("unexpected probe result: %s %v", out, err)
+	}
+	for _, want := range []*regexp.Regexp{
+		regexp.MustCompile(`requests still open: [^;]*GET http://127\.0\.0\.1:\d+/held \(open \d+\.\d s\); the page answered at \d+\.\d{3} ms, complete`),
+		regexp.MustCompile(`no request was open; the page did not answer within 2 s`),
+	} {
+		if !want.Match(out) {
+			t.Fatalf("the stalled clock's failure should match %s: %s", want, out)
+		}
+	}
 }
 
 // While virtual time is paused Blink holds back tasks on most queues,
