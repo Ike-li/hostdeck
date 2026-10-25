@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Ike-li/hostdeck/internal/diskhistory"
 )
 
 // WaitDelay bounds the wait for a command's output after it exits or is
@@ -38,6 +40,16 @@ func (e *ExitError) Error() string {
 // ends first, the command and every process it started are killed, and the
 // error is ctx's. Processes it leaves behind when it exits are killed too.
 func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
+	if len(command) == 0 {
+		return nil, errors.New("empty plugin command")
+	}
+	if command[0] == "@hostdeck" {
+		out, err := diskhistory.Execute(ctx, dir, command[1:])
+		if err == nil && len(out) > maxOutput {
+			return nil, &OutputError{errors.New("native plugin output exceeds 4 MiB")}
+		}
+		return out, err
+	}
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 	cmd.Dir = dir
 	stdout, stderr := &capped{limit: maxOutput}, &capped{limit: 64 << 10}

@@ -147,6 +147,30 @@ On Windows, the jobs count includes warnings and errors. Restart is offered only
 
 The manifest format may still change before the first release.
 
+## Disk history
+
+Add **Disk history** under Pages & plugins → Add content. This is separate from **Disk space**, which shows free capacity. It runs inside hostdeck on macOS and Windows; no Python, database server, extra port or disk-history installation is needed. Installing or opening it does not scan anything.
+
+Open its detail page and confirm **Scan now**, or **Start hourly tracking** to scan now and then roughly hourly while hostdeck runs. **Pause hourly tracking** retains history; **Cancel scan** also pauses tracking and retains the previous snapshot. Closing the page does not stop a scan. Refresh to see results. Stopping hostdeck interrupts the current scan; enabled tracking resumes on the next start. Disabling or trashing the plugin cancels its scan and timer; enabling it resumes saved tracking. Hiding it only changes the workspace layout.
+
+The default target is the current user's home folder. To select other targets, create `plugins/disk-history/config.json` inside your hostdeck data directory, with 1–8 absolute directory paths. JSON backslashes must be escaped on Windows:
+
+```json
+{"roots":["/absolute/path/to/folder"]}
+```
+
+```json
+{"roots":["C:\\Users\\Example\\Documents","D:\\Projects"]}
+```
+
+Changes to this file apply to subsequent scans; an already running scan finishes its original target. Paths are local configuration, never accepted from a web request. Each configured target has its own history. The overview summarizes the first target and its three largest top-level changes; the detail page lists each target and up to 50 directory summaries, ordered by absolute change, with baseline timestamps and the last 60 readings under **Log**. The baseline is the newest snapshot at least 24 hours before the latest, or the oldest available snapshot when history is shorter.
+
+Measurements are logical regular-file bytes, using decimal units. Sparse files, compression, APFS sharing and hard links mean these are different from allocated disk space: each hard-link name counts separately. Directory summaries go three levels deep, but their totals include deeper files. Links, Windows reparse points, other mounted volumes and the plugin's own files are excluded. A scan is a live traversal rather than an atomic filesystem snapshot. Unreadable entries mark affected directories incomplete: measured size is a lower bound, and uncertain changes are withheld. Failed or cancelled scans do not replace saved snapshots. A scan has a 20-minute deadline.
+
+History lives in this plugin's `data/history.json`, independently of homedeck's old SQLite data. It retains up to 30 days and 744 snapshots per target, at most 256 directory summaries per snapshot, and at most 64 MiB in total. The root total remains when the directory-summary limit is reached; the detail page reports that limit. Corrupt history is reported and never silently replaced. A process-held OS lock refuses a second writer; process exit releases it. Back up the plugin folder to keep its history; purging it from the trash deletes that history too.
+
+The compiled plugin uses `exec.command: ['@hostdeck', disk-history, card]` (or `detail` / `action`). `@hostdeck` is a reserved in-process dispatcher for these operations, not a PATH executable or a shell. Other plugins keep their existing command protocol.
+
 ## CLI for agents
 
 Keep the console running and use the same version of hostdeck for its CLI. Commands never start another console. `--url` selects its origin and defaults to `http://127.0.0.1:4678`; only HTTP on `127.0.0.1` is accepted. Credentials, other hosts, URL paths and redirects are refused. The UI’s copyable prompts use the running executable’s absolute path, including when the console was started with `go run`.

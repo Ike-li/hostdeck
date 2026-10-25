@@ -354,7 +354,7 @@ func TestEveryBuiltInExampleDescribesItself(t *testing.T) {
 			t.Errorf("%s: name %+v, description %+v; want a name and a description in en and zh-CN", e.ID, e.Name, e.Description)
 		}
 	}
-	if want := []string{"disk", "grafana", "jobs", "ollama", "syncthing"}; !slices.Equal(ids, want) {
+	if want := []string{"disk", "disk-history", "grafana", "jobs", "ollama", "syncthing"}; !slices.Equal(ids, want) {
 		t.Errorf("built in: %v, want %v", ids, want)
 	}
 	fs.WalkDir(Files, ".", func(path string, d fs.DirEntry, err error) error {

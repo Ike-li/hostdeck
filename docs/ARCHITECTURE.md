@@ -2,7 +2,7 @@
 
 [简体中文](ARCHITECTURE.zh-CN.md)
 
-hostdeck is one Go program. It serves a web console on 127.0.0.1, reads plugins from a folder when it starts and after each change on its plugins page, and re-serves each embedded web UI on a port of its own. There is no database and no background worker: everything happens when the console page asks.
+hostdeck is one Go program. It serves a web console on 127.0.0.1, reads plugins from a folder when it starts and after each change on its plugins page, and re-serves each embedded web UI on a port of its own. There is no database server. Reads happen when the page asks, except for the disk-history plugin's explicitly enabled hourly scans.
 
 ## The pieces
 
@@ -54,6 +54,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/card` | Turns a plugin's card into what the overview shows. `http` cards: GET, pick values with gjson paths, colour them with thresholds, hide secrets in errors. `exec` cards: run the program and read the card it prints. `Cache` keeps each card for its interval and answers "pending" when a card takes longer than the overview waits. |
 | `internal/detail` | Runs a plugin's detail program and its actions. Before an action runs, the detail is read again, and the action must still be offered for that item. |
 | `internal/run` | Runs a plugin program in its folder with a deadline, caps its output, and kills everything it started: a process group on macOS, a Job Object on Windows. Decodes the JSON it prints strictly. |
+| `internal/diskhistory` | Native disk-history operations, bounded rooted filesystem traversal, atomic JSON history, process-held writer locks, cancellable scans and opt-in hourly tracking. |
 | `internal/console` | The console's HTTP handler: the page from `web/`, the API, and the checks every request passes. |
 | `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache address itself. |
 | `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |
@@ -165,6 +166,18 @@ Everything rests on hostdeck being reachable from this machine only.
 - The jobs plugin's restart and run actions are that plugin's own programs, as the disk plugin's open action is. They do not give a web page a new way to write a command. An action runs only when the detail, read again at that moment, still offers it, and only for a label or service name made of letters, digits, dots, underscores and hyphens. The whole name must match, including any trailing newline. Windows restart is offered only for a running or paused service that accepts Stop and can be started; disabled services and transition states offer no action. The deadline ends `launchctl` or `sc.exe`. The service itself is not in that process tree, so it is not ended with them.
 
 Plugins themselves are trusted: they are folders you put there, and they run with your rights.
+
+## Disk history
+
+The built-in `disk-history` manifest selects `@hostdeck disk-history card|detail|action`. `internal/run` dispatches this reserved command in process and decodes its JSON through the same strict card/detail/action protocol. No interpreter, subprocess, web server or new HTTP endpoint is involved. All other commands retain their process-tree deadline behavior. Only confirmed action requests may start a scan or enable tracking. The existing action endpoint checks Origin and re-reads the offered actions; its native disk-history actions may write only the installed plugin's `data` directory (history, an unpublished temporary file and the owner lock). The browser cannot set target paths or commands.
+
+Targets come from the current user's home folder or the trusted local `config.json` (1–8 absolute paths). Scanning opens an `os.Root` and traverses its filesystem without following links. macOS device IDs and Windows reparse attributes exclude other volumes; the plugin's own folder is excluded. Only logical regular-file sizes are counted, with separate hard-link names counted separately. Per-directory partial flags propagate to ancestors. Missing summaries imply zero only when the observation is complete and not truncated, so access failures or summary limits cannot fabricate deletions.
+
+One scan runs per installed plugin, outside the short action request, with cancellation and a 20-minute deadline. Tracking is saved only after confirmation, checks for due targets once a minute, and does not need an open browser. Main's successful reload synchronizes native plugin lifetimes: disabling, trashing or removing the native manifest cancels its worker/timer; enabling it or restarting the console resumes persisted tracking. Manual cancellation also pauses tracking. There is no separate collector service or login task.
+
+History is versioned JSON, with 30-day retention, 744 snapshots per target, 256 summaries per snapshot to depth three, and a 64 MiB storage limit. The full root total is retained even when summaries are capped. Writes are synced and renamed atomically inside an `os.Root` for the plugin folder. A nonblocking `flock` on macOS or `LockFileEx` on Windows holds writer ownership until the plugin stops or the process exits. Read-only use creates no data. Corrupt state refuses actions; failed, cancelled or unpublished scans retain the last snapshot. A worker checks the installed folder identity before publishing so a moved or replaced plugin cannot be recreated by an old scan. Readme documents measurement and viewing limits; this does not import homedeck's old SQLite history or serve plugin HTML.
+
+Tests use real temporary directory trees and the installed manifest through the public card/detail/action interfaces. They cover retained history, increments, partial observations, cancellation, tracking restart/pause, failed scans, corruption and writer exclusion. Browser acceptance installs the actual plugin, rejects a foreign-Origin scan, scans only temporary files, verifies two readings and the change card, toggles tracking and checks both languages at 1280 and 520px.
 
 ## Background jobs
 

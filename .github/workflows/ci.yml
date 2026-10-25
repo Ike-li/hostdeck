@@ -99,7 +99,7 @@ jobs:
               *.zip) list=$(unzip -Z1 "$a") ;;
               *) list=$(tar -tzf "$a") ;;
             esac
-            for want in '/hostdeck(\.exe)?' /LICENSE /examples/disk/plugin.yaml /examples/disk/card.ps1 /examples/grafana/plugin.yaml; do
+            for want in '/hostdeck(\.exe)?' /LICENSE /examples/disk/plugin.yaml /examples/disk/card.ps1 /examples/disk-history/plugin.yaml /examples/grafana/plugin.yaml; do
               grep -qE -- "^[^/]+$want\$" <<<"$list" || { echo "$a has no $want"; exit 1; }
             done
             if grep -q examples_test.go <<<"$list"; then echo "$a carries examples_test.go"; exit 1; fi

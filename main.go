@@ -18,6 +18,7 @@ import (
 	"github.com/Ike-li/hostdeck/examples"
 	"github.com/Ike-li/hostdeck/internal/cli"
 	"github.com/Ike-li/hostdeck/internal/console"
+	"github.com/Ike-li/hostdeck/internal/diskhistory"
 	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
@@ -84,6 +85,7 @@ func run(args []string) error {
 		if err != nil {
 			return console.Loaded{}, err
 		}
+		diskhistory.Sync(pluginDir, plugins)
 		log.Printf("hostdeck: %d plugins in %s", len(plugins), pluginDir)
 		return console.Loaded{Plugins: plugins, Broken: broken, Served: served}, nil
 	}
