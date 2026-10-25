@@ -192,6 +192,8 @@ Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `d
 - `examples/` tests run the disk example on the machine at hand, and again on a macOS `df` output copied from a Mac with two disks and Time Machine backups mounted; they answer the Grafana, Syncthing and Ollama examples with responses copied from their documentation.
 - CI runs gofmt, vet, core race checks and full acceptance with an explicitly selected Chrome on macOS and Windows, then the full browser suite again in an explicitly selected Edge. Every test invocation uses `-count=1`, an eight-minute package limit and JSON output containing individual test durations. Per-system artifacts retain these results and browser failure captures for seven days, including on failure. Each job has a twenty-minute limit; a new PR revision cancels that PR's obsolete workflow run. Another job builds the release archives with GoReleaser as a snapshot and checks that each holds the program and the examples. Nothing is published.
 
+Drawer keyboard tests wait for the initial workspace and the open animation, then assert their starting focus before sending Tab; the first initialization route cannot race the interaction.
+
 ## Not there yet
 
 Background checks and notifications (M2), Docker and port views (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
