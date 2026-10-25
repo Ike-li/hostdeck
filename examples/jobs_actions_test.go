@@ -12,6 +12,7 @@ import (
 )
 
 func TestJobActionsRejectTheWholeNameBeforeCallingTheOperatingSystem(t *testing.T) {
+	t.Setenv("LC_ALL", "en_US.UTF-8")
 	for _, name := range []string{"", "valid\ninvalid/name", "valid\n", "with space", "with\ttab", "中文", "café"} {
 		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
 			record := filepath.Join(t.TempDir(), "calls")
