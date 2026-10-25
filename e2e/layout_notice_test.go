@@ -33,7 +33,9 @@ func TestTheLayoutSavedNoticeWaitsWhileUndoHasFocusOrThePointerIsOverIt(t *testi
 	threeLinks(t, dir)
 	url := startConsole(t, dir)
 	ctx := openBrowser(t, "en")
-	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)))
+	// The sidebar appears before the initial card fetch has completed.
+	// Finish that reading before freezing the browser scheduler.
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="a"] .card-value`)))
 	pauseTime(t, ctx)
 	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)), chromedp.WaitVisible(chromedp.CSS(`#layout-note`)), chromedp.Focus(chromedp.CSS(`#layout-undo`)))
 	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
