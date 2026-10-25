@@ -334,7 +334,9 @@ main {
 }
 
 .dot[data-status="up"] { background: var(--ok); }
-.dot[data-status="down"] { background: var(--error); }
+/* An address that did not answer is a ring, not a disc: red and green are one
+   colour to many eyes. The ring is drawn inside the same 8px box. */
+.dot[data-status="down"] { background: transparent; border: 2px solid var(--error); }
 
 .side-footer {
   flex: none;

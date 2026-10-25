@@ -586,7 +586,7 @@ func TestFieldEdgesTheFocusRingAndStatusDotsStandOutFromTheirSurfaces(t *testing
 		{"the focus ring", v(":focus-visible", "outline"), []string{"--panel", "--bg"}},
 		{"a status dot nothing has been heard from yet", v(".dot", "background"), []string{"--panel"}},
 		{"the dot of an address that answered", v(`.dot[data-status="up"]`, "background"), []string{"--panel"}},
-		{"the dot of an address that did not", v(`.dot[data-status="down"]`, "background"), []string{"--panel"}},
+		{"the ring of an address that did not", v(`.dot[data-status="down"]`, "border"), []string{"--panel"}},
 	}
 
 	light := themeTokens(rules, "")
