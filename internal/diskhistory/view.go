@@ -3,6 +3,7 @@ package diskhistory
 import (
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -145,6 +146,23 @@ func changed(base, latest snapshot) []string {
 	return paths
 }
 
+// past names the time between two readings in whole hours, or in minutes
+// when they are less than an hour apart.
+func past(span time.Duration) plugin.Text {
+	if span < time.Hour {
+		n := max(1, int(span.Round(time.Minute).Minutes()))
+		if n == 1 {
+			return text("Past minute", "过去 1 分钟")
+		}
+		return text(fmt.Sprintf("Past %d minutes", n), fmt.Sprintf("过去 %d 分钟", n))
+	}
+	n := int(span.Round(time.Hour).Hours())
+	if n == 1 {
+		return text("Past hour", "过去 1 小时")
+	}
+	return text(fmt.Sprintf("Past %d hours", n), fmt.Sprintf("过去 %d 小时", n))
+}
+
 func (e *entry) card(targets []string, now time.Time) any {
 	status := "ok"
 	value := "—"
@@ -165,6 +183,8 @@ func (e *entry) card(targets []string, now time.Time) any {
 		if i != 0 {
 			continue
 		}
+		dir, err := os.UserHomeDir()
+		home := err == nil && filepath.Clean(dir) == target
 		value = size(latest.Sizes["."].Bytes)
 		label = text("Scanned once · start hourly tracking to see changes", "已扫描 1 次 · 开启每小时跟踪后显示变化")
 		if e.state.Tracking {
@@ -173,8 +193,15 @@ func (e *entry) card(targets []string, now time.Time) any {
 		if compared {
 			if d, ok := difference(base, latest, "."); ok {
 				value = delta(d)
-				span := latest.Time.Sub(base.Time).Hours()
-				label = text(fmt.Sprintf("Change over %.1f hours · %s total", span, size(latest.Sizes["."].Bytes)), fmt.Sprintf("过去 %.1f 小时变化 · 共 %s", span, size(latest.Sizes["."].Bytes)))
+				label = past(latest.Time.Sub(base.Time))
+				total := size(latest.Sizes["."].Bytes)
+				if home {
+					label.ByLang["en"] += " · " + total + " in the home folder"
+					label.ByLang["zh-CN"] += " · 主目录共 " + total
+				} else {
+					label.ByLang["en"] += " · " + total + " total"
+					label.ByLang["zh-CN"] += " · 共 " + total
+				}
 			} else {
 				label = text("Different entries were unreadable · change is unknown", "两次读不到的条目不同 · 无法确定增减")
 			}
@@ -183,6 +210,9 @@ func (e *entry) card(targets []string, now time.Time) any {
 					continue
 				}
 				if d, ok := difference(base, latest, name); ok && d != 0 {
+					if home {
+						name = filepath.Join("~", name)
+					}
 					rows = append(rows, row{name, delta(d)})
 				}
 				if len(rows) == 3 {
