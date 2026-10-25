@@ -266,8 +266,9 @@ var spacingProps = map[string]bool{
 	"padding-block-start": true, "padding-block-end": true, "padding-inline-start": true, "padding-inline-end": true,
 }
 
-// Type stays on one scale too: a size or leading is always a token, so a new
-// view cannot introduce a one-off 17px or 1.6 that reads as neither step.
+// Type stays on one scale too: a size, leading or weight is always a token,
+// so a new view cannot introduce a one-off 17px, 1.6 or 500 that reads as
+// neither step.
 func TestTheConsolesTypeStaysOnItsScale(t *testing.T) {
 	sizes := map[string]string{
 		"--text-xs": "12px", "--text-sm": "13px", "--text-base": "14px", "--text-md": "15px",
@@ -276,22 +277,21 @@ func TestTheConsolesTypeStaysOnItsScale(t *testing.T) {
 	leadings := map[string]string{
 		"--leading-tight": "1.25", "--leading-normal": "1.5", "--leading-relaxed": "1.65",
 	}
+	weights := map[string]string{"--weight-semibold": "600", "--weight-bold": "700"}
 
 	rules := styleRules(t)
 	tokens := rootTokens(rules)
-	for name, want := range sizes {
-		if got := tokens[name]; got != want {
-			t.Errorf("%s is %s, want %s", name, got, want)
-		}
-	}
-	for name, want := range leadings {
-		if got := tokens[name]; got != want {
-			t.Errorf("%s is %s, want %s", name, got, want)
+	for _, scale := range []map[string]string{sizes, leadings, weights} {
+		for name, want := range scale {
+			if got := tokens[name]; got != want {
+				t.Errorf("%s is %s, want %s", name, got, want)
+			}
 		}
 	}
 
 	typeToken := regexp.MustCompile(`^var\(--(?:text|glyph)-[a-z0-9-]+\)$`)
 	leadingToken := regexp.MustCompile(`^var\(--leading-[a-z0-9-]+\)$`)
+	weightToken := regexp.MustCompile(`^var\(--weight-[a-z0-9-]+\)$`)
 	for _, r := range rules {
 		for _, d := range r.decls {
 			switch d.prop {
@@ -304,6 +304,55 @@ func TestTheConsolesTypeStaysOnItsScale(t *testing.T) {
 				// as tall as the glyph itself.
 				if !leadingToken.MatchString(d.value) && d.value != "1" {
 					t.Errorf("line %d: %s sets line-height: %s; use a --leading-* token", r.line, r.selector, d.value)
+				}
+			case "font-weight":
+				if !weightToken.MatchString(d.value) {
+					t.Errorf("line %d: %s sets font-weight: %s; use a --weight-* token", r.line, r.selector, d.value)
+				}
+			}
+		}
+	}
+}
+
+// Colour is written in the theme blocks only. Every rule outside a :root
+// paints with a token or a mix of tokens, so a theme is replaced by replacing
+// those blocks, and a stray #333 cannot stay behind in one theme.
+func TestColoursAreWrittenOnlyInTheThemeBlocks(t *testing.T) {
+	literal := regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(`)
+	for _, r := range styleRules(t) {
+		if r.selector == ":root" {
+			continue
+		}
+		for _, d := range r.decls {
+			if literal.MatchString(d.value) {
+				t.Errorf("line %d: %s sets %s: %s; use a colour token from :root", r.line, r.selector, d.prop, d.value)
+			}
+		}
+	}
+}
+
+// Corners come from the radius scale: a radius is a --radius-* token, 0, or
+// 50% for a circle, so corners nest by steps rather than by guesswork.
+func TestCornersComeFromTheRadiusScale(t *testing.T) {
+	scale := map[string]string{
+		"--radius-sm": "6px", "--radius-md": "8px", "--radius-lg": "12px", "--radius-xl": "16px", "--radius-full": "999px",
+	}
+	rules := styleRules(t)
+	tokens := rootTokens(rules)
+	for name, want := range scale {
+		if got := tokens[name]; got != want {
+			t.Errorf("%s is %s, want %s", name, got, want)
+		}
+	}
+	token := regexp.MustCompile(`^var\(--radius-[a-z0-9]+\)$`)
+	for _, r := range rules {
+		for _, d := range r.decls {
+			if !strings.HasSuffix(d.prop, "radius") {
+				continue
+			}
+			for _, part := range strings.Fields(d.value) {
+				if part != "0" && part != "50%" && !token.MatchString(part) {
+					t.Errorf("line %d: %s sets %s: %s, and %s is not 0, 50%% or a --radius-* token", r.line, r.selector, d.prop, d.value, part)
 				}
 			}
 		}
@@ -625,14 +674,16 @@ func zeroDuration(value string) bool {
 	return strings.HasPrefix(value, "0ms") || strings.HasPrefix(value, "0s")
 }
 
-// Motion keeps to the duration tokens, so a one-off 250ms cannot appear beside
-// the console's own three steps, and "all" cannot quietly animate a property a
-// test reads the moment it changes, such as a disabled control's fade.
-func TestMotionKeepsToTheDurationTokens(t *testing.T) {
+// Motion keeps to the duration and easing tokens, so a one-off 250ms or
+// ease-in cannot appear beside the console's own steps and its one curve, and
+// "all" cannot quietly animate a property a test reads the moment it changes,
+// such as a disabled control's fade.
+func TestMotionKeepsToTheDurationAndEasingTokens(t *testing.T) {
 	bare := regexp.MustCompile(`^[\d.]+m?s$`)
+	curve := regexp.MustCompile(`^(?:ease|ease-in|ease-out|ease-in-out|linear|step-start|step-end)$|^(?:cubic-bezier|steps|linear)\(`)
 	motion := map[string]bool{
-		"transition": true, "transition-duration": true,
-		"animation": true, "animation-duration": true,
+		"transition": true, "transition-duration": true, "transition-timing-function": true,
+		"animation": true, "animation-duration": true, "animation-timing-function": true,
 	}
 	for _, r := range styleRules(t) {
 		for _, d := range r.decls {
@@ -640,12 +691,13 @@ func TestMotionKeepsToTheDurationTokens(t *testing.T) {
 				continue
 			}
 			for _, part := range strings.Fields(d.value) {
-				if part == "all" {
+				switch {
+				case part == "all":
 					t.Errorf("line %d: %s sets %s: %s; name the properties, never \"all\"", r.line, r.selector, d.prop, d.value)
-					continue
-				}
-				if bare.MatchString(part) && !zeroDuration(part) {
+				case bare.MatchString(part) && !zeroDuration(part):
 					t.Errorf("line %d: %s sets %s: %s, and %s is not a --dur-* token", r.line, r.selector, d.prop, d.value, part)
+				case curve.MatchString(part):
+					t.Errorf("line %d: %s sets %s: %s, and %s is not an --ease-* token", r.line, r.selector, d.prop, d.value, part)
 				}
 			}
 		}

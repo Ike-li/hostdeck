@@ -75,12 +75,13 @@
   --tint-row-hover: color-mix(in srgb, var(--text) 4%, var(--panel));
   --rail-w: 3px;
 
-  /* Motion. */
+  /* Motion: three steps and one curve. Nothing animates on its way out; it
+     leaves at once, so there is no exit curve. --dur-slow is a step of the
+     scale that nothing needs yet. */
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 320ms;
   --ease-standard: cubic-bezier(.2, 0, 0, 1);
-  --ease-exit: cubic-bezier(.4, 0, 1, 1);
 
   /* Stacking: the drawer's backdrop, drawer, top bar and the skip link, in
      that order. */
