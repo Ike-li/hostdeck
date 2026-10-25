@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,68 @@ func TestReadingsOfFileLengthsAreNotComparedWithReadingsOfDiskSpace(t *testing.T
 	}
 	if got := nativeCall(t, dir, "detail"); strings.Count(string(got["items"]), "UTC ·") != 1 {
 		t.Fatalf("detail log mixes file-length and disk-space readings: %s", got["items"])
+	}
+}
+
+// unreadableTarget gives the fixture's target a folder this user cannot list
+// and a readable one, and returns them.
+func unreadableTarget(t *testing.T, target string) (string, string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not remove Windows read access")
+	}
+	denied, open := filepath.Join(target, "denied"), filepath.Join(target, "open")
+	for _, dir := range []string{denied, open} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "one"), []byte(strings.Repeat("a", 4096)), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(denied, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(denied, 0700) })
+	if _, err := os.ReadDir(denied); err == nil {
+		t.Skip("this user bypasses directory permissions")
+	}
+	return denied, open
+}
+
+func scanned(t *testing.T, dir, target string, count int) {
+	t.Helper()
+	if got := nativeCall(t, dir, "action", "scan", id(target)); got["error"] != nil {
+		t.Fatalf("scan %s", got["error"])
+	}
+	waitSaved(t, dir, func(s saved) bool { return len(s.Scans[target]) == count })
+}
+
+func TestTheCardShowsTheChangeWhenBothReadingsMissedTheSameEntries(t *testing.T) {
+	dir, target := nativeFixture(t)
+	_, open := unreadableTarget(t, target)
+	scanned(t, dir, target, 1)
+	if err := os.WriteFile(filepath.Join(open, "two"), []byte(strings.Repeat("a", 4096)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	scanned(t, dir, target, 2)
+	got := nativeCall(t, dir, "card")
+	if string(got["status"]) != `"ok"` || string(got["value"]) != `"+4.10 KB"` || !strings.Contains(string(got["label"]), "1 项无法读取，未计入") || !strings.Contains(string(got["rows"]), `"open","value":"+4.10 KB"`) {
+		t.Fatalf("card %s", got)
+	}
+}
+
+func TestTheCardWithholdsTheChangeWhenTheReadingsMissedDifferentEntries(t *testing.T) {
+	dir, target := nativeFixture(t)
+	denied, _ := unreadableTarget(t, target)
+	scanned(t, dir, target, 1)
+	if err := os.Chmod(denied, 0700); err != nil {
+		t.Fatal(err)
+	}
+	scanned(t, dir, target, 2)
+	got := nativeCall(t, dir, "card")
+	if string(got["status"]) != `"warn"` || string(got["value"]) != `"8.19 KB"` || !strings.Contains(string(got["label"]), "无法确定增减") {
+		t.Fatalf("card %s", got)
 	}
 }
 

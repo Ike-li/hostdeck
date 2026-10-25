@@ -82,6 +82,71 @@ func TestAnUnreadableDirectoryCannotAppearAsADeletedDirectory(t *testing.T) {
 	}
 }
 
+func TestReadingsThatMissTheSameEntriesCompareWhatTheyRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not remove Windows read access")
+	}
+	root, exclude := t.TempDir(), t.TempDir()
+	denied, open := filepath.Join(root, "denied"), filepath.Join(root, "open")
+	for _, dir := range []string{denied, open} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range []string{filepath.Join(denied, "file"), filepath.Join(open, "one")} {
+		if err := os.WriteFile(file, []byte(block), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(denied, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(denied, 0700) })
+	if _, err := os.ReadDir(denied); err == nil {
+		t.Skip("this user bypasses directory permissions")
+	}
+	first, err := collect(context.Background(), root, exclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(open, "two"), []byte(block), 0600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := collect(context.Background(), root, exclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{".", "open"} {
+		if d, ok := difference(first, second, path); !ok || d != 4096 {
+			t.Fatalf("%s changed by %d (known=%v) between readings that missed the same directory, want 4096", path, d, ok)
+		}
+	}
+	if d, ok := difference(first, second, "denied"); ok {
+		t.Fatalf("a directory that was never read reported a change of %d", d)
+	}
+	if err := os.Chmod(denied, 0700); err != nil {
+		t.Fatal(err)
+	}
+	third, err := collect(context.Background(), root, exclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, ok := difference(second, third, "."); ok {
+		t.Fatalf("the root changed by %d when a missed directory became readable; that change is unknown", d)
+	}
+	if err := os.Chmod(open, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(open, 0700) })
+	fourth, err := collect(context.Background(), root, exclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, ok := difference(first, fourth, "."); ok {
+		t.Fatalf("the root changed by %d between readings that missed different directories; that change is unknown", d)
+	}
+}
+
 func TestASparseFileCountsTheSpaceItOccupiesNotItsLength(t *testing.T) {
 	root := t.TempDir()
 	sparseFile(t, filepath.Join(root, "disk.raw"), 1<<30)

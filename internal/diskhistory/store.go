@@ -24,6 +24,10 @@ const (
 type measurement struct {
 	Bytes   int64 `json:"bytes"`
 	Partial bool  `json:"partial,omitempty"`
+	// Missed is a digest of the unreadable entries below a partial directory,
+	// so two readings that missed the same ones can compare what they read.
+	// It is empty when the directory itself could not be read.
+	Missed string `json:"missed,omitempty"`
 }
 
 type snapshot struct {

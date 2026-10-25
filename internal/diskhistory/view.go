@@ -95,18 +95,24 @@ func baseline(scans []snapshot) (snapshot, snapshot, bool) {
 func difference(base, latest snapshot, path string) (int64, bool) {
 	a, aok := base.Sizes[path]
 	b, bok := latest.Sizes[path]
-	// Missing summaries mean zero only when their parent was actually read,
-	// and no directory summaries were dropped at the storage limit.
-	if !aok && (base.Sizes["."].Partial || base.Truncated) {
-		return 0, false
+	if aok && bok {
+		return b.Bytes - a.Bytes, sameMisses(a, b)
 	}
-	if !bok && (latest.Sizes["."].Partial || latest.Truncated) {
-		return 0, false
-	}
-	if a.Partial || b.Partial {
+	// A summary missing from one reading means zero only when that reading
+	// kept every summary and both readings missed the same entries.
+	if (!aok && base.Truncated) || (!bok && latest.Truncated) || !sameMisses(base.Sizes["."], latest.Sizes["."]) {
 		return 0, false
 	}
 	return b.Bytes - a.Bytes, true
+}
+
+// sameMisses says whether two readings of a directory left out the same
+// unreadable entries, so the bytes they did read can be compared.
+func sameMisses(a, b measurement) bool {
+	if !a.Partial && !b.Partial {
+		return true
+	}
+	return a.Partial && b.Partial && a.Missed != "" && a.Missed == b.Missed
 }
 
 func changed(base, latest snapshot) []string {
@@ -151,7 +157,7 @@ func (e *entry) card(targets []string, now time.Time) any {
 			continue
 		}
 		base, latest, compared := baseline(scans)
-		if latest.Sizes["."].Partial || now.Sub(latest.Time) > 2*interval {
+		if _, known := difference(base, latest, "."); (compared && !known) || now.Sub(latest.Time) > 2*interval {
 			status = "warn"
 		}
 		if i != 0 {
@@ -165,7 +171,7 @@ func (e *entry) card(targets []string, now time.Time) any {
 				span := latest.Time.Sub(base.Time).Hours()
 				label = text(fmt.Sprintf("Change over %.1f hours · %s total", span, size(latest.Sizes["."].Bytes)), fmt.Sprintf("过去 %.1f 小时变化 · 共 %s", span, size(latest.Sizes["."].Bytes)))
 			} else {
-				label = text("Partial scan · change is unknown", "扫描不完整 · 无法确定增减")
+				label = text("Different entries were unreadable · change is unknown", "两次读不到的条目不同 · 无法确定增减")
 			}
 			for _, name := range changed(base, latest) {
 				if filepath.Dir(name) != "." {
@@ -180,7 +186,8 @@ func (e *entry) card(targets []string, now time.Time) any {
 			}
 		}
 		if latest.Sizes["."].Partial {
-			label = text("Partial scan · measured size is a lower bound; change is unknown", "扫描不完整 · 大小仅为下限，无法确定总量增减")
+			label.ByLang["en"] += fmt.Sprintf(" · %d unreadable, not counted", latest.Skipped)
+			label.ByLang["zh-CN"] += fmt.Sprintf(" · %d 项无法读取，未计入", latest.Skipped)
 		}
 		if now.Sub(latest.Time) > 2*interval {
 			label.ByLang["en"] += fmt.Sprintf(" · last scan %.0f hours ago", now.Sub(latest.Time).Hours())
@@ -280,15 +287,16 @@ func (e *entry) view(targets []string) any {
 		items[len(items)-1].Fields = append(items[len(items)-1].Fields, field{text("Directory summaries shown (up to three levels)", "显示的目录摘要（最多三层）"), fmt.Sprintf("%d / %d", min(50, len(paths)), len(paths))})
 		for _, name := range paths[:min(50, len(paths))] {
 			m, exists := latest.Sizes[name]
+			d, known := difference(base, latest, name)
 			child := item{ID: id(target) + ":" + name, Name: plugin.Text{All: filepath.Join(target, name)}, Status: "ok", Value: size(m.Bytes), Log: history(scans, name)}
-			if m.Partial || (!exists && (latest.Truncated || latest.Sizes["."].Partial)) {
-				child.Status = "warn"
+			if (m.Partial && m.Missed == "") || (!exists && !known) {
 				child.Value = "—"
 			}
-			if compared {
-				if d, ok := difference(base, latest, name); ok {
-					child.Fields = append(child.Fields, field{text("Change since baseline", "相对基准变化"), delta(d)})
-				}
+			if m.Partial || (!exists && !known) {
+				child.Status = "warn"
+			}
+			if compared && known {
+				child.Fields = append(child.Fields, field{text("Change since baseline", "相对基准变化"), delta(d)})
 			}
 			items = append(items, child)
 		}

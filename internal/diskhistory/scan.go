@@ -2,10 +2,14 @@ package diskhistory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -16,6 +20,21 @@ import (
 func collect(ctx context.Context, target, exclude string) (snapshot, error) {
 	result := snapshot{Time: time.Now().UTC(), Sizes: map[string]measurement{".": {}}, Allocated: true}
 	seen := map[fileKey]bool{}
+	var missed []string
+	// miss records an entry that could not be read. One that disappeared
+	// during the scan is gone rather than missed.
+	miss := func(rel string, err error) {
+		if errors.Is(err, fs.ErrNotExist) {
+			return
+		}
+		result.Skipped++
+		missed = append(missed, rel)
+		if m, ok := result.Sizes[rel]; ok {
+			m.Partial = true
+			result.Sizes[rel] = m
+		}
+		mark(&result, rel, 0, true)
+	}
 	base, err := os.Stat(target)
 	if err != nil {
 		return snapshot{}, err
@@ -62,12 +81,7 @@ func collect(ctx context.Context, target, exclude string) (snapshot, error) {
 			if path == actual {
 				return walkErr
 			}
-			result.Skipped++
-			if m, ok := result.Sizes[rel]; ok {
-				m.Partial = true
-				result.Sizes[rel] = m
-			}
-			mark(&result, rel, 0, true)
+			miss(rel, walkErr)
 			return nil
 		}
 		if entry.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
@@ -78,8 +92,7 @@ func collect(ctx context.Context, target, exclude string) (snapshot, error) {
 		}
 		info, err := entry.Info()
 		if err != nil {
-			result.Skipped++
-			mark(&result, rel, 0, true)
+			miss(rel, err)
 			return nil
 		}
 		if path != actual && skipEntry(info, base) {
@@ -103,8 +116,7 @@ func collect(ctx context.Context, target, exclude string) (snapshot, error) {
 			}
 			bytes, err := allocated(path, info)
 			if err != nil {
-				result.Skipped++
-				mark(&result, rel, 0, true)
+				miss(rel, err)
 				return nil
 			}
 			mark(&result, rel, bytes, false)
@@ -114,8 +126,31 @@ func collect(ctx context.Context, target, exclude string) (snapshot, error) {
 	if err != nil {
 		return snapshot{}, err
 	}
+	slices.Sort(missed)
+	for name, m := range result.Sizes {
+		if m.Partial {
+			m.Missed = digest(missed, name)
+			result.Sizes[name] = m
+		}
+	}
 	result.Time = time.Now().UTC()
 	return result, nil
+}
+
+// digest names the missed entries below dir, or nothing when dir itself was
+// missed and so has no reading to compare.
+func digest(missed []string, dir string) string {
+	h := sha256.New()
+	for _, path := range missed {
+		if path == dir {
+			return ""
+		}
+		if dir == "." || strings.HasPrefix(path, dir+string(filepath.Separator)) {
+			io.WriteString(h, path)
+			h.Write([]byte{0})
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
 }
 
 // Prefer shallow summaries when storage is full. Depth-first traversal must
