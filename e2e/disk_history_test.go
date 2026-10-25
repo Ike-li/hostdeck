@@ -116,6 +116,36 @@ func TestDiskHistoryInstallsScansTracksAndShowsSavedChangesInBothLanguages(t *te
 				t.Fatalf("disable lost history: %v", err)
 			}
 			cliCommand(t, 0, "plugin", "enable", "--url", url, "--id", "disk-history")
+			// Reacquire the native writer before exercising the other directory
+			// mutation: trash must stop it before moving the folder on Windows.
+			request, _ := http.NewRequestWithContext(context.Background(), "POST", url+"/api/action/disk-history", bytes.NewReader(body))
+			request.Header.Set("Origin", url)
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("rescan before trash: HTTP %d", response.StatusCode)
+			}
+			waitDiskSnapshots(t, historyFile, target, 4)
+			request, _ = http.NewRequestWithContext(context.Background(), "POST", url+"/api/plugins/disk-history/trash", nil)
+			request.Header.Set("Origin", url)
+			response, err = http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var trash struct {
+				Folder string `json:"folder"`
+			}
+			err = json.NewDecoder(response.Body).Decode(&trash)
+			response.Body.Close()
+			if err != nil || response.StatusCode != http.StatusOK || trash.Folder == "" {
+				t.Fatalf("trash %+v: HTTP %d, %v", trash, response.StatusCode, err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "plugins", ".trash", trash.Folder, "data", "history.json")); err != nil {
+				t.Fatalf("trash lost history: %v", err)
+			}
 		})
 	}
 }

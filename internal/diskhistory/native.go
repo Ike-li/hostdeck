@@ -29,6 +29,7 @@ type entry struct {
 	owner    *os.File
 	retired  bool
 	attempts map[string]time.Time
+	done     chan struct{}
 }
 
 var entries = struct {
@@ -72,6 +73,56 @@ func (e *entry) retireLocked() {
 		e.owner.Close()
 		e.owner = nil
 	}
+}
+
+// Suspend releases native file handles before a directory mutation. Windows
+// refuses moving a folder while its history writer is locked. The returned
+// callback restores the entry only if the original folder still exists, so
+// callers can defer it for both successful and refused moves.
+func Suspend(ctx context.Context, dir string) (func(), error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return func() {}, err
+	}
+	entries.Lock()
+	e := entries.items[dir]
+	if e == nil {
+		entries.Unlock()
+		return func() {}, nil
+	}
+	e.mu.Lock()
+	e.retireLocked()
+	done := e.done
+	e.mu.Unlock()
+	entries.Unlock()
+	var once sync.Once
+	resume := func() {
+		once.Do(func() {
+			entries.Lock()
+			if entries.items[dir] != e {
+				entries.Unlock()
+				return
+			}
+			delete(entries.items, dir)
+			info, err := os.Stat(dir)
+			restore := err == nil && e.identity != nil && os.SameFile(info, e.identity)
+			entries.Unlock()
+			if restore {
+				get(dir)
+			}
+		})
+	}
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			// The worker retains its lock until its filesystem read ends. Keep
+			// the entry suspended until then; a retry cannot race an old writer.
+			go func() { <-done; resume() }()
+			return func() {}, ctx.Err()
+		}
+	}
+	return resume, nil
 }
 
 func get(dir string) *entry {
@@ -252,7 +303,10 @@ func (e *entry) startLocked(target string) {
 	e.cancel, e.running = cancel, true
 	e.target = target
 	e.attempts[target] = time.Now()
+	done := make(chan struct{})
+	e.done = done
 	go func() {
+		defer close(done)
 		defer cancel()
 		result, err := collect(ctx, target, e.dir)
 		e.mu.Lock()

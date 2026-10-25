@@ -21,6 +21,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/card"
 	"github.com/Ike-li/hostdeck/internal/catalog"
 	"github.com/Ike-li/hostdeck/internal/detail"
+	"github.com/Ike-li/hostdeck/internal/diskhistory"
 	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/local"
 	"github.com/Ike-li/hostdeck/internal/onetime"
@@ -601,6 +602,12 @@ func (s *server) serveTrash(w http.ResponseWriter, r *http.Request) {
 	}
 	s.changing.Lock()
 	defer s.changing.Unlock()
+	resume, err := s.suspendNative(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, &card.Error{Code: "trash_failed", Detail: err.Error()})
+		return
+	}
+	defer resume()
 	folder, err := catalog.Trash(s.cfg.PluginDir, r.PathValue("id"))
 	switch {
 	case errors.Is(err, catalog.ErrUnknown):
@@ -651,6 +658,12 @@ func (s *server) serveRename(rename func(pluginDir, id string) error) http.Handl
 		}
 		s.changing.Lock()
 		defer s.changing.Unlock()
+		resume, err := s.suspendNative(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, &card.Error{Code: "rename_failed", Detail: err.Error()})
+			return
+		}
+		defer resume()
 		switch err := rename(s.cfg.PluginDir, r.PathValue("id")); {
 		case errors.Is(err, catalog.ErrUnknown):
 			writeError(w, http.StatusNotFound, &card.Error{Code: "not_installed"})
@@ -663,6 +676,16 @@ func (s *server) serveRename(rename func(pluginDir, id string) error) http.Handl
 			writeJSON(w, struct{}{})
 		}
 	}
+}
+
+func (s *server) suspendNative(ctx context.Context, id string) (func(), error) {
+	p, ok := s.plugin(id)
+	if !ok {
+		return func() {}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, detail.ReadTimeout)
+	defer cancel()
+	return diskhistory.Suspend(ctx, p.Dir)
 }
 
 // serveReload loads trusted on-disk plugins without changing their files.

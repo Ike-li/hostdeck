@@ -219,3 +219,39 @@ func TestNewScansPruneOldHistoryAndKeepTheSnapshotCountBounded(t *testing.T) {
 		})
 	}
 }
+
+func TestSuspendingAPluginReleasesItsWriterBeforeMovingAndCanRecoverAFailedMove(t *testing.T) {
+	dir, target := nativeFixture(t)
+	if got := nativeCall(t, dir, "action", "scan", id(target)); got["error"] != nil {
+		t.Fatalf("scan %s", got)
+	}
+	waitSaved(t, dir, func(s saved) bool { return len(s.Scans[target]) == 1 })
+	resume, err := Suspend(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := claim(dir)
+	if err != nil {
+		t.Fatalf("suspended plugin still holds its writer: %v", err)
+	}
+	f.Close()
+	if got := nativeCall(t, dir, "detail"); got["error"] == nil {
+		t.Fatal("a read reactivated the suspended plugin")
+	}
+	resume()
+	if got := nativeCall(t, dir, "detail"); got["error"] != nil {
+		t.Fatalf("failed move could not recover: %s", got)
+	}
+	resume, err = Suspend(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := filepath.Join(filepath.Dir(dir), ".history")
+	if err := os.Rename(dir, disabled); err != nil {
+		t.Fatalf("suspended folder cannot move: %v", err)
+	}
+	resume()
+	if s, err := load(disabled); err != nil || len(s.Scans[target]) != 1 {
+		t.Fatalf("move lost history %+v, %v", s, err)
+	}
+}
