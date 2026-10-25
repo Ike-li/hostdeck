@@ -1,0 +1,9 @@
+schema: 1
+name: {en: Background jobs, zh-CN: 后台任务}
+description:
+  en: How many of this user's loaded launchd jobs need attention, leaving out Apple's and ordinary applications. A running job is fine even if its last exit was not. On Windows, services whose program is outside the Windows directory. Works as it is.
+  zh-CN: 当前用户已加载的 launchd 任务里，有几条需要处理；不含 Apple 自己的，也不含普通应用。正在运行的算正常，即使上次退出码不是 0。在 Windows 上，统计的是程序不在 Windows 目录里的服务。不用改就能用。
+card:
+  exec:
+    command: [sh, card.sh]
+    windows: [powershell, -NoProfile, -NonInteractive, -ExecutionPolicy, Bypass, -File, card.ps1]

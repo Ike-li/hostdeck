@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -343,7 +344,7 @@ func TestEveryBuiltInExampleDescribesItself(t *testing.T) {
 			t.Errorf("%s: name %+v, description %+v; want a name and a description in en and zh-CN", e.ID, e.Name, e.Description)
 		}
 	}
-	if want := []string{"disk", "grafana", "ollama", "syncthing"}; !slices.Equal(ids, want) {
+	if want := []string{"disk", "grafana", "jobs", "ollama", "syncthing"}; !slices.Equal(ids, want) {
 		t.Errorf("built in: %v, want %v", ids, want)
 	}
 	fs.WalkDir(Files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -352,4 +353,141 @@ func TestEveryBuiltInExampleDescribesItself(t *testing.T) {
 		}
 		return err
 	})
+}
+
+// withLaunchctl puts a fake launchctl on PATH. The real one would read this
+// machine's jobs, and the test says which jobs the card is about.
+func withLaunchctl(t *testing.T, script string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows script asks PowerShell for services, not launchctl")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "launchctl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestTheJobsCardCountsOnlyAJobThatExitedWithAnError(t *testing.T) {
+	withLaunchctl(t, `#!/bin/sh
+uid=$(id -u)
+case "$2" in
+"gui/$uid")
+cat <<'EOF'
+	services = {
+		123      - 	com.example.running
+		0        0 	com.example.idle
+		0        - 	com.example.once
+		0        1 	com.example.failed
+		1        0 	com.apple.Finder
+		2        - 	application.com.example.App
+	}
+EOF
+;;
+"gui/$uid/com.example.running")
+printf '%s\n' '	state = running' '	last exit code = 255' ;;
+"gui/$uid/com.example.idle")
+printf '%s\n' '	state = not running' '	last exit code = 0' ;;
+"gui/$uid/com.example.once")
+printf '%s\n' '	state = not running' ;;
+"gui/$uid/com.example.failed")
+printf '%s\n' '	state = not running' '	last exit code = 1' ;;
+*) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+`)
+
+	v := card.Fetch(context.Background(), load(t, "jobs"))
+
+	if v.Error != nil {
+		t.Fatalf("error card: %+v", v.Error)
+	}
+	if v.Status != "error" || v.Value != "1" {
+		t.Errorf("status %q, value %q; want one job that needs attention", v.Status, v.Value)
+	}
+	if v.Label.ByLang["en"] != "need attention" || v.Label.ByLang["zh-CN"] != "需要处理" {
+		t.Errorf("label %+v", v.Label)
+	}
+	if len(v.Rows) != 1 || v.Rows[0].Name.All != "com.example.failed" || v.Rows[0].Status != "error" || v.Rows[0].Value != "not running · exit 1" {
+		t.Errorf("rows %+v, want only the job that exited 1", v.Rows)
+	}
+}
+
+func TestTheJobsCardCountsAJobStuckInAnotherState(t *testing.T) {
+	withLaunchctl(t, `#!/bin/sh
+uid=$(id -u)
+case "$2" in
+"gui/$uid")
+printf '%s\n' '	services = {' '		0        0 	com.example.stuck' '	}' ;;
+"gui/$uid/com.example.stuck")
+printf '%s\n' '	state = spawn scheduled' '	last exit code = 0' ;;
+*) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+`)
+
+	v := card.Fetch(context.Background(), load(t, "jobs"))
+
+	if v.Error != nil {
+		t.Fatalf("error card: %+v", v.Error)
+	}
+	if v.Status != "error" || v.Value != "1" || len(v.Rows) != 1 || v.Rows[0].Value != "spawn scheduled" {
+		t.Errorf("status %q, value %q, rows %+v; want the stuck job even though its last exit was 0", v.Status, v.Value, v.Rows)
+	}
+}
+
+func TestTheJobsCardReadsTheUserDomainWhenTheGuiDomainIsMissing(t *testing.T) {
+	withLaunchctl(t, `#!/bin/sh
+uid=$(id -u)
+case "$2" in
+gui/*) exit 1 ;;
+"user/$uid")
+printf '%s\n' '	services = {' '		0        2 	com.example.failed' '	}' ;;
+"user/$uid/com.example.failed")
+printf '%s\n' '	state = not running' '	last exit code = 2' ;;
+*) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+`)
+
+	v := card.Fetch(context.Background(), load(t, "jobs"))
+
+	if v.Error != nil {
+		t.Fatalf("error card: %+v", v.Error)
+	}
+	if v.Status != "error" || v.Value != "1" || len(v.Rows) != 1 || v.Rows[0].Name.All != "com.example.failed" || v.Rows[0].Value != "not running · exit 2" {
+		t.Errorf("status %q, value %q, rows %+v; want the user-domain job", v.Status, v.Value, v.Rows)
+	}
+}
+
+func TestTheJobsCardSaysWhenNeitherDomainCanBeRead(t *testing.T) {
+	withLaunchctl(t, "#!/bin/sh\nexit 1\n")
+
+	v := card.Fetch(context.Background(), load(t, "jobs"))
+
+	if v.Error == nil || v.Error.Code != "reported" {
+		t.Fatalf("error %+v, want the card to say the jobs could not be listed", v.Error)
+	}
+	if v.Error.Text.ByLang["en"] != "Could not list launchd jobs for this user." || v.Error.Text.ByLang["zh-CN"] != "读不到当前用户的 launchd 任务。" {
+		t.Errorf("text %+v", v.Error.Text)
+	}
+}
+
+func TestTheJobsExampleReadsThisMachinesJobs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	v := card.Fetch(ctx, load(t, "jobs"))
+
+	if v.Error != nil {
+		t.Fatalf("error card: %+v", v.Error)
+	}
+	if !slices.Contains([]string{"ok", "warn", "error"}, v.Status) {
+		t.Errorf("status %q, want ok, warn or error", v.Status)
+	}
+	n, err := strconv.Atoi(v.Value)
+	if err != nil || n < 0 {
+		t.Errorf("value %q, want how many jobs need attention", v.Value)
+	}
+	if v.Label.ByLang["zh-CN"] != "需要处理" {
+		t.Errorf("label %+v", v.Label)
+	}
 }
