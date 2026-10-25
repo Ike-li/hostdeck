@@ -50,9 +50,10 @@ func TestOneClickCopiesTheCompletePromptIntoTheBrowserClipboard(t *testing.T) {
 	ctx := openBrowser(t, "en")
 	do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.Click(chromedp.CSS(`#connection-help > summary`)))
 	if _, err := chromedp.CallBrowser(ctx, browser.SetPermission, browser.SetPermissionParams{
-		Permission: &browser.PermissionDescriptor{Name: "clipboard-read"},
-		Setting:    browser.PermissionSettingGranted,
-		Origin:     url,
+		Permission:       &browser.PermissionDescriptor{Name: "clipboard-read"},
+		Setting:          browser.PermissionSettingGranted,
+		Origin:           url,
+		BrowserContextID: chromedp.FromContext(ctx).BrowserContextID,
 	}); err != nil {
 		t.Fatal(err)
 	}

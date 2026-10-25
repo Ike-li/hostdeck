@@ -79,6 +79,8 @@ M1 has started. The built-in jobs plugin lists this user's loaded launchd jobs, 
 
 Browser assertions now verify their triggering events, jobs UI fixtures require concrete rows and actions, and Windows jobs scripts have deterministic query and action coverage. Test fixtures release blocked readers on failure and concurrent-action tests have bounded waits. Windows jobs action errors bypass success-output suppression so failures are reported instead of appearing successful.
 
+Browser suites now share one process while disposing an isolated browser context per case. Cookies, storage, HTTP cache, service workers and permissions are checked across consecutive visits to the same origin. Missing auto-discovered browsers may skip; configured or broken browsers fail, and startup logs the actual executable and version. Console processes and data directories remain per-case.
+
 Remaining M0 work, outside the UI/UX pass:
 
 - a release workflow run by a `v*` tag;

@@ -25,9 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chromedp/cdproto/browser"
-	"github.com/chromedp/cdproto/cdp"
-	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 )
 
@@ -52,6 +49,7 @@ func TestMain(m *testing.M) {
 	code := 1
 	if err := build.Run(); err == nil {
 		code = m.Run()
+		closeBrowser()
 	}
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -120,42 +118,6 @@ func writePlugin(t *testing.T, dir, id, manifest string) {
 	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.yaml"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// openBrowser starts a headless browser whose preferred languages are langs
-// and returns a context that bounds the test's steps.
-func openBrowser(t *testing.T, langs string) context.Context {
-	t.Helper()
-	opts := slices.Clone(chromedp.DefaultExecAllocatorOptions[:])
-	if path := os.Getenv("HOSTDECK_BROWSER"); path != "" {
-		opts = append(opts, chromedp.ExecPath(path))
-	}
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
-	ctx, cancelCtx := chromedp.NewContext(allocCtx)
-	t.Cleanup(func() {
-		cancelCtx()
-		cancelAlloc()
-	})
-	if err := chromedp.Do(ctx); err != nil {
-		if os.Getenv("HOSTDECK_E2E") == "1" {
-			t.Fatalf("starting the browser: %v", err)
-		}
-		t.Skipf("no browser to drive (%v); HOSTDECK_E2E=1 makes this a failure", err)
-	}
-	version, err := chromedp.CallBrowser(ctx, browser.GetVersion, cdp.Empty{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = chromedp.Call(ctx, emulation.SetUserAgentOverride, emulation.SetUserAgentOverrideParams{
-		UserAgent:      version.UserAgent,
-		AcceptLanguage: langs,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancelSteps := context.WithTimeout(ctx, time.Minute)
-	t.Cleanup(cancelSteps)
-	return ctx
 }
 
 func do(t *testing.T, ctx context.Context, steps ...chromedp.Action[chromedp.Void]) {
