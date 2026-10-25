@@ -397,13 +397,13 @@ main {
   transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
 
-.btn:hover { border-color: var(--accent); }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
 .btn:active:not(:disabled) { background: var(--tint-pressed); }
 .btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-.btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
 .btn.primary:active { background: var(--accent-pressed); border-color: var(--accent-pressed); }
 .btn.armed { border-color: var(--error); color: var(--error); }
-.btn.armed:hover { background: var(--tint-error-hover); }
+.btn.armed:hover:not(:disabled) { background: var(--tint-error-hover); }
 
 /* ---- Notices --------------------------------------------------------- */
 .banner {

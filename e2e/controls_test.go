@@ -3,9 +3,61 @@ package e2e
 import (
 	"testing"
 
+	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 )
+
+// A disabled button does not answer the pointer: under it, its edge and fill
+// stay what they are beside it, while an enabled button's change. A button
+// that cannot be pressed would otherwise look as if it could. This holds for a
+// primary button and for an ordinary one.
+func TestADisabledButtonDoesNotAnswerThePointer(t *testing.T) {
+	dir := t.TempDir()
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	// Without transitions, the colour read under the pointer is the one it settles on.
+	if _, err := chromedp.Call(ctx, emulation.SetEmulatedMedia, emulation.SetEmulatedMediaParams{
+		Features: []*emulation.MediaFeature{{Name: "prefers-reduced-motion", Value: "reduce"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ctx, chromedp.EmulateViewport(1280, 900), chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`.page-form button[type=submit]`)))
+
+	type look struct {
+		Hover        bool
+		Border, Fill string
+	}
+	read := func(selector string) look {
+		t.Helper()
+		got, err := chromedp.Run(ctx, chromedp.Evaluate[look](`(() => { const b = document.querySelector('`+selector+`'), s = getComputedStyle(b);
+ return {hover: b.matches(':hover'), border: s.borderTopColor, fill: s.backgroundColor}; })()`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	for _, selector := range []string{`#catalog-add-open`, `.page-form button[type=submit]`} {
+		for _, disabled := range []bool{false, true} {
+			point, err := chromedp.Run(ctx, chromedp.Evaluate[[]float64](`(() => { const b = document.querySelector('`+selector+`'); b.disabled = `+map[bool]string{false: "false", true: "true"}[disabled]+`;
+ const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			do(t, ctx, chromedp.MouseEvent(input.DispatchMouseEventTypeMouseMoved, 4, 4))
+			beside := read(selector)
+			do(t, ctx, chromedp.MouseEvent(input.DispatchMouseEventTypeMouseMoved, point[0], point[1]))
+			under := read(selector)
+			switch {
+			case !disabled && (!under.Hover || under == look{Hover: true, Border: beside.Border, Fill: beside.Fill}):
+				t.Errorf("%s enabled should answer the pointer: %+v beside, %+v under", selector, beside, under)
+			case disabled && (under.Border != beside.Border || under.Fill != beside.Fill):
+				t.Errorf("%s disabled answers the pointer: %+v beside, %+v under", selector, beside, under)
+			}
+		}
+	}
+}
 
 // A control reads as the same control wherever it appears: one border, corner
 // and size for buttons and one for fields, one fade when it is disabled, one
