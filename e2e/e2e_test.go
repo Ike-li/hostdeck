@@ -632,8 +632,9 @@ func TestAnActionRunsOnTheSecondClickAndNotOnADoubleClick(t *testing.T) {
 		t.Errorf("item %q with PID %q, want 服务 and 4242", name, pid)
 	}
 
+	pauseTime(t, ctx)
 	doubleClick(t, ctx, button)
-	time.Sleep(time.Second)
+	advanceTime(t, ctx, time.Second)
 	if _, err := os.Stat(ran); err == nil {
 		t.Fatal("a double-click ran the action")
 	}
@@ -641,7 +642,9 @@ func TestAnActionRunsOnTheSecondClickAndNotOnADoubleClick(t *testing.T) {
 		t.Errorf("after the first click the button says %q, want it asking to confirm", label)
 	}
 
-	do(t, ctx, chromedp.Click(chromedp.CSS(button)), chromedp.WaitVisible(chromedp.CSS(".detail-note")))
+	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	advanceTime(t, ctx, 100*time.Millisecond)
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(".detail-note")))
 	if note := text(t, ctx, ".detail-note"); note != "已重启" {
 		t.Errorf("note %q, want the plugin's message", note)
 	}
@@ -652,11 +655,18 @@ func TestAnActionRunsOnTheSecondClickAndNotOnADoubleClick(t *testing.T) {
 
 // The overview waits 5 s for its cards; this one takes longer.
 func TestASlowCardSaysItIsLoadingAndThenShowsItsValue(t *testing.T) {
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
 	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(6 * time.Second)
+		select {
+		case <-gate:
+		case <-r.Context().Done():
+			return
+		}
 		io.WriteString(w, `{"v": "late"}`)
 	}))
 	t.Cleanup(svc.Close)
+	t.Cleanup(release)
 	dir := t.TempDir()
 	writePlugin(t, dir, "slow", fmt.Sprintf("schema: 1\nname: Slow\ncard:\n  http: {url: '%s'}\n  value: v\n", svc.URL))
 	url := startConsole(t, dir)
@@ -667,6 +677,7 @@ func TestASlowCardSaysItIsLoadingAndThenShowsItsValue(t *testing.T) {
 	if got := text(t, ctx, card+" .card-pending"); got != "读取中…" {
 		t.Errorf("while loading: %q", got)
 	}
+	release()
 	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(card+" .card-value")))
 	if got := text(t, ctx, card+" .card-value"); got != "late" {
 		t.Errorf("value %q, want late", got)
@@ -729,7 +740,9 @@ func TestARefusedClearingSaysItFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	do(t, ctx, chromedp.Click(chromedp.CSS("#service-more .more-trigger")), chromedp.Click(chromedp.CSS("#service-clear")))
-	time.Sleep(200 * time.Millisecond)
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#service-clear').textContent === 'Click again to clear'`)); err != nil {
+		t.Fatal(err)
+	}
 	do(t, ctx, chromedp.Click(chromedp.CSS("#service-clear")))
 	note, err := chromedp.Run(ctx, chromedp.Poll[string](
 		`(() => { const n = document.getElementById('clear-note'); return !n.hidden && n.textContent.startsWith('Could not') && n.textContent; })()`,
@@ -761,8 +774,9 @@ func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
 	}
 
 	added := filepath.Join(dir, "plugins", "disk", "plugin.yaml")
+	pauseTime(t, ctx)
 	doubleClick(t, ctx, disk+" .add")
-	time.Sleep(1500 * time.Millisecond)
+	confirmationExpires(t, ctx, disk+" .add", "再点一次添加", "添加")
 	if _, err := os.Stat(added); err == nil {
 		t.Fatal("a double-click added the plugin")
 	}
@@ -775,7 +789,9 @@ func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
 	if got := text(t, ctx, disk+" .add"); got != "再点一次添加" {
 		t.Errorf("after one click the button says %q", got)
 	}
-	do(t, ctx, chromedp.Click(chromedp.CSS(disk+" .add")), chromedp.WaitVisible(chromedp.CSS(disk+" .catalog-state")))
+	do(t, ctx, chromedp.Click(chromedp.CSS(disk+" .add")))
+	advanceTime(t, ctx, 100*time.Millisecond)
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(disk+" .catalog-state")))
 	if _, err := os.Stat(added); err != nil {
 		t.Fatalf("not added: %v", err)
 	}
@@ -788,7 +804,9 @@ func TestThePluginsPageAddsABuiltInPluginOnTheSecondClick(t *testing.T) {
 
 	// In use at once: in the sidebar, and on the overview with its card.
 	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`.nav-item[data-id="disk"]`)))
-	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/"]`)), chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="disk"]`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.nav-item[href="#/"]`)))
+	advanceTime(t, ctx, 100*time.Millisecond)
+	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="disk"]`)))
 }
 
 // A plugin is disabled on the plugins page by a second click, which renames
@@ -812,8 +830,9 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	if got := text(t, ctx, site+" .catalog-state"); got != "已启用" {
 		t.Errorf("site shows %q, want it in use", got)
 	}
+	pauseTime(t, ctx)
 	doubleClick(t, ctx, button)
-	time.Sleep(1500 * time.Millisecond)
+	confirmationExpires(t, ctx, button, "再点一次停用", "停用")
 	if _, err := os.Stat(enabled); err != nil {
 		t.Fatal("a double-click disabled the plugin")
 	}
@@ -822,6 +841,7 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
 	waitLabel("再点一次停用")
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	advanceTime(t, ctx, 100*time.Millisecond)
 	waitLabel("启用")
 	if _, err := os.Stat(filepath.Join(disabled, "plugin.yaml")); err != nil {
 		t.Fatalf("not disabled: %v", err)
@@ -839,6 +859,7 @@ func TestThePluginsPageDisablesAndEnablesAPlugin(t *testing.T) {
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
 	waitLabel("再点一次启用")
 	do(t, ctx, chromedp.Click(chromedp.CSS(button)))
+	advanceTime(t, ctx, 100*time.Millisecond)
 	waitLabel("停用")
 	if _, err := os.Stat(filepath.Join(enabled, "plugin.yaml")); err != nil {
 		t.Fatalf("not enabled again: %v", err)
@@ -1345,11 +1366,13 @@ card:
 		t.Errorf("updated line %q, want it to say when the card was read", updated)
 	}
 	held := hits.Load()
-	time.Sleep(2500 * time.Millisecond)
+	pauseTime(t, ctx)
+	advanceTime(t, ctx, 2500*time.Millisecond)
 	if hits.Load() != held || text(t, ctx, `.card[data-id="health"] .card-value`) != value {
 		t.Errorf("a card that succeeded was read again: value %s hits %d, was %s after %d", text(t, ctx, `.card[data-id="health"] .card-value`), hits.Load(), value, held)
 	}
 	do(t, ctx, chromedp.Click(chromedp.CSS("#refresh")))
+	advanceTime(t, ctx, 100*time.Millisecond)
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector('.card[data-id="health"] .card-value')?.textContent !== %q`, value))); err != nil {
 		t.Fatal(err)
 	}
@@ -2034,8 +2057,9 @@ func TestThePluginsPageMovesAPluginToTheTrashAndPurgesItFromThere(t *testing.T) 
 
 	do(t, ctx, chromedp.Click(chromedp.CSS(trashBtn)))
 	do(t, ctx, chromedp.WaitVisible(chromedp.CSS(trashed+` .more-trigger`)), chromedp.Click(chromedp.CSS(trashed+` .more-trigger`)))
+	pauseTime(t, ctx)
 	doubleClick(t, ctx, purge)
-	time.Sleep(1500 * time.Millisecond)
+	confirmationExpires(t, ctx, purge, "再点一次清除", "清除")
 	entries, err := os.ReadDir(filepath.Join(dir, "plugins", ".trash"))
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("a double-click purged the plugin: %v, entries %v", err, entries)
@@ -2049,6 +2073,7 @@ func TestThePluginsPageMovesAPluginToTheTrashAndPurgesItFromThere(t *testing.T) 
 		t.Fatalf("waiting for the second click: %v; it says %q", err, text(t, ctx, purge))
 	}
 	do(t, ctx, chromedp.Click(chromedp.CSS(purge)))
+	advanceTime(t, ctx, 100*time.Millisecond)
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#catalog-trash').hidden`)); err != nil {
 		t.Fatalf("the trash is still shown after purging: %v", err)
 	}

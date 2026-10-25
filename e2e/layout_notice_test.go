@@ -33,10 +33,11 @@ func TestTheLayoutSavedNoticeWaitsWhileUndoHasFocusOrThePointerIsOverIt(t *testi
 	threeLinks(t, dir)
 	url := startConsole(t, dir)
 	ctx := openBrowser(t, "en")
-	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)),
-		chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)), chromedp.WaitVisible(chromedp.CSS(`#layout-note`)), chromedp.Focus(chromedp.CSS(`#layout-undo`)))
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)))
+	pauseTime(t, ctx)
+	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)), chromedp.WaitVisible(chromedp.CSS(`#layout-note`)), chromedp.Focus(chromedp.CSS(`#layout-undo`)))
 	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
-	time.Sleep(9 * time.Second)
+	advanceTime(t, ctx, 9*time.Second)
 	focused, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`!document.querySelector('#layout-note').hidden && document.activeElement.id === 'layout-undo'`))
 	if err != nil || !focused {
 		t.Fatalf("the timeout must not remove a focused undo button: %v %v", focused, err)
@@ -46,14 +47,21 @@ func TestTheLayoutSavedNoticeWaitsWhileUndoHasFocusOrThePointerIsOverIt(t *testi
 		t.Fatal(err)
 	}
 	do(t, ctx, chromedp.MouseEvent(input.DispatchMouseEventTypeMouseMoved, point[0], point[1]), chromedp.Focus(chromedp.CSS(`#refresh`)))
-	time.Sleep(9 * time.Second)
+	advanceTime(t, ctx, 9*time.Second)
 	hovered, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`!document.querySelector('#layout-note').hidden && document.querySelector('#layout-note').matches(':hover')`))
 	if err != nil || !hovered {
 		t.Fatalf("the timeout must wait while the pointer is over the notice: %v %v", hovered, err)
 	}
 	do(t, ctx, chromedp.MouseEvent(input.DispatchMouseEventTypeMouseMoved, 20, 500))
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#layout-note').hidden`, chromedp.WithPollingTimeout(10*time.Second))); err != nil {
-		t.Fatalf("the notice should disappear after focus and pointer leave: %v", err)
+	advanceTime(t, ctx, 7999*time.Millisecond)
+	visible, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`!document.querySelector('#layout-note').hidden`))
+	if err != nil || !visible {
+		t.Fatalf("leaving must start a fresh eight-second countdown: %v %v", visible, err)
+	}
+	advanceTime(t, ctx, time.Millisecond)
+	hidden, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('#layout-note').hidden`))
+	if err != nil || !hidden {
+		t.Fatalf("the notice should disappear after eight idle seconds: %v %v", hidden, err)
 	}
 	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
 }

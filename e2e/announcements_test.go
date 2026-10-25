@@ -99,15 +99,10 @@ func TestTheCardCountIsAnnouncedOnceAndNotOnEveryRebuild(t *testing.T) {
 	// Establish the repeated reads before checking their announcements. A
 	// broken retry loop must not make this negative assertion pass vacuously.
 	first := reads.Load()
-	deadline := time.Now().Add(12 * time.Second)
-	for reads.Load() < first+3 {
-		if time.Now().After(deadline) {
-			t.Fatalf("only %d retries, want at least three", reads.Load()-first)
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#cards').getAttribute('aria-busy') === 'false'`)); err != nil {
-		t.Fatal(err)
+	pauseTime(t, ctx)
+	advanceTime(t, ctx, 7*time.Second)
+	if n := reads.Load() - first; n < 3 {
+		t.Fatalf("only %d retries, want at least three", n)
 	}
 	got, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
  const region = document.getElementById('live-region');

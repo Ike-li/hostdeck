@@ -81,6 +81,8 @@ Browser assertions now verify their triggering events, jobs UI fixtures require 
 
 Browser suites now share one process while disposing an isolated browser context per case. Cookies, storage, HTTP cache, service workers and permissions are checked across consecutive visits to the same origin. Missing auto-discovered browsers may skip; configured or broken browsers fail, and startup logs the actual executable and version. Console processes and data directories remain per-case.
 
+Timer-heavy browser tests now advance a network-aware DevTools virtual clock, including exact notice and confirmation boundaries. Product durations stay unchanged. Real-clock notice expiry, browser cache clearing/history restoration, motion and the backend pending-card boundary remain covered; the slow-card server is released by a gate.
+
 Remaining M0 work, outside the UI/UX pass:
 
 - a release workflow run by a `v*` tag;
