@@ -20,19 +20,24 @@ import (
 func windowsJobsOutput(t *testing.T, script string, failed bool) []byte {
 	t.Helper()
 	root := os.Getenv("SystemRoot")
-	services := []map[string]string{
-		{"Name": "running", "DisplayName": "Running job", "PathName": `C:\Tools\run.exe`, "State": "Running", "StartMode": "Auto", "ExitCode": "255"},
+	services := []map[string]any{
+		{"Name": "running", "DisplayName": "Running job", "PathName": `C:\Tools\run.exe`, "AcceptStop": true, "StartMode": "Auto", "State": "Running", "ExitCode": "255"},
 		{"Name": "idle", "DisplayName": "Idle job", "PathName": `C:\Tools\idle.exe`, "State": "Stopped", "StartMode": "Manual"},
 		{"Name": "failed", "DisplayName": "Failed job", "PathName": `C:\Tools\failed.exe`, "State": "Stopped", "StartMode": "Auto", "ExitCode": "1"},
 		{"Name": "disabled", "PathName": `C:\Tools\disabled.exe`, "State": "Stopped", "StartMode": "Disabled"},
-		{"Name": "paused", "PathName": `C:\Tools\paused.exe`, "State": "Paused"},
+		{"Name": "paused", "PathName": `C:\Tools\paused.exe`, "AcceptStop": true, "StartMode": "Manual", "State": "Paused"},
 		{"Name": "pending", "PathName": `C:\Tools\pending.exe`, "State": "Start Pending"},
-		{"Name": "unsafe/name", "PathName": `C:\Tools\unsafe.exe`, "State": "Running"},
-		{"Name": "quoted", "DisplayName": "中文 \"service\"", "PathName": `"C:\Program Files\Vendor\service.exe" --flag`, "State": "Running"},
-		{"Name": "prefix", "PathName": root + `Old\service.exe`, "State": "Running"},
-		{"Name": "windows", "PathName": `"` + root + `\System32\svchost.exe" -k group`, "State": "Running"},
-		{"Name": "missing", "PathName": "", "State": "Running"},
+		{"Name": "unsafe/name", "PathName": `C:\Tools\unsafe.exe`, "AcceptStop": true, "StartMode": "Manual", "State": "Running"},
+		{"Name": "quoted", "DisplayName": "中文 \"service\"", "PathName": `"C:\Program Files\Vendor\service.exe" --flag`, "AcceptStop": true, "StartMode": "Manual", "State": "Running"},
+		{"Name": "prefix", "PathName": root + `Old\service.exe`, "AcceptStop": true, "StartMode": "Manual", "State": "Running"},
+		{"Name": "windows", "PathName": `"` + root + `\System32\svchost.exe" -k group`, "AcceptStop": true, "StartMode": "Manual", "State": "Running"},
+		{"Name": "missing", "PathName": "", "AcceptStop": true, "StartMode": "Manual", "State": "Running"},
 	}
+	return windowsJobsServicesOutput(t, script, failed, services)
+}
+
+func windowsJobsServicesOutput(t *testing.T, script string, failed bool, services []map[string]any) []byte {
+	t.Helper()
 	data, err := json.Marshal(services)
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +109,7 @@ func TestWindowsJobsClassifyFixedServicesAndOfferOnlyAllowedActions(t *testing.T
 	if want := []string{"ok", "ok", "error", "ok", "warn", "warn", "ok", "ok", "ok"}; !reflect.DeepEqual(states, want) {
 		t.Errorf("states %v, want %v", states, want)
 	}
-	if want := []string{"restart", "start", "start", "", "restart", "restart", "", "restart", "restart"}; !reflect.DeepEqual(actions, want) {
+	if want := []string{"restart", "start", "start", "", "restart", "", "", "restart", "restart"}; !reflect.DeepEqual(actions, want) {
 		t.Errorf("actions %v, want %v", actions, want)
 	}
 	if view.Items[7].Name.All != "中文 \"service\"" {
@@ -124,6 +129,34 @@ func TestWindowsJobsExplainARefusedSystemQuery(t *testing.T) {
 			if !strings.Contains(got.Error[lang], "fixture query refused") {
 				t.Errorf("%s %s: %+v", script, lang, got)
 			}
+		}
+	}
+}
+
+func TestWindowsJobsNeverOfferRestartForDisabledOrUncontrollableServices(t *testing.T) {
+	services := []map[string]any{}
+	for _, state := range []string{"Running", "Paused", "Start Pending", "Stop Pending", "Continue Pending", "Pause Pending", "Unknown"} {
+		for _, mode := range []string{"Disabled", "Auto"} {
+			services = append(services, map[string]any{"Name": strings.ReplaceAll(state, " ", "") + mode, "PathName": `C:\Tools\service.exe`, "State": state, "StartMode": mode, "AcceptStop": false})
+		}
+	}
+	for _, state := range []string{"Start Pending", "Stop Pending", "Continue Pending", "Pause Pending", "Unknown"} {
+		services = append(services, map[string]any{"Name": strings.ReplaceAll(state, " ", ""), "PathName": `C:\Tools\service.exe`, "State": state, "StartMode": "Auto", "AcceptStop": true})
+	}
+	// Disabled services must also be blocked when the current instance accepts Stop.
+	services = append(services, map[string]any{"Name": "disabledrunning", "PathName": `C:\Tools\service.exe`, "State": "Running", "StartMode": "Disabled", "AcceptStop": true})
+	var view struct {
+		Items []detail.Item `json:"items"`
+	}
+	if err := run.Decode(windowsJobsServicesOutput(t, "detail.ps1", false, services), &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Items) != len(services) {
+		t.Fatalf("items %+v, want every service retained", view.Items)
+	}
+	for _, item := range view.Items {
+		if len(item.Actions) != 0 {
+			t.Errorf("item %+v must not offer an unavailable action", item)
 		}
 	}
 }

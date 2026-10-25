@@ -775,7 +775,7 @@ func TestTheJobsRestartOnWindowsStopsThenStartsTheService(t *testing.T) {
 			}
 		})
 	}
-	for _, tc := range []struct{ action, name string }{{"start", "unsafe/name"}, {"delete", "ExampleService"}} {
+	for _, tc := range []struct{ action, name string }{{"start", "unsafe/name"}, {"start", "valid\n"}, {"delete", "ExampleService"}} {
 		if err := os.WriteFile(record, nil, 0600); err != nil {
 			t.Fatal(err)
 		}
