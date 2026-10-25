@@ -96,8 +96,9 @@ jobs_classify() {
 }
 
 jobs_safe() {
+	# Explicit characters avoid locale-dependent ranges accepting accented letters.
 	case "$1" in
-	""|*[!A-Za-z0-9._-]*) return 1 ;;
+	""|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*) return 1 ;;
 	*) return 0 ;;
 	esac
 }
