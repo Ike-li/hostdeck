@@ -105,3 +105,27 @@ func TestDirectorySummaryLimitsKeepTheFullRootTotal(t *testing.T) {
 		t.Fatalf("limited snapshot %+v", s)
 	}
 }
+
+func TestDeepDirectoriesCannotCrowdTopLevelFoldersOutOfTheSummary(t *testing.T) {
+	root := t.TempDir()
+	for i := range maxDirs {
+		dir := filepath.Join(root, "a-deep", fmt.Sprintf("child-%04d", i))
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	last := filepath.Join(root, "z-last")
+	if err := os.Mkdir(last, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(last, "file"), []byte("12345"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := collect(context.Background(), root, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, exists := s.Sizes["z-last"]; !exists || got.Bytes != 5 {
+		t.Fatalf("deep summaries crowded out a top-level folder: %+v, exists=%v", got, exists)
+	}
+}

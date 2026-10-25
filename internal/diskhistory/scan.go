@@ -89,11 +89,7 @@ func collect(ctx context.Context, target, exclude string) (snapshot, error) {
 		}
 		if info.IsDir() {
 			if rel != "." && len(strings.Split(rel, string(filepath.Separator))) <= 3 {
-				if len(result.Sizes) < maxDirs {
-					result.Sizes[rel] = measurement{}
-				} else {
-					result.Truncated = true
-				}
+				rememberDirectory(&result, rel)
 			}
 			return nil
 		}
@@ -107,6 +103,31 @@ func collect(ctx context.Context, target, exclude string) (snapshot, error) {
 	}
 	result.Time = time.Now().UTC()
 	return result, nil
+}
+
+// Prefer shallow summaries when storage is full. Depth-first traversal must
+// not let an early subtree evict every later top-level folder from the card.
+func rememberDirectory(s *snapshot, path string) {
+	if len(s.Sizes) < maxDirs {
+		s.Sizes[path] = measurement{}
+		return
+	}
+	s.Truncated = true
+	depth := strings.Count(path, string(filepath.Separator)) + 1
+	victim, deepest := "", depth
+	for name := range s.Sizes {
+		if name == "." {
+			continue
+		}
+		d := strings.Count(name, string(filepath.Separator)) + 1
+		if d > deepest || (d == deepest && d > depth && name > victim) {
+			victim, deepest = name, d
+		}
+	}
+	if victim != "" {
+		delete(s.Sizes, victim)
+		s.Sizes[path] = measurement{}
+	}
 }
 
 func mark(s *snapshot, path string, bytes int64, partial bool) {
