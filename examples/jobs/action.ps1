@@ -6,7 +6,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 
 function Write-JobError([string]$en, [string]$zh) {
-	[ordered]@{ error = [ordered]@{ en = $en; 'zh-CN' = $zh } } | ConvertTo-Json -Compress
+	$json = [ordered]@{ error = [ordered]@{ en = $en; 'zh-CN' = $zh } } | ConvertTo-Json -Compress
+	# Errors must bypass Invoke-Sc's success-output suppression.
+	[Console]::Out.WriteLine($json)
 	exit 0
 }
 

@@ -41,7 +41,7 @@ func windowsJobsOutput(t *testing.T, script string, failed bool) []byte {
 	if failed {
 		body += "throw 'fixture query refused'\n"
 	} else {
-		body += "@'\n" + string(data) + "\n'@ | ConvertFrom-Json\n"
+		body += "$items = @'\n" + string(data) + "\n'@ | ConvertFrom-Json\nforeach ($item in $items) { $item }\n"
 	}
 	path, err := filepath.Abs(filepath.Join("jobs", script))
 	if err != nil {
