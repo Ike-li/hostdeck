@@ -174,6 +174,8 @@ A running job is healthy regardless of its previous exit. A job that has never r
 
 The launchd JSON encoder escapes control characters as well as quotes and backslashes, preserving Unicode and paths without invalidating the whole detail response.
 
+The Windows attention count includes both failed and warning services, matching the rows shown on the card.
+
 ## Platforms
 
 Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `dir_windows.go`) how process trees end (`internal/run/tree_unix.go`, `tree_windows.go`), and how a file is replaced (`internal/atomicfile/replace_unix.go`, `replace_windows.go`). Windows PowerShell 5.1 can take many seconds to start the first time. This is why cards may come back pending, and why detail programs get 30 s.
