@@ -25,6 +25,8 @@
   --tint-accent: color-mix(in srgb, var(--accent) 10%, var(--panel));
   --tint-active: color-mix(in srgb, var(--accent) 14%, transparent);
   --tint-error-soft: color-mix(in srgb, var(--error) 14%, transparent);
+  /* An armed button's red word under the pointer: 14% would take it under 4.5:1. */
+  --tint-error-hover: color-mix(in srgb, var(--error) 12%, transparent);
   --tint-error-panel: color-mix(in srgb, var(--error) 10%, var(--panel));
   --tint-pressed: color-mix(in srgb, var(--accent) 22%, transparent);
   --opacity-disabled: .5;
@@ -395,7 +397,7 @@ main {
 .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .btn.primary:active { background: var(--accent-pressed); border-color: var(--accent-pressed); }
 .btn.armed { border-color: var(--error); color: var(--error); }
-.btn.armed:hover { background: var(--tint-error-soft); }
+.btn.armed:hover { background: var(--tint-error-hover); }
 
 /* ---- Notices --------------------------------------------------------- */
 .banner {
@@ -565,7 +567,8 @@ h1 {
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
-  --tint-status: color-mix(in srgb, var(--status, var(--muted)) 16%, transparent);
+  /* 10%: a stronger tint takes the 12px status word under 4.5:1. */
+  --tint-status: color-mix(in srgb, var(--status, var(--muted)) 10%, transparent);
   background: var(--tint-status);
   color: var(--status, var(--muted));
 }

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"regexp"
@@ -319,26 +320,93 @@ func srgbChannel(v float64) float64 {
 	return math.Pow((c+0.055)/1.055, 2.4)
 }
 
-// luminance is the WCAG relative luminance of a #rgb or #rrggbb literal. A
-// token written any other way cannot be measured here, and says so.
-func luminance(hex string) (float64, bool) {
+// channels reads the red, green and blue of a #rgb or #rrggbb literal, each
+// 0-255. A colour written any other way cannot be read here, and says so.
+func channels(hex string) ([3]float64, bool) {
+	var rgb [3]float64
 	hex = strings.TrimPrefix(strings.TrimSpace(hex), "#")
 	if len(hex) != 3 && len(hex) != 6 {
-		return 0, false
+		return rgb, false
 	}
 	digits := hex
 	if len(hex) == 3 {
 		digits = string(hex[0]) + string(hex[0]) + string(hex[1]) + string(hex[1]) + string(hex[2]) + string(hex[2])
 	}
-	var sum float64
-	for i, weight := range []float64{0.2126, 0.7152, 0.0722} {
+	for i := range rgb {
 		n, err := strconv.ParseUint(digits[i*2:i*2+2], 16, 8)
 		if err != nil {
-			return 0, false
+			return rgb, false
 		}
-		sum += weight * srgbChannel(float64(n))
+		rgb[i] = float64(n)
+	}
+	return rgb, true
+}
+
+// luminance is the WCAG relative luminance of a #rgb or #rrggbb literal. A
+// token written any other way cannot be measured here, and says so.
+func luminance(hex string) (float64, bool) {
+	rgb, ok := channels(hex)
+	if !ok {
+		return 0, false
+	}
+	var sum float64
+	for i, weight := range []float64{0.2126, 0.7152, 0.0722} {
+		sum += weight * srgbChannel(rgb[i])
 	}
 	return sum, true
+}
+
+// paint resolves a colour value to the #rrggbb the browser paints over
+// surface: a hex literal, transparent, a var() with or without its fallback,
+// or a color-mix(in srgb, ...) of two of those. Mixing in srgb weighs each
+// channel linearly, and a colour mixed with transparent is that colour at a
+// lower opacity over the surface, which comes to the same mix. Anything else
+// is not resolved, so a recipe this cannot read fails instead of passing
+// unmeasured.
+func paint(value string, tokens func(string) string, surface string) (string, bool) {
+	value = strings.TrimSpace(value)
+	switch {
+	case value == "transparent":
+		return surface, surface != ""
+	case strings.HasPrefix(value, "#"):
+		_, ok := channels(value)
+		return value, ok
+	case strings.HasPrefix(value, "var(") && strings.HasSuffix(value, ")"):
+		parts := splitOutsideParens(value[len("var("):len(value)-1], ",")
+		if v := tokens(strings.TrimSpace(parts[0])); v != "" {
+			return paint(v, tokens, surface)
+		}
+		if len(parts) == 2 {
+			return paint(parts[1], tokens, surface)
+		}
+	case strings.HasPrefix(value, "color-mix(") && strings.HasSuffix(value, ")"):
+		args := splitOutsideParens(value[len("color-mix("):len(value)-1], ",")
+		if len(args) != 3 || strings.TrimSpace(args[0]) != "in srgb" {
+			return "", false
+		}
+		first := strings.TrimSpace(args[1])
+		cut := strings.LastIndexByte(first, ' ')
+		if cut < 0 || !strings.HasSuffix(first, "%") {
+			return "", false
+		}
+		share, err := strconv.ParseFloat(first[cut+1:len(first)-1], 64)
+		if err != nil {
+			return "", false
+		}
+		a, okA := paint(first[:cut], tokens, surface)
+		b, okB := paint(args[2], tokens, surface)
+		ca, okCA := channels(a)
+		cb, okCB := channels(b)
+		if !okA || !okB || !okCA || !okCB {
+			return "", false
+		}
+		mixed := "#"
+		for i := range ca {
+			mixed += fmt.Sprintf("%02x", int(math.Round(ca[i]*share/100+cb[i]*(1-share/100))))
+		}
+		return mixed, true
+	}
+	return "", false
 }
 
 // contrast is the WCAG contrast ratio of two colour literals.
@@ -357,9 +425,8 @@ func contrast(a, b string) (float64, bool) {
 
 // The console's words stay readable on the surfaces they are written on: a
 // token is measured against the backgrounds it is drawn over, in both themes,
-// and the ratio has to clear WCAG AA. Only the literal colours are measured:
-// the tints are mixed by the browser, and what is written over them is always
-// one of these tokens.
+// and the ratio has to clear WCAG AA. Only the literal colours are measured
+// here; the next test measures the tints mixed from them.
 func TestTheConsolesColoursStayReadableOnTheirOwnBackgrounds(t *testing.T) {
 	pairs := []struct {
 		fg, bg string
@@ -400,6 +467,92 @@ func TestTheConsolesColoursStayReadableOnTheirOwnBackgrounds(t *testing.T) {
 			}
 			if got < 4.5 {
 				t.Errorf("%s: %s (%s) on %s (%s) is %.2f:1, want at least 4.5:1 for %s", theme.name, p.fg, fg, p.bg, bg, got, p.why)
+			}
+		}
+	}
+}
+
+// ruleValue returns what the top-level rule for selector sets prop to. A pair
+// that names a rule the sheet no longer has fails, so a component cannot move
+// its colours out from under the measurement.
+func ruleValue(t *testing.T, rules []cssRule, selector, prop string) string {
+	t.Helper()
+	for _, r := range rules {
+		if r.media != "" || r.selector != selector {
+			continue
+		}
+		for _, d := range r.decls {
+			if d.prop == prop {
+				return d.value
+			}
+		}
+	}
+	t.Fatalf("no top-level %s rule sets %s; point the pair at the rule that paints it now", selector, prop)
+	return ""
+}
+
+// Words written on a tint stay readable too. A tint is mixed from the theme's
+// colours, often with transparent so that the surface under it shows through,
+// so each pair reads its colours from the rule that paints them and measures
+// them mixed as the browser mixes them, over the surface the component sits
+// on. A status pill takes its colour from the --status of the card around it.
+func TestWordsStayReadableOnTheTintsTheyAreWrittenOn(t *testing.T) {
+	rules := styleRules(t)
+	v := func(selector, prop string) string { return ruleValue(t, rules, selector, prop) }
+	pairs := []struct {
+		why, fg, bg, surface string
+		status               string
+	}{
+		{"a healthy status on its pill", v(".pill", "color"), v(".pill", "background"), "--panel", "--ok"},
+		{"a warning on its pill", v(".pill", "color"), v(".pill", "background"), "--panel", "--warn"},
+		{"a problem on its pill", v(".pill", "color"), v(".pill", "background"), "--panel", "--error"},
+		{"a pill without a state of its own", v(".pill", "color"), v(".pill", "background"), "--panel", ""},
+		{"an armed button under the pointer", v(".btn.armed", "color"), v(".btn.armed:hover", "background"), "--panel", ""},
+		{"an armed action in a panel", v(".action-panel .armed", "color"), v(".action-panel .armed", "background"), "--panel", ""},
+		{"a red action in a panel under the pointer", v(".action-panel > .trash", "color"), v(".action-panel > button:hover:not(:disabled)", "background"), "--panel", ""},
+		{"an error note", v(`[data-kind="error"]`, "color"), v(`[data-kind="error"]`, "background"), "--panel", ""},
+		{"text on the error banner", "var(--text)", v(".banner", "background"), "--bg", ""},
+		{"text on a note", "var(--text)", v(".note", "background"), "--panel", ""},
+		{"the open sidebar entry", "var(--text)", v(".nav-row:has(.nav-item.active)", "background"), "--panel", ""},
+		{"a pressed button", "var(--text)", v(".btn:active:not(:disabled)", "background"), "--panel", ""},
+		{"a primary button under the pointer", v(".btn.primary", "color"), v(".btn.primary:hover", "background"), "--panel", ""},
+		{"a pressed primary button", v(".btn.primary", "color"), v(".btn.primary:active", "background"), "--panel", ""},
+		{"a card's label under the pointer", "var(--muted)", v(".card:has(.card-name a):hover", "background"), "--panel", ""},
+		{"a plugin's description under the pointer", "var(--muted)", v(".catalog-entry:hover", "background"), "--panel", ""},
+	}
+	pillTint := v(".pill", "--tint-status")
+
+	light := themeTokens(rules, "")
+	dark := themeTokens(rules, darkMedia)
+	for _, theme := range []struct {
+		name   string
+		tokens map[string]string
+	}{{"light", light}, {"dark", dark}} {
+		for _, p := range pairs {
+			tokens := func(name string) string {
+				switch name {
+				case "--status":
+					if p.status == "" {
+						return ""
+					}
+					return "var(" + p.status + ")"
+				case "--tint-status":
+					return pillTint
+				}
+				if value, ok := theme.tokens[name]; ok {
+					return value
+				}
+				return light[name]
+			}
+			surface, okS := paint("var("+p.surface+")", tokens, "")
+			fg, okF := paint(p.fg, tokens, surface)
+			bg, okB := paint(p.bg, tokens, surface)
+			if !okS || !okF || !okB {
+				t.Errorf("%s: %s: cannot resolve %q on %q over %s", theme.name, p.why, p.fg, p.bg, p.surface)
+				continue
+			}
+			if got, _ := contrast(fg, bg); got < 4.5 {
+				t.Errorf("%s: %s is %s on %s (%s over %s), %.3f:1; want at least 4.5:1", theme.name, p.why, fg, bg, p.bg, p.surface, got)
 			}
 		}
 	}
