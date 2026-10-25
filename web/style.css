@@ -1110,12 +1110,11 @@ h1 {
 body:has(.page-editor[open]) main { overflow: hidden; }
 
 /* ---- Connection help ------------------------------------------------- */
-/* Connection instructions remain readable without expanding the add form. */
+/* Secondary instructions follow the direct add actions. */
 .connection-help {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-5);
+  border-top: 1px solid var(--line);
+  padding: var(--space-3) 0;
+  margin-top: var(--space-5);
   font-size: var(--text-base);
   line-height: var(--leading-relaxed);
   overflow-wrap: anywhere;

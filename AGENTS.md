@@ -91,6 +91,8 @@ Fast checks now use go test -short ./... without building the console, starting 
 
 The overview now offers Reset layout only for nonempty saved layout preferences. Visibility follows successful loads/saves, undo and failed-save recovery without rebuilding cards; a focused reset control moves focus to Refresh when it disappears. Both languages and 1280/768/520px are covered.
 
+Add content now starts with the web-page form and built-in plugins, followed by the complete connection-help disclosure with a quieter top divider. Both add entry points still reveal and focus the address input; keyboard order follows the direct actions before help. Copy prompts, manual-copy fallback and the separate plugin-directory disclosure keep their existing behavior.
+
 Remaining M0 work, outside the UI/UX pass:
 
 - a release workflow run by a `v*` tag;

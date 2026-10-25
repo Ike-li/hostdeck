@@ -64,6 +64,21 @@
       <section id="catalog-add">
         <h2 class="catalog-heading" data-i18n="catalog.addContent"></h2>
         <p class="catalog-guidance" data-i18n="catalog.addContentHint"></p>
+        <h3 class="catalog-subheading" data-i18n="catalog.page"></h3>
+        <p id="catalog-note" class="catalog-note" role="status" hidden></p>
+        <form id="page-form" class="page-form">
+          <label class="edit-field"><span data-i18n="page.mode"></span><select id="page-kind" aria-describedby="page-hint">
+            <option value="proxy" data-i18n="page.embed"></option>
+            <option value="link" data-i18n="page.link"></option>
+          </select></label>
+          <label class="edit-field"><span data-i18n="page.address"></span><input id="page-address" type="text" inputmode="url" autocomplete="off" spellcheck="false" required data-i18n-placeholder="catalog.page.address"></label>
+          <label class="edit-field"><span data-i18n="catalog.page.name"></span><input id="page-name" type="text" autocomplete="off" data-i18n-placeholder="catalog.page.name"></label>
+          <button class="btn" type="submit" data-i18n="catalog.add"></button>
+        </form>
+        <p id="page-hint" class="page-hint"></p>
+        <p class="page-hint" data-i18n="catalog.page.drop"></p>
+        <h3 id="catalog-available-heading" class="catalog-subheading" data-i18n="catalog.available"></h3>
+        <div id="catalog-available" class="catalog-list"></div>
         <details id="connection-help" class="connection-help">
           <summary data-i18n="help.title"></summary>
           <p data-i18n="help.intro"></p>
@@ -99,21 +114,6 @@
             </div>
           </section>
         </details>
-        <h3 class="catalog-subheading" data-i18n="catalog.page"></h3>
-        <p id="catalog-note" class="catalog-note" role="status" hidden></p>
-        <form id="page-form" class="page-form">
-          <label class="edit-field"><span data-i18n="page.mode"></span><select id="page-kind" aria-describedby="page-hint">
-            <option value="proxy" data-i18n="page.embed"></option>
-            <option value="link" data-i18n="page.link"></option>
-          </select></label>
-          <label class="edit-field"><span data-i18n="page.address"></span><input id="page-address" type="text" inputmode="url" autocomplete="off" spellcheck="false" required data-i18n-placeholder="catalog.page.address"></label>
-          <label class="edit-field"><span data-i18n="catalog.page.name"></span><input id="page-name" type="text" autocomplete="off" data-i18n-placeholder="catalog.page.name"></label>
-          <button class="btn" type="submit" data-i18n="catalog.add"></button>
-        </form>
-        <p id="page-hint" class="page-hint"></p>
-        <p class="page-hint" data-i18n="catalog.page.drop"></p>
-        <h3 id="catalog-available-heading" class="catalog-subheading" data-i18n="catalog.available"></h3>
-        <div id="catalog-available" class="catalog-list"></div>
       </section>
       <details class="catalog-directory"><summary data-i18n="catalog.directory"></summary><p id="catalog-directory"></p></details>
     </section>

@@ -139,7 +139,7 @@ Tab 顺序上的第一项是一个跳到主要内容的链接：它是页面的�
 
 ## 接入教程
 
-添加区域通过原生折叠面板说明网页、内置插件和自定义插件文件夹的人工接入步骤。两份提示词按当前语言生成，带上控制台 Origin 和 `/api/catalog` 的绝对 `pluginDir`、`executable`。shell 和 PowerShell 示例调用该程序的原生 CLI、检查错误，在活动目录之外创建自定义源文件，再安装并重载，无需重启。提示词包含当前清单与 JSON 约定（含 `card.exec.command`、`detail.exec.command`、`actions.exec.command`、`exec.windows` 及详情条目的可选字段）、页面 ID 生成与 `data.id` 返回、`page update` 参数差异、临时备份清理，以及网页/链接与卡片/详情插件的验证步骤。一键复制使用 Clipboard API；失败时展开带标签的只读预览，聚焦并选中文字，播报错误。阅读和复制不写数据，也不执行命令。
+添加区域依次放置网页表单、内置插件和完整的接入教程折叠面板；插件目录仍是后面的独立折叠说明。DOM 与键盘顺序保持一致。教程只用顶部分隔线，不再使用完整面板边框；两个添加入口仍滚动并聚焦到地址输入框。原生折叠面板说明网页、内置插件和自定义插件文件夹的人工接入步骤。两份提示词按当前语言生成，带上控制台 Origin 和 `/api/catalog` 的绝对 `pluginDir`、`executable`。shell 和 PowerShell 示例调用该程序的原生 CLI、检查错误，在活动目录之外创建自定义源文件，再安装并重载，无需重启。提示词包含当前清单与 JSON 约定（含 `card.exec.command`、`detail.exec.command`、`actions.exec.command`、`exec.windows` 及详情条目的可选字段）、页面 ID 生成与 `data.id` 返回、`page update` 参数差异、临时备份清理，以及网页/链接与卡片/详情插件的验证步骤。一键复制使用 Clipboard API；失败时展开带标签的只读预览，聚焦并选中文字，播报错误。阅读和复制不写数据，也不执行命令。
 
 ## 接入 CLI
 
