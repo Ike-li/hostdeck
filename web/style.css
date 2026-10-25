@@ -149,6 +149,10 @@ body {
   font: var(--text-md)/var(--leading-normal) -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+/* Headings and strong words take the console's semibold, not the browser's
+   heavier bold, which only the brand mark uses. h1 sets its own below. */
+:is(h2, h3, h4, strong, b) { font-weight: var(--weight-semibold); }
+
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* Shared controls and focus treatment use the same targets in both themes. */
