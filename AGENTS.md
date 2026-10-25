@@ -77,6 +77,8 @@ Connection help now explains web page, built-in plugin and custom plugin setup i
 
 The UI/UX pass closed with S8: a skip link reaches the main content from the first Tab, and the page now carries one set of landmarks (a single navigation landmark, regions labelled by their headings) and one heading ladder that runs from a single h1 without skipping a level; popovers, external links and code samples name what they are.
 
+Overview rows now leave room for long names beside long status text, keeping both readable inside the card. A browser fixture checks both languages at 1280, 2964 and 520px.
+
 M1 has started. The built-in jobs plugin lists this user's loaded launchd jobs, or on Windows the services whose program is outside the Windows directory. The overview counts how many need attention. The detail page can restart a running one or run one that is not. The system domain is not listed. Which process listens on which port, and Docker, are still ahead.
 
 Browser assertions now verify their triggering events, jobs UI fixtures require concrete rows and actions, and Windows jobs scripts have deterministic query and action coverage. Test fixtures release blocked readers on failure and concurrent-action tests have bounded waits. Windows jobs action errors bypass success-output suppression so failures are reported instead of appearing successful.

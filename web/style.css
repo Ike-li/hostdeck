@@ -588,6 +588,7 @@ h1 {
 }
 
 .row-dot {
+  flex: none;
   width: var(--dot-row);
   height: var(--dot-row);
   border-radius: 50%;
@@ -600,7 +601,8 @@ h1 {
 .detail-item[data-status] .row-dot { background: var(--status); }
 
 .row-name { flex: 1; min-width: 0; color: var(--muted); overflow-wrap: anywhere; }
-.row-value { min-width: 0; overflow-wrap: anywhere; }
+/* Long state text must leave room for a job label, even on a narrow card. */
+.row-value { min-width: 0; max-width: 55%; overflow-wrap: anywhere; }
 
 .card-head {
   position: relative;
