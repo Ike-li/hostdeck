@@ -1,6 +1,10 @@
 # Shared by the jobs plugin's Windows scripts. A service counts when its
 # program lives outside the Windows directory.
 
+function Test-JobName([string]$name) {
+	return $name -cmatch '\A[A-Za-z0-9._-]+\z'
+}
+
 function Get-ServiceProgram([string]$pathName) {
 	$s = $pathName.Trim()
 	if ($s.StartsWith('"')) {
@@ -55,8 +59,10 @@ function Get-IncludedServices($Services) {
 				$action = 'restart'
 			}
 		}
+		if ([string]$svc.StartMode -notin @('Auto', 'Manual')) { $action = '' }
+		if ($action -eq 'restart' -and ([string]$svc.State -notin @('Running', 'Paused') -or -not $svc.AcceptStop)) { $action = '' }
 		$id = [string]$svc.Name
-		if ($id -notmatch '^[A-Za-z0-9._-]+$') { $action = '' }
+		if (-not (Test-JobName $id)) { $action = '' }
 		$name = [string]$svc.DisplayName
 		if ([string]::IsNullOrWhiteSpace($name)) { $name = $id }
 		[pscustomobject]@{

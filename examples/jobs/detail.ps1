@@ -1,5 +1,5 @@
 ﻿# Prints hostdeck's detail page: each service whose program lives outside the
-# Windows directory, with Restart on a running or pending one and Run on a
+# Windows directory, with Restart on a running or paused one that accepts Stop and Run on a
 # stopped one that is allowed to start. A name that is not a single token has
 # no action, and neither does a disabled service.
 # This file is UTF-8 with a byte order mark: Windows PowerShell reads a script

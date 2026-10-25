@@ -96,5 +96,8 @@ jobs_classify() {
 }
 
 jobs_safe() {
-	printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._-]+$'
+	case "$1" in
+	""|*[!A-Za-z0-9._-]*) return 1 ;;
+	*) return 0 ;;
+	esac
 }

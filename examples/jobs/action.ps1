@@ -20,7 +20,8 @@ if ($action -ne 'start' -and $action -ne 'restart') {
 	Write-Error "unknown action: $action"
 	exit 2
 }
-if ($name -notmatch '^[A-Za-z0-9._-]+$') {
+. "$PSScriptRoot\jobs.ps1"
+if (-not (Test-JobName $name)) {
 	Write-JobError 'This service name cannot be passed to sc.exe.' '这个服务名不能传给 sc.exe。'
 }
 

@@ -12,7 +12,7 @@ import (
 )
 
 func TestJobActionsRejectTheWholeNameBeforeCallingTheOperatingSystem(t *testing.T) {
-	for _, name := range []string{"", "valid\ninvalid/name", "valid\n", "with space", "with\ttab"} {
+	for _, name := range []string{"", "valid\ninvalid/name", "valid\n", "with space", "with\ttab", "中文", "café"} {
 		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
 			record := filepath.Join(t.TempDir(), "calls")
 			withLaunchctl(t, fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nexit 1\n", record))
