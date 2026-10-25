@@ -170,6 +170,8 @@ Tab 顺序上的第一项是一个跳到主要内容的链接：它是页面的�
 
 后台任务插件读取当前用户已加载的 launchd 任务，或程序位于 Windows 目录之外的 Windows 服务。launchd 列表读取失败、格式不符或单条任务读取失败时，卡片和详情都返回双语错误，不会变成正常的零条或仍可操作的未知任务。
 
+正在运行的任务不受上次退出结果影响。从未运行的任务视为空闲；未运行且上次由信号终止的任务会提示异常，并在详情字段中保留该信号。
+
 ## 平台
 
 平台相关的代码用 build tag 分开：默认文件夹（`dir_unix.go`、`dir_windows.go`），结束进程树的方式（`internal/run/tree_unix.go`、`tree_windows.go`），以及替换文件的方式（`internal/atomicfile/replace_unix.go`、`replace_windows.go`）。Windows PowerShell 5.1 第一次启动可能要好几秒，所以卡片可能先显示「读取中」，详情程序的时限也定为 30 秒。

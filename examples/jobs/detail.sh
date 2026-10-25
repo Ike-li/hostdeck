@@ -34,6 +34,7 @@ while IFS= read -r label; do
 	[ -n "$jobs_program" ] && add_field Program "程序" "$jobs_program"
 	[ -n "$jobs_state" ] && add_field State "状态" "$jobs_state"
 	[ -n "$jobs_code" ] && add_field "Last exit" "上次退出" "$jobs_code"
+	[ -n "$jobs_signal" ] && add_field "Last signal" "上次终止信号" "$jobs_signal"
 	[ -n "$jobs_runs" ] && add_field Runs "运行次数" "$jobs_runs"
 	[ -n "$jobs_stdout" ] && add_field "Standard output" "标准输出" "$jobs_stdout"
 	item=$(printf '{"id":"%s","name":"%s","status":"%s","value":"%s","fields":[%s]' \
