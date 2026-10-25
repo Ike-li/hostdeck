@@ -2,7 +2,7 @@
 
 [English](ARCHITECTURE.md)
 
-hostdeck 是一个 Go 程序。它在 127.0.0.1 上提供网页控制台，启动时和插件页每次改动后从一个文件夹读取插件，并给每个内嵌的网页界面另开一个端口重新提供。没有数据库，也没有后台任务：所有事情都在控制台页面发起请求时才发生。
+hostdeck 是一个 Go 程序。它在 127.0.0.1 上提供网页控制台，启动时和插件页每次改动后从一个文件夹读取插件，并给每个内嵌的网页界面另开一个端口重新提供。没有数据库，也没有后台轮询工作进程：所有事情都在控制台页面发起请求时才发生。
 
 ## 组成
 
@@ -62,7 +62,7 @@ flowchart LR
 | `internal/local` | 只放行发往 `127.0.0.1` 的请求；发往 `localhost` 的重定向过去。 |
 | `internal/onetime` | 清除服务缓存用的一次性令牌。 |
 | `internal/catalog` | 供插件页使用：列出 hostdeck 自带的插件，并把其中一个复制到插件文件夹；列出已安装的插件，并通过给文件夹改名来停用或启用。 |
-| `examples` | 自带的插件：disk、Grafana、Syncthing 和 Ollama，编进程序里。 |
+| `examples` | 自带的插件：disk、Grafana、Syncthing、Ollama 和后台任务，编进程序里。 |
 | `web` | 控制台页面：`index.html`、无构建步骤的纯 ES 模块、`style.css` 和 `i18n/*.json`。编进程序里。 |
 
 ## 页面代码
@@ -166,6 +166,10 @@ Tab 顺序上的第一项是一个跳到主要内容的链接：它是页面的�
 
 插件本身是被信任的：它们是你自己放进去的文件夹，以你的权限运行。
 
+## 后台任务
+
+后台任务插件读取当前用户已加载的 launchd 任务，或程序位于 Windows 目录之外的 Windows 服务。launchd 列表读取失败、格式不符或单条任务读取失败时，卡片和详情都返回双语错误，不会变成正常的零条或仍可操作的未知任务。
+
 ## 平台
 
 平台相关的代码用 build tag 分开：默认文件夹（`dir_unix.go`、`dir_windows.go`），结束进程树的方式（`internal/run/tree_unix.go`、`tree_windows.go`），以及替换文件的方式（`internal/atomicfile/replace_unix.go`、`replace_windows.go`）。Windows PowerShell 5.1 第一次启动可能要好几秒，所以卡片可能先显示「读取中」，详情程序的时限也定为 30 秒。
@@ -184,4 +188,4 @@ Tab 顺序上的第一项是一个跳到主要内容的链接：它是页面的�
 
 ## 还没有的
 
-后台检查和通知（M2），launchd、Windows 服务、Docker 和端口视图（M1），桌面窗口（M3），以及声明权限的 Starlark 插件（M4）。见 README 里的路线图。
+后台检查和通知（M2），Docker 和端口视图（M1），桌面窗口（M3），以及声明权限的 Starlark 插件（M4）。见 README 里的路线图。

@@ -62,7 +62,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/local` | Lets through only requests addressed to `127.0.0.1`; `localhost` is redirected there. |
 | `internal/onetime` | One-time tokens for clearing a service's cache. |
 | `internal/catalog` | For the plugins page: lists the plugins built into hostdeck and copies one into the plugins folder; lists the installed plugins and disables or enables one by renaming its folder. |
-| `examples` | The built-in plugins: disk, Grafana, Syncthing and Ollama, embedded in the program. |
+| `examples` | The built-in plugins: disk, Grafana, Syncthing, Ollama and background jobs, embedded in the program. |
 | `web` | The console page: `index.html`, plain ES modules with no build step, `style.css`, and `i18n/*.json`. Embedded in the program. |
 
 ## The page's code
@@ -166,6 +166,10 @@ Everything rests on hostdeck being reachable from this machine only.
 
 Plugins themselves are trusted: they are folders you put there, and they run with your rights.
 
+## Background jobs
+
+The jobs plugin reads this user's loaded launchd jobs or Windows services outside the Windows directory. Failed or malformed launchd listings and failed individual job reads return a bilingual error for the card and detail; they never become a healthy zero or an actionable unknown job.
+
 ## Platforms
 
 Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `dir_windows.go`) how process trees end (`internal/run/tree_unix.go`, `tree_windows.go`), and how a file is replaced (`internal/atomicfile/replace_unix.go`, `replace_windows.go`). Windows PowerShell 5.1 can take many seconds to start the first time. This is why cards may come back pending, and why detail programs get 30 s.
@@ -184,4 +188,4 @@ Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `d
 
 ## Not there yet
 
-Background checks and notifications (M2), launchd, Windows services, Docker and port views (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
+Background checks and notifications (M2), Docker and port views (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.

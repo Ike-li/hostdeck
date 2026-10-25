@@ -16,11 +16,18 @@ jobs_domain() {
 }
 
 jobs_labels() {
-	launchctl print "$1" | awk '
+	listing=$(launchctl print "$1" 2>/dev/null) || return 1
+	printf '%s\n' "$listing" | awk '
 		/services = \{/ { inside = 1; next }
-		inside && /^[[:space:]]*\}/ { exit }
+		inside && /^[[:space:]]*\}/ { closed = 1; exit }
 		inside && NF >= 1 { print $NF }
+		END { if (!closed) exit 1 }
 	'
+}
+
+jobs_error() {
+	printf '{"error":{"en":"%s","zh-CN":"%s"}}\n' "$(jobs_escape "$1")" "$(jobs_escape "$2")"
+	exit 0
 }
 
 jobs_escape() {
@@ -29,7 +36,9 @@ jobs_escape() {
 
 # jobs_read sets jobs_state, jobs_code, jobs_program, jobs_runs and jobs_stdout.
 jobs_read() {
-	info=$(launchctl print "$1/$2" 2>/dev/null || true)
+	if ! info=$(launchctl print "$1/$2" 2>/dev/null); then
+		jobs_error "Could not read launchd job: $2" "读不到这条 launchd 任务：$2"
+	fi
 	jobs_state=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*state = //p' | head -n 1)
 	jobs_code=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*last exit code = //p' | head -n 1)
 	jobs_program=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*program = //p' | head -n 1)

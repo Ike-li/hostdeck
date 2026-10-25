@@ -11,7 +11,9 @@ if ! domain=$(jobs_domain); then
 	exit 0
 fi
 
-labels=$(jobs_labels "$domain")
+if ! labels=$(jobs_labels "$domain"); then
+	jobs_error 'Could not list launchd jobs for this user.' '读不到当前用户的 launchd 任务。'
+fi
 rows=
 errors=0
 while IFS= read -r label; do
