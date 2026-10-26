@@ -30,9 +30,11 @@ func pauseTime(t *testing.T, ctx context.Context) {
 	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`(() => {
  const schedule = window.setTimeout.bind(window);
  window.__clockTimerStarts = [];
+ window.__clockTimerTimes = [];
  window.setTimeout = (callback, delay, ...args) => {
    const id = schedule(callback, delay, ...args);
    window.__clockTimerStarts.push(delay);
+   window.__clockTimerTimes.push(performance.now());
    return id;
  };
 })()`)); err != nil {
@@ -304,7 +306,16 @@ func TestTheLayoutNoticeUsesEightWholeIdleSeconds(t *testing.T) {
 	do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .more-trigger`)), chromedp.Click(chromedp.CSS(`#nav .nav-row[data-id="a"] .move-down`)))
 	savedLayout(t, dir, "sidebar", []string{"b", "a", "c"})
 	waitForTimer(t, ctx, 8000, 0)
-	advanceTime(t, ctx, 7999*time.Millisecond)
+	// Discovery can advance the clock after registration. Measure from the
+	// latest actual timer start, rather than assuming discovery was its start.
+	remaining, err := chromedp.Run(ctx, chromedp.Evaluate[float64](`(() => {
+ const i = window.__clockTimerStarts.lastIndexOf(8000);
+ return window.__clockTimerTimes[i] + 8000 - performance.now();
+})()`))
+	if err != nil || remaining <= 1 || remaining > 8001 {
+		t.Fatalf("invalid notice deadline %.3f ms: %v", remaining, err)
+	}
+	advanceTime(t, ctx, time.Duration((remaining-1)*float64(time.Millisecond)))
 	visible, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`!document.querySelector('#layout-note').hidden`))
 	if err != nil || !visible {
 		t.Fatalf("notice expired before eight idle seconds: %v %v", visible, err)
