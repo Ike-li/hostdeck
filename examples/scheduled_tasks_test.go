@@ -122,7 +122,15 @@ func TestAnEmptyTaskPluginExplainsLocalSetupAndIncludesADisabledExample(t *testi
 	dir, p := installedTasks(t)
 	v := detail.Read(context.Background(), p)
 	b, _ := json.Marshal(v)
-	if v.Error != nil || len(v.Items) != 1 || v.Items[0].ID != "_setup" || !strings.Contains(string(b), filepath.ToSlash(filepath.Join(dir, "tasks.json"))) {
+	pathShown := false
+	for _, it := range v.Items {
+		for _, f := range it.Fields {
+			if f.Value.String() == filepath.Join(dir, "tasks.json") {
+				pathShown = true
+			}
+		}
+	}
+	if v.Error != nil || len(v.Items) != 1 || v.Items[0].ID != "_setup" || !pathShown {
 		t.Fatalf("no local setup guidance: %s", b)
 	}
 	if len(v.Items[0].Actions) != 0 {
