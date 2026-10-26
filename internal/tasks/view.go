@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/process"
 )
 
 func text(en, zh string) plugin.Text {
@@ -87,6 +88,9 @@ func Execute(ctx context.Context, dir string, args []string) ([]byte, error) {
 }
 
 func (e *entry) viewLocked(op string) ([]byte, error) {
+	if e.owner == nil && e.stateErr == nil {
+		e.state, e.stateErr = loadState(e.root)
+	}
 	if !e.valid {
 		return json.Marshal(map[string]any{"error": text("Task configuration could not be read: "+fmt.Sprint(e.configErr), "无法读取任务配置："+fmt.Sprint(e.configErr))})
 	}
@@ -138,6 +142,19 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 		if r := e.running[t.ID]; r != nil {
 			if r.ctx.Err() == nil {
 				it.Actions = append(it.Actions, action{"stop:" + r.id, text("Stop", "停止")})
+			}
+		} else if *t.Enabled && ts.Paused && e.stateErr == nil && e.ownerErr == nil {
+			clean := true
+			for _, record := range e.state.Runs {
+				if record.TaskID == t.ID {
+					if identity, ok := e.state.Active[record.ID]; ok && identity.PID != 0 && !process.Gone(identity) {
+						clean = false
+						it.Fields = append(it.Fields, field{text("Needs local inspection", "需要本地检查"), fmt.Sprintf("worker PID %d", identity.PID)})
+					}
+				}
+			}
+			if clean {
+				it.Actions = append(it.Actions, action{"resume", text("Resume", "恢复")})
 			}
 		} else if *t.Enabled && !ts.Paused && e.stateErr == nil && e.ownerErr == nil {
 			it.Actions = append(it.Actions, action{"run", text("Run now", "立即运行")})

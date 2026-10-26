@@ -85,6 +85,21 @@ func Sync(root string, plugins []plugin.Plugin) error {
 	}
 	for dir := range wanted {
 		e := lookup(dir)
+		if e != nil {
+			info, err := os.Stat(dir)
+			if err != nil || !os.SameFile(info, e.identity) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				err := stopEntry(ctx, e, "plugin_disabled")
+				cancel()
+				if err != nil {
+					return err
+				}
+				registry.Lock()
+				delete(registry.items, dir)
+				registry.Unlock()
+				e = nil
+			}
+		}
 		if e == nil {
 			r, err := os.OpenRoot(dir)
 			if err != nil {
@@ -127,6 +142,20 @@ func (e *entry) refreshLocked() {
 	if e.owner == nil {
 		e.state, e.stateErr = loadState(e.root)
 		e.ownerErr = nil
+		if e.stateErr == nil && len(e.state.Active) > 0 {
+			if err := e.claimLocked(); err != nil {
+				e.ownerErr = err
+			}
+		}
+	} else {
+		state, err := loadState(e.root)
+		if err != nil {
+			e.stateErr = err
+		} else if len(e.running) == 0 {
+			e.state = state
+			e.stateErr = nil
+			e.stateErr = e.recoverLocked()
+		}
 	}
 }
 
@@ -284,6 +313,47 @@ func (e *entry) action(op, id string) (string, error) {
 		r.cancel()
 		return r.id, nil
 	}
+	if op == "resume" {
+		if !*t.Enabled {
+			return "", errors.New("task is disabled in tasks.json")
+		}
+		if e.stateErr != nil {
+			return "", e.stateErr
+		}
+		if e.ownerErr != nil {
+			return "", e.ownerErr
+		}
+		if err := e.claimLocked(); err != nil {
+			return "", err
+		}
+		for _, record := range e.state.Runs {
+			if record.TaskID != id {
+				continue
+			}
+			identity, ok := e.state.Active[record.ID]
+			if !ok {
+				continue
+			}
+			if current := e.running[id]; current != nil && current.id == record.ID {
+				continue
+			}
+			if identity.PID != 0 && !process.Gone(identity) {
+				return "", errors.New("the previous process tree needs local inspection before recovery")
+			}
+			delete(e.state.Active, record.ID)
+		}
+		ts := e.runtimeLocked(t)
+		ts.Paused = false
+		ts.Cursor = time.Now().UTC()
+		e.state.Tasks[id] = ts
+		if err := e.saveLocked(); err != nil {
+			ts.Paused = true
+			e.state.Tasks[id] = ts
+			e.stateErr = err
+			return "", err
+		}
+		return id, nil
+	}
 	if op != "run" {
 		return "", errors.New("unknown task action")
 	}
@@ -291,6 +361,9 @@ func (e *entry) action(op, id string) (string, error) {
 }
 
 func (e *entry) startLocked(t Task, trigger string, due *time.Time) (string, error) {
+	if e.stopping || e.retired {
+		return "", errors.New("task plugin is stopping")
+	}
 	if e.stateErr != nil {
 		return "", e.stateErr
 	}
@@ -305,7 +378,7 @@ func (e *entry) startLocked(t Task, trigger string, due *time.Time) (string, err
 			return "", errors.New("the previous process tree needs local inspection before recovery")
 		}
 	}
-	if e.running[t.ID] != nil || len(e.running) >= 4 {
+	if e.running[t.ID] != nil || len(e.state.Active) >= 4 {
 		return "", errors.New("task is running or all four execution slots are busy")
 	}
 	if err := e.claimLocked(); err != nil {
@@ -471,6 +544,13 @@ func (e *entry) execute(t Task, r *running, out, errout *os.File) {
 	}
 	if err := e.saveLocked(); err != nil {
 		e.stateErr = err
+		if record = e.record(r.id); record != nil {
+			record.Status = "interrupted"
+			record.Reason = str("recovery")
+		}
+		ts := e.state.Tasks[t.ID]
+		ts.Paused = true
+		e.state.Tasks[t.ID] = ts
 	}
 }
 

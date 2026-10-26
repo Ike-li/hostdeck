@@ -157,6 +157,9 @@ func checkCommand(args []string) error {
 // Check tokens before decoding: encoding/json otherwise accepts duplicate keys
 // and silently converts null into zero-valued strings, booleans and structs.
 func strictJSON(b []byte, v any, state bool) error {
+	if !utf8.Valid(b) {
+		return errors.New("JSON is not UTF-8")
+	}
 	d := json.NewDecoder(bytes.NewReader(b))
 	var value func(int) error
 	value = func(depth int) error {

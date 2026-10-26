@@ -246,3 +246,6 @@ The built-in **Docker containers** plugin provides a compact searchable containe
 ## Scheduled script tasks
 
 The built-in `scheduled-tasks` plugin installs an empty `tasks.json`; commands are authored locally. Confirmed manual Run and Stop, timeouts, results, the last ten run summaries and bounded logs are available; automatic scheduling follows in a later slice. Configuration is loaded at startup or explicit `plugin reload`. A refused configuration retains the last valid definition and current runs while reporting the problem. Reads start no script; script output need not be JSON. Nonzero exits and timeouts are distinct results. Execution writes only the plugin's own `data/`, and known referenced secrets are redacted from logs. See [TASKS.md](docs/TASKS.md) for fields and rules.
+
+
+Scheduled-task recovery and storage boundaries are implemented: unfinished runs are interrupted and paused; Resume probes cleanup without killing old PIDs, and unresolved tasks do not restart. The owner lock excludes a second writer; corrupt state refuses replacement. Retention commits reference changes before deleting logs, preserving prior logs on a refused write. Undurable results show interruption and storage failure. Automatic scheduling is still pending.
