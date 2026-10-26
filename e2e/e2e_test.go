@@ -593,6 +593,8 @@ func fakePlugin(args []string) {
 		fmt.Print(jobsCard)
 	case "jobs-detail":
 		fmt.Print(jobsDetail)
+	case "detail-json":
+		fmt.Print(args[1])
 	case "detail-long":
 		json.NewEncoder(os.Stdout).Encode(map[string]any{"items": []any{map[string]any{
 			"id": "long", "name": map[string]string{"en": "A local service with a long descriptive name", "zh-CN": "一个有很长名称的本机后台服务"},

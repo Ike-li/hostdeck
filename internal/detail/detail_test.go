@@ -94,6 +94,9 @@ func TestABrokenDetailSaysWhy(t *testing.T) {
 		{`{"items": [{"id": "a", "name": "A"}, {"name": {"en": "B"}}]}`, "command_output", "item 2 has no id"},
 		{`{"items": [{"id": "a", "name": "A"}, {"id": "a", "name": "B"}]}`, "command_output", `"a"`},
 		{`{"items": [{"id": "a", "name": "A", "actions": [{"label": "Go"}]}]}`, "command_output", "action"},
+		{`{"items": [{"id": "a"}]}`, "command_output", `item "a" has no name`},
+		{`{"items": [{"id": "a", "name": ""}]}`, "command_output", `item "a" has no name`},
+		{`{"items": [{"id": "a", "name": {"en": "", "zh-CN": ""}}]}`, "command_output", `item "a" has no name`},
 		{`{"error": "no services"}`, "reported", ""},
 	} {
 		p, _ := fakePlugin(t, tc.printed, "")
@@ -101,6 +104,37 @@ func TestABrokenDetailSaysWhy(t *testing.T) {
 		if got.Error == nil || got.Error.Code != tc.code || !strings.Contains(got.Error.Detail, tc.mention) || got.Items != nil {
 			t.Errorf("%s: got %+v, want %s mentioning %q and no items", tc.printed, got, tc.code, tc.mention)
 		}
+	}
+}
+
+func TestADetailRequiresANonblankNameForEveryItem(t *testing.T) {
+	for _, name := range []string{`null`, `""`, `{}`, `{"en":"","zh-CN":""}`, `" \t\n　"`, `{"zh-CN":"　"}`} {
+		t.Run(name, func(t *testing.T) {
+			printed := fmt.Sprintf(`{"items":[{"id":"valid","name":"Valid"},{"id":"blank","name":%s,"actions":[{"id":"restart","label":"Restart"}]}]}`, name)
+			p, ran := fakePlugin(t, printed, "")
+			got := Read(context.Background(), p)
+			if got.Error == nil || got.Error.Code != "command_output" || got.Error.Detail != `item "blank" has no name` || got.Items != nil {
+				t.Fatalf("got %+v, want a missing-name error and no items", got)
+			}
+			if _, err := Act(context.Background(), p, "blank", "restart"); err == nil || err.Code != "command_output" {
+				t.Errorf("action error %+v, want command_output", err)
+			}
+			if _, err := os.Stat(ran); !os.IsNotExist(err) {
+				t.Errorf("the action ran or could not be checked: %v", err)
+			}
+		})
+	}
+}
+
+func TestADetailAcceptsANameInOneLanguage(t *testing.T) {
+	for _, name := range []string{`"Service"`, `{"en":"Service"}`, `{"zh-CN":"服务"}`} {
+		t.Run(name, func(t *testing.T) {
+			p, _ := fakePlugin(t, fmt.Sprintf(`{"items":[{"id":"svc","name":%s}]}`, name), "")
+			got := Read(context.Background(), p)
+			if got.Error != nil || len(got.Items) != 1 || got.Items[0].ID != "svc" {
+				t.Fatalf("got %+v, want the named item", got)
+			}
+		})
 	}
 }
 

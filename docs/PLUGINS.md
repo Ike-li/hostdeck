@@ -124,7 +124,7 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": â€
 | Field | Type | What it is |
 | --- | --- | --- |
 | `items[].id` | string | Required, and different for each item; the action program is given it |
-| `items[].name` | text | The item's heading. An item without one has an empty heading, so give every item a name |
+| `items[].name` | text | Required. The item's heading. Missing, `null`, empty or whitespace-only text, or a language object with no nonblank text is an error, and the page shows no items. One language with nonblank text is enough |
 | `items[].status` | `ok`, `warn`, `error`, or left out | The item's state, shown in words |
 | `items[].value` | string or number | The item's main value |
 | `items[].fields[].name` | text | A field's name |

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -78,6 +79,8 @@ func check(items []Item) error {
 			return fmt.Errorf("item %d has no id", i+1)
 		case slices.Contains(ids, it.ID):
 			return fmt.Errorf("two items have the id %q", it.ID)
+		case !named(it.Name):
+			return fmt.Errorf("item %q has no name", it.ID)
 		case !card.ValidStatus(it.Status):
 			return fmt.Errorf("item %q: status %q is not ok, warn or error", it.ID, it.Status)
 		}
@@ -89,6 +92,19 @@ func check(items []Item) error {
 		}
 	}
 	return nil
+}
+
+// named requires text in the heading, either shared or in at least one language.
+func named(t plugin.Text) bool {
+	if strings.TrimSpace(t.All) != "" {
+		return true
+	}
+	for _, s := range t.ByLang {
+		if strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (v View) offers(item, action string) bool {
