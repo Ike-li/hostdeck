@@ -26,7 +26,7 @@ export function renderService(p) {
   $('service-error').hidden = !p.error;
   $('service-reload').hidden = !!p.error;
   $('service-reload').disabled = ['detail', 'card'].includes(p.type) && state.frames.get(p.id)?.getAttribute('aria-busy') === 'true';
-  $('service-open').hidden = $('service-clear').hidden = !!p.error || ['detail', 'card'].includes(p.type);
+  $('service-open').hidden = $('service-clear').hidden = $('service-notify').hidden = !!p.error || ['detail', 'card'].includes(p.type);
   const clear = $('service-clear');
   clear.textContent = t(state.clearing ? 'service.clearing' : clearArmed ? 'service.clear.confirm' : 'service.clear');
   clear.classList.toggle('armed', !!clearArmed);

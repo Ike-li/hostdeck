@@ -468,7 +468,7 @@ Sorting, multiple selection and paging: none now; each comes as a product slice 
 
 ### 3.5 Dialog [Shipped]
 
-There is one dialog: the editor, a native `<dialog>` opened with `showModal()`.
+There is one dialog element, a native `<dialog>` opened with `showModal()`. It holds the editor, or a service's notifications: a step for each address the browser asks about, each with its heading, what it covers, its answer as a `status` (an `alert` when blocked, in `--error`) and an Allow button, and Close alone in the foot. A step's button goes once its answer is On; a blocked push step offers Check again, since its window reads the answer anew.
 
 | Part | Value |
 | --- | --- |

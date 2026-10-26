@@ -34,6 +34,7 @@ Each milestone is released on its own.
 - UI in English and 简体中文, switchable
 - A sidebar of your local web UIs that open full-page, including services that forbid being embedded
 - A clear-cache button on each embedded service that clears that service's cache and site data and nothing else: cookies and other services are left alone
+- An embedded service can send browser notifications: a dialog asks once for the console, for notifications while the page is open, and once for that service's own port, for push notifications when hostdeck is closed
 - An overview of status cards
 - Sidebar entries and cards dragged into the order you like, and cards made two columns wide; kept in `layout.json`
 - A plugin can be hidden from the sidebar and the cards, and the layout can be reset; both can be undone, and both are kept in `layout.json`

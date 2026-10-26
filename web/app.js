@@ -17,6 +17,7 @@ import {
 } from './overview.js';
 import { loadMonitor, stopMonitorRetry } from './monitor.js';
 import { disarmClear, onClearClick, releaseIdleFrames, reloadService, renderService } from './service.js';
+import { openNotifications } from './notify.js';
 import { loadCatalog, pageHint, renderCatalog, wireCatalog } from './catalog.js';
 import { setHooks } from './hooks.js';
 import { CATALOG, STATUS_EVERY, state } from './state.js';
@@ -89,7 +90,8 @@ async function init() {
   for (const b of document.querySelectorAll('[data-lang]')) {
     b.addEventListener('click', () => setLang(b.dataset.lang, true));
   }
-  $('service-more').append(moreActions(t('more.for', { name: 'hostdeck' }), [$('service-clear')]));
+  $('service-more').append(moreActions(t('more.for', { name: 'hostdeck' }), [$('service-notify'), $('service-clear')]));
+  $('service-notify').addEventListener('click', () => state.current && openNotifications(state.current));
   $('service-clear').addEventListener('click', onClearClick);
   wireCatalog();
   wireDragAndDrop();

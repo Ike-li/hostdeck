@@ -28,6 +28,7 @@ export const state = {
   clearing: false,
   clearFailure: null, // why the last clearing failed
   hiddenSince: new Map(), // plugin id -> when its page was switched away from
+  notifyPush: new Map(), // plugin id -> what its port's notifications window last said the browser answered
   dragging: false, // whether a sidebar entry or a card is being dragged
   suppressClick: false, // a click that ends a drag is not an open
   layoutUndo: null, // the layout lists to post to undo the last move, widen, drag, hide or reset

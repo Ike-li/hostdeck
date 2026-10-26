@@ -1122,6 +1122,14 @@ h1 {
 .editor-fields .page-hint { margin: calc(var(--space-2) * -1) 0 0; }
 .editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-4) var(--space-5); border-top: 1px solid var(--line); flex: none; }
 .page-editor .catalog-note { margin-bottom: 0; }
+/* The notifications dialog shares the editor's surface: one step per address. */
+.page-editor > .editor-body { flex: 1 1 auto; }
+.notify-step { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-4) 0; border-top: 1px solid var(--line); }
+.notify-step:last-child { padding-bottom: 0; }
+.notify-step h3 { margin: 0; font-size: var(--text-base); }
+.notify-step p { margin: 0; font-size: var(--text-sm); line-height: var(--leading-relaxed); overflow-wrap: anywhere; }
+.notify-step p:not(.notify-status) { color: var(--muted); }
+.notify-status[data-kind="error"] { color: var(--error); }
 body:has(.page-editor[open]) main { overflow: hidden; }
 
 /* ---- Connection help ------------------------------------------------- */

@@ -240,3 +240,33 @@ func TestClearingSiteDataTakesAFreshTokenAndNeverReachesTheService(t *testing.T)
 		t.Error("the service saw a request for the clearing path")
 	}
 }
+
+func TestTheNotificationsPageAsksOnTheServicesPortInTheConsolesLanguage(t *testing.T) {
+	var reached atomic.Bool
+	proxy := serveThroughProxy(t, "/", func(w http.ResponseWriter, r *http.Request) { reached.Store(true) })
+
+	// The console says its own language: the page opens outside it, and the
+	// browser's Accept-Language may disagree with the language picked there.
+	for query, want := range map[string]string{"?lang=zh-CN": "允许通知", "?lang=en": "Allow notifications", "": "Allow notifications"} {
+		req, _ := http.NewRequest(http.MethodGet, proxy+NotificationsPath+query, nil)
+		req.Header.Set("Accept-Language", "zh-CN")
+		if query == "?lang=zh-CN" {
+			req.Header.Set("Accept-Language", "en")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(body), want) {
+			t.Errorf("%q: status %d, %s, body %q; want a page saying %s", query, resp.StatusCode, resp.Header.Get("Content-Type"), body, want)
+		}
+		if !strings.Contains(string(body), `"`+consoleOrigin+`"`) {
+			t.Errorf("%q: the page does not address its answer to the console only: %s", query, body)
+		}
+	}
+	if reached.Load() {
+		t.Error("the service saw a request for the notifications path")
+	}
+}

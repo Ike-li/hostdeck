@@ -64,7 +64,7 @@ Agreed in the M0 plan, 2026-10-22:
 - Chrome and Edge are tested; Firefox and Safari are best effort.
 - Size and memory: CI is to report them, and a budget is set after five runs on main.
 
-## Where the work stands (2026-10-25)
+## Where the work stands (2026-10-26)
 
 M0 slices S1 to S8 are merged, and after them the plugins page, reloading plugins as that page changes them, and embedding a web page by its address.
 
@@ -103,6 +103,8 @@ The overview now offers Reset layout only for nonempty saved layout preferences.
 Add content now starts with the web-page form and built-in plugins, followed by the complete connection-help disclosure with a quieter top divider. Both add entry points still reveal and focus the address input; keyboard order follows the direct actions before help. Copy prompts, manual-copy fallback and the separate plugin-directory disclosure keep their existing behavior.
 
 The independent disk-history plugin now runs inside hostdeck on macOS and Windows without Python, a separate collector service or another port. Installation and reads do not scan. Confirmed detail actions scan the current user's home folder or up to eight locally configured roots, start or pause hourly tracking, or cancel a scan. History and tracking state stay in the installed plugin's data folder and resume on restart; disabling or trashing cancels scans and timers. Readings count the disk space regular files occupy (a sparse disk image by the blocks it holds, a hard-linked file once on macOS) and never compare it with older file-length readings, skip links, other volumes and the plugin's own files, and compare readings that missed the same unreadable entries (macOS privacy-protected folders, counted on the card) while withholding changes when the missed entries differ, instead of inventing deletions. The overview shows the first root's change and top movers in homedeck's wording ("过去 24 小时 · 主目录共 …", rows such as ~/code), says how to see changes after a single reading, and warns about an old reading only while hourly tracking is on; the existing detail view shows bounded directory summaries and recent history under Log. Storage is bounded to 30 days, 744 snapshots per target, 256 summaries per snapshot and 64 MiB total. Corrupt data refuses writes, process-held OS locks exclude second writers, and failed or cancelled scans retain prior snapshots. Temporary-tree and real-browser fixtures cover native installation, incremental readings, tracking, history retention, Origin refusal and both languages at 1280 and 520px. The old disk-space plugin remains separate. Old homedeck SQLite history is not imported.
+
+An embedded service can now send browser notifications. Its More actions offer Notifications…, a dialog with one step for the console's origin, which a framed page is checked against while it is open, and one for the service's forwarding port, which its service worker's push notifications are checked against. The second step opens a small window that the proxy serves on that port at `/.well-known/hostdeck/notifications`; it asks on a click, posts the answer to the console and closes. With a window, Chrome and Edge keep a click's permission request open for the user's answer rather than refusing it; headless they refuse it, so the browser test sets each answer through DevTools. A real push delivery and Firefox or Safari are untried.
 
 Remaining M0 work, outside the UI/UX pass:
 

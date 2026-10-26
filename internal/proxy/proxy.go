@@ -17,12 +17,17 @@ import (
 	"github.com/Ike-li/hostdeck/internal/local"
 )
 
-// New forwards every request but ClearPath to target's scheme and host. In the
-// responses, only the service itself and the console may frame it; the rest of
-// the service's Content-Security-Policy passes through untouched. redeem says
-// whether a token for clearing this service is one the console handed out.
+// New forwards every request but ClearPath and NotificationsPath to target's
+// scheme and host. In the responses, only the service itself and the console
+// may frame it; the rest of the service's Content-Security-Policy passes
+// through untouched. redeem says whether a token for clearing this service is
+// one the console handed out.
 // ClearPath is where the proxy, not the service, answers with Clear-Site-Data.
 const ClearPath = "/.well-known/hostdeck/clear-site-data"
+
+// NotificationsPath is where the proxy, not the service, answers with a page
+// that asks the browser to let this port send notifications.
+const NotificationsPath = "/.well-known/hostdeck/notifications"
 
 func New(target *url.URL, consoleOrigin string, redeem func(token string) bool) http.Handler {
 	base := &url.URL{Scheme: target.Scheme, Host: target.Host}
@@ -64,6 +69,10 @@ func New(target *url.URL, consoleOrigin string, redeem func(token string) bool) 
 	return local.Only(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == ClearPath {
 			clearSiteData(w, r, redeem, consoleOrigin)
+			return
+		}
+		if r.URL.Path == NotificationsPath {
+			askForNotifications(w, r, consoleOrigin)
 			return
 		}
 		rp.ServeHTTP(w, r)
@@ -123,6 +132,24 @@ func clearSiteData(w http.ResponseWriter, r *http.Request, redeem func(string) b
 	fmt.Fprintf(w, "<!doctype html><title>Cleared</title><script>parent.postMessage('hostdeck:cleared', %s)</script>", origin)
 }
 
+// askForNotifications answers the small window the console opens on this
+// port. A browser keys a notification permission by the top-level page's
+// origin, so a service framed by the console cannot be asked from inside its
+// frame, and its service worker, which runs without the console, needs this
+// port's own permission. The page asks on a click, tells the console what the
+// browser answered and closes; an answer given before closes it at once. It
+// writes nothing, so it takes no token.
+func askForNotifications(w http.ResponseWriter, r *http.Request, consoleOrigin string) {
+	text := notifyEN
+	if r.URL.Query().Get("lang") == "zh-CN" {
+		text = notifyZH
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	origin, _ := json.Marshal(consoleOrigin)
+	fmt.Fprintf(w, notifyPage, text.lang, text.title, text.title, text.hint, text.allow, origin)
+}
+
 func dropDirective(policy, name string) string {
 	var kept []string
 	for _, d := range strings.Split(policy, ";") {
@@ -155,6 +182,26 @@ var (
 	unreachableEN = struct{ lang, title, hint string }{"en", "Cannot reach %s", "The service may not be running. Start it, then press Reload above."}
 	unreachableZH = struct{ lang, title, hint string }{"zh-CN", "连不上 %s", "服务可能没在运行。启动它之后，点上方的「刷新」。"}
 )
+
+var (
+	notifyEN = struct{ lang, title, hint, allow string }{"en", "Notifications from this service", "Your browser asks once for this address. This window closes when you answer.", "Allow notifications"}
+	notifyZH = struct{ lang, title, hint, allow string }{"zh-CN", "这个服务的通知", "浏览器会为这个地址询问一次，回答后这个窗口会自动关闭。", "允许通知"}
+)
+
+const notifyPage = `<!doctype html><html lang="%s"><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>%s</title>
+<body style="font: 15px/1.6 -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; margin: 0; padding: 24px">
+<p style="font-size: 1.2em; margin: 0 0 .4em">%s</p>
+<p style="opacity: .7; margin: 0 0 1em">%s</p>
+<button id="allow" type="button" style="font: inherit; min-height: 44px; padding: 0 16px">%s</button>
+<script>
+const answer = (permission) => {
+  if (opener) opener.postMessage({ type: 'hostdeck:notifications', permission }, %s);
+  close();
+};
+if (!('Notification' in window)) answer('unsupported');
+else if (Notification.permission !== 'default') answer(Notification.permission);
+else document.getElementById('allow').onclick = () => Notification.requestPermission().then(answer);
+</script>`
 
 const unreachablePage = `<!doctype html><html lang="%s"><meta charset="utf-8"><meta name="color-scheme" content="light dark">
 <body style="font: 15px/1.6 -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; display: grid; place-items: center; height: 90vh; margin: 0">
