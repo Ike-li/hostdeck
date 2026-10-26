@@ -49,12 +49,7 @@ func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
 		var err error
 		if len(command) > 1 && command[1] == "docker" {
 			out, err = dockerview.Execute(ctx, command[1:], func(ctx context.Context, c dockerview.Command) ([]byte, error) {
-				out, err := external(ctx, dir, c.Args, c.Env, c.Limit, c.Combined)
-				var exited *ExitError
-				if errors.As(err, &exited) && exited.LastLine != "" {
-					err = fmt.Errorf("%w: %s", err, exited.LastLine)
-				}
-				return out, err
+				return external(ctx, dir, c.Args, c.Env, c.Limit, c.Combined)
 			})
 		} else {
 			out, err = diskhistory.Execute(ctx, dir, command[1:])
