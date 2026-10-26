@@ -175,6 +175,9 @@ func TestASecondConsoleCannotWriteAndLosingTheOwnerCleansItsWorker(t *testing.T)
 	if len(readState(t, dir)["runs"].([]any)) != 1 {
 		t.Fatal("second console wrote history")
 	}
+	if _, err := tasks.Suspend(context.Background(), dir); err == nil {
+		t.Fatal("second console could suspend a foreign owner")
+	}
 	cmd.Process.Kill()
 	cmd.Wait()
 	until := time.Now().Add(2 * time.Second)
@@ -755,4 +758,72 @@ func TestOversizedLogsAreTruncatedAndMissingReferencesFailBeforeStarting(t *test
 			t.Fatalf("started despite missing environment %+v", r)
 		}
 	})
+}
+
+func TestLosingAnAuthorizedWorkerInterruptsAndPausesTheTask(t *testing.T) {
+	dir, _ := fixture(t, "block", "30s")
+	if v := operation(t, dir, "action", "run", "sample"); v["error"] != nil {
+		t.Fatal(v)
+	}
+	r := waitRecord(t, dir, "running")
+	s := readState(t, dir)
+	identity := s["active"].(map[string]any)[r["id"].(string)].(map[string]any)
+	worker, err := os.FindProcess(int(identity["pid"].(float64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	r = waitRecord(t, dir, "interrupted")
+	if r["reason"] != "recovery" || !readState(t, dir)["tasks"].(map[string]any)["sample"].(map[string]any)["paused"].(bool) {
+		t.Fatalf("uncertain run not paused: %+v", r)
+	}
+	if v := operation(t, dir, "action", "run", "sample"); v["error"] == nil {
+		t.Fatal("uncertain run retried without Resume")
+	}
+}
+
+func TestTaskDetailsExplainObservedExitCodesAndRunRevisions(t *testing.T) {
+	dir, _ := fixture(t, "fail", "5s")
+	operation(t, dir, "action", "run", "sample")
+	r := waitRecord(t, dir, "failed")
+	v := operation(t, dir, "detail")
+	b, _ := json.Marshal(v)
+	for _, want := range []string{"Exit code", "退出码", `"value":7`, r["revision"].(string), "exit"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("missing %s: %s", want, b)
+		}
+	}
+}
+
+func TestThePlatformOverrideRunsAndDisplaysOnlyTheEffectiveCommand(t *testing.T) {
+	dir, p := fixture(t, "success", "5s")
+	b, err := os.ReadFile(filepath.Join(dir, "tasks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c map[string]any
+	json.Unmarshal(b, &c)
+	e := c["tasks"].([]any)[0].(map[string]any)["exec"].(map[string]any)
+	good := e["command"]
+	if runtime.GOOS == "windows" {
+		e["command"] = []string{"unused-wrong-platform-command"}
+		e["windows"] = good
+	} else {
+		e["windows"] = []string{"unused-wrong-platform-command"}
+	}
+	b, _ = json.Marshal(c)
+	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	tasks.Sync(filepath.Dir(dir), []plugin.Plugin{p})
+	if v := operation(t, dir, "action", "run", "sample"); v["error"] != nil {
+		t.Fatal(v)
+	}
+	waitRecord(t, dir, "succeeded")
+	b, _ = json.Marshal(operation(t, dir, "detail"))
+	if strings.Contains(string(b), "unused-wrong-platform-command") {
+		t.Fatalf("displayed ineffective command: %s", b)
+	}
 }

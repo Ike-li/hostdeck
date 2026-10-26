@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "daily-backup",
+      "name": "Daily backup",
+      "enabled": false,
+      "schedule": {"cron": "0 2 * * *", "timezone": "Asia/Shanghai"},
+      "exec": {
+        "command": ["python3", "scripts/backup.py"],
+        "windows": ["py", "-3", "scripts/backup.py"],
+        "dir": ".",
+        "env": {"BACKUP_TOKEN": "${env:BACKUP_TOKEN}"}
+      },
+      "timeout": "2h"
+    },
+    {
+      "id": "collect-local-data",
+      "name": "Collect local data",
+      "enabled": false,
+      "schedule": {"every": "30m"},
+      "exec": {"command": ["node", "scripts/collect.mjs"]},
+      "timeout": "5m"
+    }
+  ]
+}

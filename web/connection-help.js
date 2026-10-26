@@ -11,6 +11,8 @@ card:
   value: status
   label: Status`;
 
+export const exampleTasks = "{\n  \"version\": 1,\n  \"tasks\": [\n    {\n      \"id\": \"daily-backup\",\n      \"name\": \"Daily backup\",\n      \"enabled\": false,\n      \"schedule\": {\"cron\": \"0 2 * * *\", \"timezone\": \"Asia/Shanghai\"},\n      \"exec\": {\n        \"command\": [\"python3\", \"scripts/backup.py\"],\n        \"windows\": [\"py\", \"-3\", \"scripts/backup.py\"],\n        \"dir\": \".\",\n        \"env\": {\"BACKUP_TOKEN\": \"${env:BACKUP_TOKEN}\"}\n      },\n      \"timeout\": \"2h\"\n    },\n    {\n      \"id\": \"collect-local-data\",\n      \"name\": \"Collect local data\",\n      \"enabled\": false,\n      \"schedule\": {\"every\": \"30m\"},\n      \"exec\": {\"command\": [\"node\", \"scripts/collect.mjs\"]},\n      \"timeout\": \"5m\"\n    }\n  ]\n}";
+
 export function connectionPrompts(t, pluginDir, origin, executable) {
   const context = t('help.agent.context', { origin, pluginDir, executable });
   const finish = t('help.agent.finish');
@@ -45,8 +47,30 @@ ${examplePlugin}
 } finally {
   Remove-Item -LiteralPath $source -Recurse -Force
 }`;
+  const taskDir = `${pluginDir}${pluginDir.includes('\\') ? '\\' : '/'}scheduled-tasks`;
+  const taskSH = `set -eu
+${sh(executable)} plugin install --url ${sh(origin)} --id scheduled-tasks
+task_config=${sh(taskDir + '/tasks.json')}
+task_backup="$(mktemp "$task_config.backup-XXXXXXXX")"
+cp "$task_config" "$task_backup"
+cp ${sh(taskDir + '/tasks.example.json')} "$task_config"
+# Edit the disabled examples locally before enabling requested tasks.
+${sh(executable)} plugin reload --url ${sh(origin)}
+${sh(executable)} plugin list --url ${sh(origin)}`;
+  const taskPS = `$ErrorActionPreference = 'Stop'
+& ${ps(executable)} plugin install --url ${ps(origin)} --id scheduled-tasks
+if ($LASTEXITCODE -ne 0) { throw 'hostdeck plugin install failed' }
+$taskConfig = ${ps(taskDir + '/tasks.json')}
+$taskBackup = $taskConfig + '.backup-' + [guid]::NewGuid().ToString('N')
+Copy-Item -LiteralPath $taskConfig -Destination $taskBackup -ErrorAction Stop
+Copy-Item -LiteralPath ${ps(taskDir + '/tasks.example.json')} -Destination $taskConfig -ErrorAction Stop
+# Edit the disabled examples locally before enabling requested tasks.
+& ${ps(executable)} plugin reload --url ${ps(origin)}
+if ($LASTEXITCODE -ne 0) { throw 'hostdeck task reload failed' }
+& ${ps(executable)} plugin list --url ${ps(origin)}
+if ($LASTEXITCODE -ne 0) { throw 'hostdeck plugin list failed' }`;
   return {
     page: [context, t('help.agent.pages'), block('sh', pageSH), block('powershell', pagePS), finish].join('\n\n'),
-    plugin: [context, t('help.agent.plugins'), block('sh', pluginSH), block('powershell', pluginPS), t('help.agent.contract'), finish].join('\n\n'),
+    plugin: [context, t('help.agent.plugins'), block('sh', pluginSH), block('powershell', pluginPS), t('help.agent.contract'), t('help.agent.tasks'), block('sh', taskSH), block('powershell', taskPS), block('json', exampleTasks), finish].join('\n\n'),
   };
 }

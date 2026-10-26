@@ -208,7 +208,7 @@ Windows 程序路径先展开环境变量，规范化 SystemRoot 和原生前缀
 
 ## 平台
 
-平台相关的代码用 build tag 分开：默认文件夹（`dir_unix.go`、`dir_windows.go`），结束进程树的方式（`internal/run/tree_unix.go`、`tree_windows.go`），以及替换文件的方式（`internal/atomicfile/replace_unix.go`、`replace_windows.go`）。Windows PowerShell 5.1 第一次启动可能要好几秒，所以卡片可能先显示「读取中」，详情程序的时限也定为 30 秒。
+平台相关的代码用 build tag 分开：默认文件夹（`dir_unix.go`、`dir_windows.go`），结束进程树的方式（`internal/process/tree_unix.go`、`tree_windows.go`），以及替换文件的方式（`internal/atomicfile/replace_unix.go`、`replace_windows.go`）。Windows PowerShell 5.1 第一次启动可能要好几秒，所以卡片可能先显示「读取中」，详情程序的时限也定为 30 秒。
 
 ## 测试和 CI
 
@@ -247,3 +247,5 @@ Docker 端点会被校验并固定；详情 ID 将完整容器 ID 绑定到端�
 中立的进程层启动同一二进制的私有工作进程，先加入进程组或 Windows Job Object，再持久保存启动记录与身份，最后才通过私有管道允许启动脚本。脚本输出与控制消息分离；主进程管道断开会清理脚本进程树。既有插件程序仍保留 30 秒与严格 JSON 规则。
 
 既有检查 Origin 的详情操作只写该插件的 `data/state.json`、日志、所有者锁和未发布的临时状态文件，不写命令、其他插件或布局。操作系统锁排除第二写入者；损坏状态拒绝覆盖。重启将遗留运行标为中断并暂停，明确恢复前只查询旧进程组／Job Object 是否清空，不结束旧 PID。清理未确认的身份继续占用名额。移除、停用及正常退出先取消运行并释放资源。历史淘汰先原子保存引用变更，再删除日志；无法落盘的结果显示中断和存储错误。日志有界且持续排空，遮蔽引用环境密钥；详情展示最近十次运行及有界预览。
+
+任务挂起边界在停用／移入回收区前也检查所有者互斥及未解决的外部进程身份。工作进程授权后消失而未报告结果时，即使清理成功，仍显示中断并暂停任务。

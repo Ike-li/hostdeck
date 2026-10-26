@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -107,6 +108,11 @@ func TestAgentPromptsCopyTheCurrentConnectionContextAndOfferManualCopyOnFailure(
 			verb := " page add --url "
 			if kind == "plugin" {
 				verb = " plugin install --url "
+				for _, want := range []string{"tasks.example.json", "backup-", `"enabled": false`, `"every": "30m"`, `"timeout": "5m"`, `"windows":`, "${env:BACKUP_TOKEN}", filepath.Join(dir, "plugins", "scheduled-tasks")} {
+					if !strings.Contains(copied, want) {
+						t.Errorf("%s task setup prompt lacks %s", language, want)
+					}
+				}
 			}
 			if !strings.Contains(copied, binary) || !strings.Contains(copied, verb) {
 				t.Fatalf("%s prompt must invoke this running executable's native CLI: %q", kind, copied)
@@ -145,7 +151,7 @@ func TestAgentCommandExamplesWriteOnlyTheSelectedDataDirectory(t *testing.T) {
 	if err != nil || !exists {
 		t.Fatalf("agent command examples must be inspectable: %v %v", exists, err)
 	}
-	runExample := func(kind string) error {
+	runExample := func(kind string, section ...int) error {
 		t.Helper()
 		prompt, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('#`+kind+`-agent-prompt').value`))
 		if err != nil {
@@ -156,6 +162,11 @@ func TestAgentCommandExamplesWriteOnlyTheSelectedDataDirectory(t *testing.T) {
 			fence, shell, args = "```powershell\n", "powershell", []string{"-NoProfile", "-NonInteractive", "-Command"}
 		}
 		_, rest, ok := strings.Cut(prompt, fence)
+		if len(section) > 0 {
+			for i := 0; i < section[0] && ok; i++ {
+				_, rest, ok = strings.Cut(rest, fence)
+			}
+		}
 		if !ok {
 			t.Fatalf("prompt lacks %s example", shell)
 		}
@@ -203,5 +214,29 @@ func TestAgentCommandExamplesWriteOnlyTheSelectedDataDirectory(t *testing.T) {
 	loaded, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`fetch('/api/catalog').then(r=>r.json()).then(c=>c.installed.some(p=>p.proxy==='http://127.0.0.1:3000/' && p.loaded && !p.broken && !p.error))`, chromedp.EvalAwaitPromise))
 	if err != nil || !loaded {
 		t.Fatalf("the page command must reload immediately: %v %v", loaded, err)
+	}
+	if err := runExample("plugin", 1); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "plugins", "scheduled-tasks", "tasks.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct{ Tasks []struct{ Enabled bool } }
+	if err := json.Unmarshal(b, &config); err != nil || len(config.Tasks) != 2 {
+		t.Fatalf("task example %s %v", b, err)
+	}
+	for _, task := range config.Tasks {
+		if task.Enabled {
+			t.Fatal("task example enabled scripts")
+		}
+	}
+	backups, err := filepath.Glob(path + ".backup-*")
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("missing configuration backup: %v %v", backups, err)
+	}
+	if b, err := os.ReadFile(backups[0]); err != nil || !strings.Contains(string(b), `"tasks":[]`) {
+		t.Fatalf("backup did not preserve empty tasks: %s %v", b, err)
 	}
 }

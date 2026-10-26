@@ -285,3 +285,16 @@ func TestPausedTasksStillExpireTheirHistoryWithoutStartingAnotherRun(t *testing.
 		t.Fatal("paused history was never expired")
 	}
 }
+
+func TestAFailedScheduledRunWaitsForTheNextOccurrenceWithoutRetrying(t *testing.T) {
+	c := newClock("2026-01-01T00:00:00Z")
+	dir, _ := fixture(t, "fail", "5s", tasks.WithClock(c))
+	c.Advance(time.Minute)
+	lastRecord(t, dir, 1, "failed")
+	c.Advance(59 * time.Second)
+	if len(readState(t, dir)["runs"].([]any)) != 1 {
+		t.Fatal("failed run retried before its next occurrence")
+	}
+	c.Advance(time.Second)
+	lastRecord(t, dir, 2, "failed")
+}

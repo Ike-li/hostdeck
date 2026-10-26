@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Ike-li/hostdeck/examples"
 	"github.com/Ike-li/hostdeck/internal/catalog"
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 )
 
@@ -183,6 +185,97 @@ func TestAScheduledTaskCanBeRunFromTheBrowserAndItsRawLogIsShown(t *testing.T) {
 			if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('.detail-view').textContent.includes('run-') && document.querySelector('.detail-log pre')?.textContent.includes('commands')`, chromedp.WithPollingTimeout(5*time.Second))); err != nil {
 				t.Fatal(err)
 			}
+		})
+	}
+}
+
+func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *testing.T) {
+	for _, lang := range []string{"en", "zh-CN"} {
+		t.Run(lang, func(t *testing.T) {
+			dir := t.TempDir()
+			url := startConsole(t, dir)
+			ctx := openBrowser(t, lang)
+			do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.Click(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.Click(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.WaitVisible(chromedp.CSS(`#nav [data-id="scheduled-tasks"]`)), chromedp.Navigate(url+"#/scheduled-tasks"), chromedp.WaitVisible(chromedp.CSS(`.detail-item`)))
+			poll := func(js string) {
+				t.Helper()
+				if _, err := chromedp.Run(ctx, chromedp.Poll[bool](js, chromedp.WithPollingTimeout(10*time.Second))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			poll(`document.querySelector('.detail-view').textContent.includes('tasks.example.json')`)
+			p := filepath.Join(dir, "plugins", "scheduled-tasks")
+			work := t.TempDir()
+			config := map[string]any{"version": 1, "tasks": []any{map[string]any{"id": "local", "name": "Local task 中文", "enabled": true, "schedule": map[string]any{"every": "24h"}, "exec": map[string]any{"command": []string{binary, "--dir", work, "--addr", "127.0.0.1:0"}}, "timeout": "2m"}}}
+			b, _ := json.Marshal(config)
+			if err := os.WriteFile(filepath.Join(p, "tasks.json"), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			cliCommand(t, 0, "plugin", "reload", "--url", url)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
+			poll(`document.querySelector('.detail-name')?.textContent==='Local task 中文' && document.querySelectorAll('.detail-actions button').length===2`)
+			for _, width := range []int64{1280, 520} {
+				for _, theme := range []string{"light", "dark"} {
+					do(t, ctx, chromedp.EmulateViewport(width, 800))
+					if _, err := chromedp.Call(ctx, emulation.SetEmulatedMedia, emulation.SetEmulatedMediaParams{Features: []*emulation.MediaFeature{{Name: "prefers-color-scheme", Value: theme}}}); err != nil {
+						t.Fatal(err)
+					}
+					poll(`document.documentElement.scrollWidth<=innerWidth && document.querySelector('.detail-view').scrollWidth<=document.querySelector('.detail-view').clientWidth+1 && [...document.querySelectorAll('.detail-actions button')].every(b=>b.getBoundingClientRect().height>=44)`)
+				}
+			}
+			body := []byte(`{"item":"local","action":"run"}`)
+			req, _ := http.NewRequest(http.MethodPost, url+"/api/action/scheduled-tasks", bytes.NewReader(body))
+			req.Header.Set("Origin", "http://127.0.0.1:1")
+			req.Header.Set("Content-Type", "application/json")
+			response, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != http.StatusForbidden {
+				t.Fatalf("foreign action HTTP %d", response.StatusCode)
+			}
+			click := func(n int) {
+				t.Helper()
+				selector := fmt.Sprintf(".detail-actions button:nth-child(%d)", n)
+				do(t, ctx, chromedp.Click(chromedp.CSS(selector)), chromedp.Click(chromedp.CSS(selector)))
+			}
+			click(2)
+			poll(`document.querySelectorAll('.detail-actions button').length===1 && document.querySelector('.detail-actions button').textContent===` + fmt.Sprintf("%q", map[string]string{"en": "Resume", "zh-CN": "恢复"}[lang]))
+			click(1)
+			poll(`document.querySelectorAll('.detail-actions button').length===2 && !document.querySelector('.detail-actions button').disabled`)
+			click(1)
+			waitForTaskFile := func(status string) {
+				t.Helper()
+				until := time.Now().Add(15 * time.Second)
+				for {
+					b, err := os.ReadFile(filepath.Join(p, "data/state.json"))
+					var s struct{ Runs []struct{ Status string } }
+					if err == nil && json.Unmarshal(b, &s) == nil && len(s.Runs) > 0 && s.Runs[len(s.Runs)-1].Status == status {
+						return
+					}
+					if time.Now().After(until) {
+						t.Fatalf("wanted %s: %s %v", status, b, err)
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+			}
+			waitForTaskFile("running")
+			if err := os.WriteFile(filepath.Join(p, "tasks.json"), []byte(`{"version":1,"tasks":[],"typo":true}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cliCommand(t, 1, "plugin", "reload", "--url", url)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
+			poll(`document.querySelectorAll('.detail-item').length===2 && document.querySelector('.detail-view').textContent.includes('typo')`)
+			// Select the retained task by its observed name, independently of sorting.
+			stop := `[...document.querySelectorAll('.detail-item')].find(r=>r.querySelector('.detail-name').textContent==='Local task 中文').querySelector('.detail-actions button')`
+			for i := 0; i < 2; i++ {
+				if _, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(`+stop+`.click(),true)`)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			waitForTaskFile("cancelled")
+			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
+			poll(`document.querySelector('.detail-log pre')?.textContent.includes('reason=stop')`)
 		})
 	}
 }

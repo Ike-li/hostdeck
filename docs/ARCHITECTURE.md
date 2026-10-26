@@ -210,7 +210,7 @@ Windows program paths expand environment variables, normalize SystemRoot/native 
 
 ## Platforms
 
-Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `dir_windows.go`) how process trees end (`internal/run/tree_unix.go`, `tree_windows.go`), and how a file is replaced (`internal/atomicfile/replace_unix.go`, `replace_windows.go`). Windows PowerShell 5.1 can take many seconds to start the first time. This is why cards may come back pending, and why detail programs get 30 s.
+Platform code is kept apart by build tags: the default folder (`dir_unix.go`, `dir_windows.go`) how process trees end (`internal/process/tree_unix.go`, `tree_windows.go`), and how a file is replaced (`internal/atomicfile/replace_unix.go`, `replace_windows.go`). Windows PowerShell 5.1 can take many seconds to start the first time. This is why cards may come back pending, and why detail programs get 30 s.
 
 ## Tests and CI
 
@@ -249,3 +249,5 @@ Startup and explicit reload validate the whole configuration. Refusal retains va
 A neutral process layer launches a private worker of the same binary. It joins a process group or Windows Job Object, persists its starting record and identity, then receives permission over private pipes to start the script. Script output is separate from control frames; losing the parent pipe cleans the tree. Existing plugin programs retain their 30-second strict-JSON rules.
 
 The existing Origin-checked detail action writes only this plugin's `data/state.json`, logs, owner lock and unpublished temporary state file, never commands, other plugins or layout. An OS lock excludes a second writer; corrupt state refuses replacement. Restart interrupts and pauses unfinished runs; explicit Resume probes the old group / Job Object without killing old PIDs. Unconfirmed identities continue occupying slots. Removal, disabling and orderly shutdown cancel workers before releasing resources. Retention atomically saves changed references before deleting logs; undurable results report interruption and storage failure. Bounded logs keep draining and redact referenced environment secrets; details show ten recent runs and bounded previews.
+
+The task suspension boundary also checks owner exclusion and unresolved foreign process identities before any disable/trash move. An authorized worker lost without a result produces an interrupted, paused run even when cleanup succeeds.

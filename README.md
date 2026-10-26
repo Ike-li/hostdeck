@@ -249,3 +249,5 @@ The built-in `scheduled-tasks` plugin installs an empty `tasks.json`; commands a
 
 
 Scheduled-task recovery and storage boundaries are implemented: unfinished runs are interrupted and paused; Resume probes cleanup without killing old PIDs, and unresolved tasks do not restart. The owner lock excludes a second writer; corrupt state refuses replacement. Retention commits reference changes before deleting logs, preserving prior logs on a refused write. Undurable results show interruption and storage failure. Scheduling persists anchors, cursors and missed counts; it permits one run per task and four runs per installed plugin.
+
+Installation also includes a disabled `tasks.example.json`; the empty detail explains its absolute path and the local edit/reload steps. The connection-help plugin prompt includes the complete task schema and commands for this console.

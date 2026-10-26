@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -31,9 +32,10 @@ type Hooks struct {
 	Stdout, Stderr io.Writer
 }
 type Outcome struct {
-	Code  *int
-	Error error
-	Clean bool
+	Code      *int
+	Error     error
+	Clean     bool
+	Uncertain bool
 }
 type frame struct {
 	Type  string `json:"type"`
@@ -101,6 +103,7 @@ func Run(ctx context.Context, executable string, spec Spec, hooks Hooks) (result
 			return
 		}
 	}
+	result.Uncertain = true
 	if err = json.NewEncoder(input).Encode(spec); err != nil {
 		result.Error = err
 		return
@@ -133,6 +136,7 @@ func Run(ctx context.Context, executable string, spec Spec, hooks Hooks) (result
 				}
 			}
 		case "exit":
+			result.Uncertain = f.Code == nil && f.Error == ""
 			result.Code = f.Code
 			if f.Error != "" {
 				result.Error = errors.New(f.Error)
@@ -189,7 +193,7 @@ func Worker() int {
 	emit := func(f frame) { mu.Lock(); defer mu.Unlock(); enc.Encode(f) }
 	for _, entry := range spec.Env {
 		key, value, ok := strings.Cut(entry, "=")
-		if ok && strings.EqualFold(key, "PATH") {
+		if ok && (key == "PATH" || runtime.GOOS == "windows" && strings.EqualFold(key, "PATH")) {
 			os.Setenv("PATH", value)
 		}
 	}

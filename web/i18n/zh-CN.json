@@ -263,5 +263,6 @@
   "disk.barsKeyboard": "分时段变化。左右方向键查看，回车选中，Escape 取消选择。",
   "disk.lineKeyboard": "大小曲线。左右方向键查看每次扫描，所有数值也可在扫描记录中阅读。",
   "disk.periodSize": "时段结束时大小",
-  "disk.scanStarted": "扫描已开始，完成后会自动更新结果。"
+  "disk.scanStarted": "扫描已开始，完成后会自动更新结果。",
+  "help.agent.tasks": "定时运行本机脚本使用内置 scheduled-tasks，不改成卡片程序，也不安装系统任务。以下命令安装新插件并备份任务配置；若 plugin list 已列出该插件，跳过安装。在本地编辑停用的示例，仅启用用户要求的任务，再重载当前控制台；不要改变其他任务。脚本与解释器必须已存在。下面示例列出 v1 的全部配置字段。配置与实际结果验证完成前保留备份，之后仅删除这份备份。不要编辑 data/state.json 或删除日志来掩盖错误。缺少的环境引用须提供给服务器，仅修改当前终端无效。配置为严格 UTF-8 JSON，最多 1 MiB、64 个任务，不允许未知／重复字段或 null。计划使用五个数字 Cron 字段及明确 UTC／IANA 时区，或 1m–8760h 的 every；timeout 默认 30m，允许 1s–24h，exec.dir 默认插件目录，exec.windows 在 Windows 替换参数数组，exec.env 仅允许 ${env:NAME}。最多四并发、每任务互斥，不排队、不补跑、不自动重试。暂停阻止未来启动，停止针对一次运行。用 GET /api/detail/scheduled-tasks 检查错误、下次时间、结果和日志；plugin validate 校验清单，tasks.json 应以 plugin reload 成功作为配置检查。"
 }

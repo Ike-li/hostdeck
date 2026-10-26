@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -27,7 +29,7 @@ type action struct {
 }
 type item struct {
 	ID      string   `json:"id"`
-	Name    string   `json:"name"`
+	Name    any      `json:"name"`
 	Group   string   `json:"group,omitempty"`
 	Status  string   `json:"status,omitempty"`
 	Value   any      `json:"value,omitempty"`
@@ -64,11 +66,14 @@ func Execute(ctx context.Context, dir string, args []string) ([]byte, error) {
 	if err != nil {
 		return json.Marshal(map[string]any{"error": text("Task configuration could not be read: "+err.Error(), "无法读取任务配置："+err.Error())})
 	}
-	stage := text("Execution is not available yet; configuration preview only.", "尚未提供执行能力，当前只预览配置。")
+	stage := text("Plugin is not active in this console; configuration preview only.", "插件未在此控制台启用，当前只预览配置。")
 	if args[1] == "card" {
 		return json.Marshal(map[string]any{"status": "warn", "value": fmt.Sprint(len(c.Tasks)), "label": stage})
 	}
 	items := []item{}
+	if len(c.Tasks) == 0 {
+		items = append(items, setup(dir))
+	}
 	for _, t := range c.Tasks {
 		schedule := ""
 		if t.Schedule.Cron != nil {
@@ -95,6 +100,9 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 		return json.Marshal(map[string]any{"error": text("Task configuration could not be read: "+fmt.Sprint(e.configErr), "无法读取任务配置："+fmt.Sprint(e.configErr))})
 	}
 	items := []item{}
+	if len(e.cfg.Tasks) == 0 {
+		items = append(items, setup(e.dir))
+	}
 	runningCount, attention, paused := 0, 0, 0
 	budget := 512 << 10
 	for _, t := range e.cfg.Tasks {
@@ -109,7 +117,7 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 				break
 			}
 		}
-		if last != nil && (last.Status == "failed" || last.Status == "timed_out" || last.Status == "interrupted") {
+		if *t.Enabled && last != nil && (last.Status == "failed" || last.Status == "timed_out" || last.Status == "interrupted" || last.Status == "skipped" && last.Reason != nil && *last.Reason == "capacity") {
 			g = "attention"
 			status = "error"
 			value = runStatus(last.Status)
@@ -125,6 +133,11 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 			value = text("Paused", "已暂停")
 			paused++
 		}
+		if last != nil && activeStatus(last.Status) && e.running[t.ID] == nil {
+			g = "running"
+			value = text("Running in another console", "在其他控制台运行中")
+			runningCount++
+		}
 		if e.running[t.ID] != nil {
 			g = "running"
 			status = "ok"
@@ -138,6 +151,9 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 			schedule = *t.Schedule.Every
 		}
 		command := t.Exec.Command
+		if runtime.GOOS == "windows" && t.Exec.Windows != nil {
+			command = t.Exec.Windows
+		}
 		it := item{ID: t.ID, Name: t.Name, Group: g, Status: status, Value: value, Fields: []field{{text("Schedule", "计划"), schedule}, {text("Command", "命令"), strings.Join(command, " ")}, {text("Working directory", "工作目录"), t.Exec.Dir}, {text("Timeout", "超时"), t.Timeout}, {text("Availability", "可用性"), text("Automatic scheduling runs while hostdeck is running.", "hostdeck 运行期间自动调度。")}}}
 		if current := e.running[t.ID]; current != nil {
 			last = e.record(current.id)
@@ -189,6 +205,17 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 
 		if last != nil {
 			it.Fields = append(it.Fields, field{text("Last run", "最近运行"), last.AcceptedAt.Format(time.RFC3339)}, field{text("Run ID", "运行编号"), last.ID}, field{text("Result", "结果"), runStatus(last.Status)})
+			it.Fields = append(it.Fields, field{text("Run revision", "运行修订"), last.Revision})
+			if last.Reason != nil {
+				it.Fields = append(it.Fields, field{text("Reason", "原因"), runReason(*last.Reason)})
+			}
+			if last.ExitCode != nil {
+				it.Fields = append(it.Fields, field{text("Exit code", "退出码"), *last.ExitCode})
+			}
+			if last.Logs.StdoutTruncated || last.Logs.StderrTruncated {
+				it.Fields = append(it.Fields, field{text("Captured output", "已捕获输出"), text("Truncated at 1 MiB per stream; the script output kept draining.", "每个输出流最多保留 1 MiB，超出后继续排空。")})
+			}
+
 		}
 		var history strings.Builder
 		count := 0
@@ -198,7 +225,14 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 				continue
 			}
 			count++
-			fmt.Fprintf(&history, "%s · %s · %s\n", r.AcceptedAt.Format(time.RFC3339), r.Status, r.ID)
+			fmt.Fprintf(&history, "%s · %s · %s · %s\n", r.AcceptedAt.Format(time.RFC3339), r.Status, r.Trigger, r.ID)
+			if r.Reason != nil {
+				fmt.Fprintf(&history, "reason=%s ", *r.Reason)
+			}
+			if r.ExitCode != nil {
+				fmt.Fprintf(&history, "exit=%d ", *r.ExitCode)
+			}
+			fmt.Fprintf(&history, "revision=%s\n", r.Revision)
 			if r.Diagnostic != "" {
 				fmt.Fprintln(&history, r.Diagnostic)
 			}
@@ -216,7 +250,7 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 		}
 		log := history.String()
 		if len(log) > budget {
-			log = strings.ToValidUTF8(log[:budget], "") + "\n…"
+			log = strings.ToValidUTF8(log[:budget], "")
 		}
 		it.Log = log
 		budget = max(0, budget-len(log))
@@ -224,7 +258,7 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 	}
 	for _, err := range []error{e.configErr, e.stateErr, e.ownerErr} {
 		if err != nil {
-			items = append(items, item{ID: "_diagnostic", Name: "Task configuration / 任务配置", Group: "attention", Status: "error", Fields: []field{{text("Needs attention", "需要处理"), err.Error()}, {text("Loaded configuration", "已加载配置"), text("The last valid configuration is retained.", "保留上一次有效配置。")}}})
+			items = append(items, item{ID: "_diagnostic", Name: text("Task configuration", "任务配置"), Group: "attention", Status: "error", Fields: []field{{text("Needs attention", "需要处理"), err.Error()}, {text("Loaded configuration", "已加载配置"), text("The last valid configuration is retained.", "保留上一次有效配置。")}}})
 			attention++
 			break
 		}
@@ -263,9 +297,26 @@ func (e *entry) preview(path string) string {
 		return ""
 	}
 	s := strings.ToValidUTF8(string(b), "�")
+	if len(s) > 8<<10 {
+		s = strings.ToValidUTF8(s[:8<<10], "")
+	}
 	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
 	if len(lines) > 20 {
 		lines = lines[len(lines)-20:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+func setup(dir string) item {
+	return item{ID: "_setup", Name: text("Configure your first task", "配置第一个任务"), Group: "ready", Value: text("No tasks configured", "尚未配置任务"), Fields: []field{
+		{text("Configuration file", "配置文件"), filepath.Join(dir, "tasks.json")},
+		{text("Disabled example", "停用的示例"), filepath.Join(dir, "tasks.example.json")},
+		{text("Local setup", "本地设置"), text("Copy the example into tasks.json locally, use an existing script and interpreter, and enable only the tasks you want. Back up an existing configuration before editing.", "在本地将示例复制到 tasks.json，改为已存在的脚本与解释器，仅启用需要的任务。编辑前备份原配置。")},
+		{text("Apply changes", "应用变更"), text("Use plugin reload against this console. A successful reload schedules only future occurrences. Commands are never edited on this page.", "针对当前控制台执行 plugin reload。成功重载后仅调度未来的触发。此页面不编辑命令。")},
+	}}
+}
+func runReason(reason string) plugin.Text {
+	words := map[string][2]string{"exit": {"Nonzero exit", "非零退出"}, "start": {"Could not start", "无法启动"}, "environment": {"Missing environment reference", "缺少环境引用"}, "log_io": {"Log storage failed", "日志存储失败"}, "timeout": {"Deadline reached", "超过期限"}, "stop": {"Stopped by request", "已请求停止"}, "task_removed": {"Task removed", "任务已移除"}, "plugin_disabled": {"Plugin disabled", "插件已停用"}, "shutdown": {"Console stopped", "控制台已退出"}, "recovery": {"Uncertain outcome", "结果未确认"}, "cleanup": {"Process cleanup unconfirmed", "进程清理未确认"}, "overlap": {"Previous run still active", "上次运行尚未结束"}, "capacity": {"Four execution slots occupied", "四个执行名额已占用"}}
+	w := words[reason]
+	return text(w[0], w[1])
 }

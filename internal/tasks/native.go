@@ -256,6 +256,30 @@ func Suspend(ctx context.Context, dir string) (func(), error) {
 	if e == nil {
 		return func() {}, nil
 	}
+	e.mu.Lock()
+	err := e.ownerErr
+	if err == nil {
+		err = e.claimLocked()
+	}
+	if err == nil {
+		for id, identity := range e.state.Active {
+			local := false
+			for _, current := range e.running {
+				if current.id == id {
+					local = true
+					break
+				}
+			}
+			if !local && identity.PID != 0 && !process.Gone(identity) {
+				err = errors.New("old task process tree still needs local inspection")
+				break
+			}
+		}
+	}
+	e.mu.Unlock()
+	if err != nil {
+		return func() {}, err
+	}
 	if err := stopEntry(ctx, e, "plugin_disabled"); err != nil {
 		return func() {}, err
 	}
@@ -574,6 +598,7 @@ func (e *entry) execute(t Task, r *running, out, errout *os.File) {
 	record.Status = "succeeded"
 	record.Logs.StdoutTruncated = stdout.Truncated
 	record.Logs.StderrTruncated = stderr.Truncated
+	var streamError *logIOError
 	switch {
 	case !result.Clean:
 		record.Status = "interrupted"
@@ -590,9 +615,15 @@ func (e *entry) execute(t Task, r *running, out, errout *os.File) {
 	case envErr != nil:
 		record.Status = "failed"
 		record.Reason = str("environment")
-	case logErr != nil:
+	case logErr != nil || errors.As(result.Error, &streamError):
 		record.Status = "failed"
 		record.Reason = str("log_io")
+	case result.Uncertain:
+		record.Status = "interrupted"
+		record.Reason = str("recovery")
+		ts := e.state.Tasks[t.ID]
+		ts.Paused = true
+		e.state.Tasks[t.ID] = ts
 	case result.Error != nil:
 		record.Status = "failed"
 		record.Reason = str("start")
