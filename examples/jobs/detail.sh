@@ -63,4 +63,4 @@ done <<EOF
 $labels
 EOF
 
-printf '{"groups":%s,"items":[%s]}\n' "$groups" "$items"
+printf '{"presentation":"compact","groups":%s,"items":[%s]}\n' "$groups" "$items"

@@ -124,4 +124,4 @@ Known problems:
 
 Update this section in the slice that changes it.
 
-Background jobs now declare explicit running, idle and attention groups, with disabled on Windows. Detail pages with groups offer always-visible name/ID search and counted filters, preserving session choices through refreshes and language changes. Invalid groups are refused rather than losing tasks. Compact presentation is accepted as optional metadata; its layout is the next slice.
+Background jobs now declare explicit running, idle and attention groups, with disabled on Windows. Detail pages with groups offer always-visible name/ID search and counted filters, preserving session choices through refreshes and language changes. Invalid groups are refused rather than losing tasks. The optional compact presentation now puts runtime state and actions beside the name, with 16px padding, 12px gaps and expanded compact fields. Logs stay collapsed and bounded; other detail layouts retain their existing structure.

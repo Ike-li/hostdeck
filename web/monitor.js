@@ -53,6 +53,7 @@ export async function loadDetail(p, view) {
 
 export function renderDetail(p, view) {
   view.lang = state.lang;
+  view.classList.toggle('detail-compact', view.data.presentation === 'compact');
   const { items, error, groups = [] } = view.data;
   view.querySelector('.detail-tools')?.remove();
   const list = view.querySelector('.detail-list');
@@ -127,9 +128,10 @@ function detailItem(p, item, view) {
   if (item.status) section.dataset.status = item.status;
   const head = el('header', 'detail-head');
   head.append(el('h2', 'detail-name', pick(item.name)));
-  if (item.status) head.append(el('span', 'pill detail-status', t(`card.status.${item.status}`)));
+  const compact = view.data.presentation === 'compact';
+  if (item.status) head.append(el('span', 'pill detail-status', compact && item.value != null ? item.value : t(`card.status.${item.status}`)));
   section.append(head);
-  if (item.value !== undefined && item.value !== null) section.append(el('p', 'detail-value', item.value));
+  if (!compact && item.value !== undefined && item.value !== null) section.append(el('p', 'detail-value', item.value));
   if (item.fields?.length) {
     const fields = el('dl', 'detail-fields');
     for (const f of item.fields) fields.append(el('dt', null, pick(f.name)), el('dd', null, f.value));
@@ -146,7 +148,7 @@ function detailItem(p, item, view) {
   if (item.actions?.length) {
     const actions = el('div', 'detail-actions');
     actions.append(...item.actions.map((action) => actionButton(p, item, action, view)));
-    section.append(actions);
+    (compact ? head : section).append(actions);
   }
   return section;
 }

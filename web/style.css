@@ -866,6 +866,14 @@ h1 {
   text-align: left;
 }
 
+.detail-compact .detail-item { padding: var(--space-4); margin-bottom: var(--space-3); }
+.detail-compact .detail-head { align-items: center; min-height: var(--control-h); }
+.detail-compact .detail-fields { grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-1) var(--space-3); margin-top: var(--space-2); }
+.detail-compact .detail-fields dd { margin: 0; }
+.detail-compact .detail-status { max-width: 100%; overflow-wrap: anywhere; }
+.detail-compact .detail-actions { margin: 0; padding: 0; border: 0; }
+.detail-compact .detail-log { margin-top: var(--space-2); }
+
 /* ---- Plugins page ---------------------------------------------------- */
 #catalog-intro { margin-bottom: var(--space-5); font-size: var(--text-base); }
 

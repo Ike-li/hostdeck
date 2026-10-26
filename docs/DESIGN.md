@@ -912,3 +912,5 @@ Writing this document against the code found six places where the code fell shor
 One item is left on purpose: tying a server error to its field (the [Reserved] note in 3.2). Today's error words already say which field is wrong; it waits for an error code whose words cannot.
 
 Grouped detail pages place a labelled name/ID search and wrapping counted filter buttons above their items. Search is case-insensitive, trims outer whitespace, intersects the selected group and keeps input focus. Counts reflect the search across groups. Empty data, no search matches, an empty group and a failed reading have distinct messages. Search and group choices last for the browser session, through refreshes and language changes.
+
+Compact detail lists keep the name, written runtime state and actions in one wrapping header with 44px controls. Items use 16px padding and 12px separation; fields use 13px words, a 96px label column and 4px/12px gaps. Fields stay expanded and paths wrap, while logs remain collapsed and bounded at 240px. Other detail layouts keep their larger values and separate action area.

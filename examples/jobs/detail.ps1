@@ -46,4 +46,4 @@ foreach ($job in @(Get-IncludedServices $services)) {
 	$items.Add("{`"id`":$idJson,`"name`":$nameJson,`"status`":`"$($job.Status)`",`"group`":`"$group`",`"value`":$valueJson,`"fields`":[" + ($fields -join ',') + "]$actions}")
 }
 
-'{"groups":[{"id":"running","label":{"en":"Running","zh-CN":"运行中"}},{"id":"idle","label":{"en":"Not running","zh-CN":"未运行"}},{"id":"attention","label":{"en":"Needs attention","zh-CN":"需要处理"}},{"id":"disabled","label":{"en":"Disabled","zh-CN":"已禁用"}}],"items":[' + ($items -join ',') + ']}'
+'{"presentation":"compact","groups":[{"id":"running","label":{"en":"Running","zh-CN":"运行中"}},{"id":"idle","label":{"en":"Not running","zh-CN":"未运行"}},{"id":"attention","label":{"en":"Needs attention","zh-CN":"需要处理"}},{"id":"disabled","label":{"en":"Disabled","zh-CN":"已禁用"}}],"items":[' + ($items -join ',') + ']}'
