@@ -239,3 +239,7 @@ Jobs detail enrichment stays in the shipped shell/PowerShell programs: plutil on
 `internal/dockerview` is a stateless native card/detail program. `internal/run` supplies its process runner, so Docker CLI queries keep the same deadlines, output caps and process-tree cleanup as external plugins, with an explicit child environment and combined log streams. The native package selects only displayed inspect fields, never container environment variables. No Docker SDK, interpreter, daemon, extra listening port or stored file is introduced.
 
 The Docker endpoint is validated and pinned; detail IDs bind the full container ID to an endpoint fingerprint, so a different context cannot silently reuse an old item ID. Confirmed actions can now start stopped/created containers and restart running ones through the existing Origin-checked action endpoint. Existing plugins and stored files need no migration; `@hostdeck docker` needs a binary that includes the new native program.
+
+## Proposed scheduled-script tasks
+
+[TASKS.md](TASKS.md) defines the proposed v1 data contract and acceptance boundaries for an independent scheduled-script plugin. Its scheduler, runner and persistence are separate responsibilities inside hostdeck; ordinary task output is distinct from card/detail/action JSON. This is documentation only: no scheduling package, HTTP endpoint, accepted file format or command-editing UI has been added. Existing plugins, scripts and saved files require no migration.
