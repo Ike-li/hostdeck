@@ -928,3 +928,5 @@ A compact detail state and its descriptive field values can be localized text, s
 The selected detail filter uses accent words on the accent tint; while pressed its words use the text token on the shared pressed tint, keeping at least 4.5:1 in both themes. The stylesheet tint test measures both states.
 
 Docker containers reuse the compact grouped detail list: running, stopped, paused and needs attention, with localized values and bounded collapsed logs. Shared search and result-count copy refers to items rather than jobs. Item ordering puts errors before warnings, then uses the declared group order and localized name; a paused warning cannot precede a failed container merely because its tab comes first.
+
+Docker details use the shared confirmed action control in the header: Start for created/stopped containers and Restart for running ones. Paused/transition/dead states remain informational. After a successful action, the standard re-read keeps the search and selected group; an item can leave that filtered result as its state changes.

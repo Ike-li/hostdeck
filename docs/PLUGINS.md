@@ -163,6 +163,10 @@ Details show image, state, health, times, exit status, restart policy/count, por
 
 Recent logs combine stdout and stderr, request the last 20 lines without following, retain at most 16 KiB per container and share 512 KiB per page. The whole page has five seconds for optional log reads, and each has at most one second. Unsupported logging drivers, missing logs or time/size limits produce local notes without losing container information. A failed list or inspection refuses the whole reading instead of reporting a healthy zero.
 
+Docker actions use `['@hostdeck', docker, action] <action-id> <item-id>`. `start` is offered only for created/exited containers, `restart` only for running ones, including unhealthy running containers. Paused, restarting, removing, dead and unknown states offer neither. As for other detail actions, a second click and a successful re-read are required. The native program additionally validates the opaque endpoint-bound item ID and re-inspects that full 64-character container ID before invoking exactly one start/restart command. It never falls back to a name or a shortened ID.
+
+The command honors Docker's configured stop timeout. The console's 30-second deadline still ends the CLI process tree, but an operation already accepted by the Docker engine may continue. A CLI timeout therefore reports an uncertain result and tells the user to refresh, rather than claiming success or cancellation. These operations add no manifest keys or saved files and require a newer binary that supports the Docker action program.
+
 ## Scheduled task configuration preview
 
 The first scheduled-task slice provides configuration preview. `scheduled-tasks` installs `plugin.yaml` and an empty `tasks.json`; `@hostdeck tasks card|detail` validates and displays tasks in process. Reads execute no command and write no state; actions and automatic scheduling are not available yet. [TASKS.md](TASKS.md) defines fields, defaults and the planned complete behavior. Existing plugins and files need no migration.

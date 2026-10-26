@@ -111,7 +111,9 @@ func Execute(ctx context.Context, args []string, run Runner) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if len(args) != 2 || args[0] != "docker" || !slices.Contains([]string{"card", "detail"}, args[1]) {
+	read := len(args) == 2 && args[0] == "docker" && slices.Contains([]string{"card", "detail"}, args[1])
+	act := len(args) == 4 && args[0] == "docker" && args[1] == "action" && slices.Contains([]string{"start", "restart"}, args[2])
+	if !read && !act {
 		return nil, errors.New("unknown native Docker command")
 	}
 	fail := func(err error) ([]byte, error) {
@@ -123,9 +125,15 @@ func Execute(ctx context.Context, args []string, run Runner) ([]byte, error) {
 		}
 		return json.Marshal(map[string]any{"error": words("Could not read Docker containers. Check that the local engine is running and accessible. "+err.Error(), "读不到 Docker 容器。请确认本机引擎已启动，且当前用户可以访问。"+err.Error())})
 	}
+	if act && !validTarget(args[3]) {
+		return json.Marshal(map[string]any{"error": words("Invalid container action target.", "容器操作目标无效。")})
+	}
 	c, err := connect(ctx, run)
 	if err != nil {
 		return fail(err)
+	}
+	if act {
+		return c.act(ctx, args[2], args[3])
 	}
 	rows, err := c.read(ctx)
 	if err != nil {
@@ -238,31 +246,42 @@ func (c client) read(ctx context.Context) ([]container, error) {
 	rows := make([]container, 0, len(ids))
 	for first := 0; first < len(ids); first += 50 {
 		batch := ids[first:min(first+50, len(ids))]
-		args := append([]string{"container", "inspect", "--format", inspectFormat, "--"}, batch...)
-		out, err := c.command(ctx, metadataLimit, false, args...)
+		batchRows, err := c.inspect(ctx, batch)
 		if err != nil {
 			return nil, err
 		}
-		dec := json.NewDecoder(bytes.NewReader(out))
-		found := map[string]bool{}
-		for {
-			var row container
-			err := dec.Decode(&row)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return nil, errors.New("Docker returned malformed container information")
-			}
-			if !slices.Contains(batch, row.ID) || found[row.ID] || strings.Trim(strings.TrimSpace(row.Name), "/") == "" || row.Status == "" {
-				return nil, errors.New("Docker returned incomplete or duplicate container information")
-			}
-			found[row.ID] = true
-			rows = append(rows, row)
+		rows = append(rows, batchRows...)
+
+	}
+	return rows, nil
+}
+
+func (c client) inspect(ctx context.Context, ids []string) ([]container, error) {
+	args := append([]string{"container", "inspect", "--format", inspectFormat, "--"}, ids...)
+	out, err := c.command(ctx, metadataLimit, false, args...)
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(out))
+	found := map[string]bool{}
+	rows := []container{}
+	for {
+		var row container
+		err := dec.Decode(&row)
+		if err == io.EOF {
+			break
 		}
-		if len(found) != len(batch) {
-			return nil, errors.New("Docker did not return every listed container")
+		if err != nil {
+			return nil, errors.New("Docker returned malformed container information")
 		}
+		if !slices.Contains(ids, row.ID) || found[row.ID] || strings.Trim(strings.TrimSpace(row.Name), "/") == "" || row.Status == "" {
+			return nil, errors.New("Docker returned incomplete or duplicate container information")
+		}
+		found[row.ID] = true
+		rows = append(rows, row)
+	}
+	if len(found) != len(ids) {
+		return nil, errors.New("Docker did not return every listed container")
 	}
 	return rows, nil
 }
@@ -401,6 +420,13 @@ func (c client) item(r container) item {
 		add("Command arguments", "命令参数", string(argv))
 	}
 	add("Runtime error", "运行错误", r.Error)
+	if id := offeredAction(r); id != "" {
+		label := words("Start", "启动")
+		if id == "restart" {
+			label = words("Restart", "重启")
+		}
+		it.Actions = []action{{id, label}}
+	}
 	return it
 }
 

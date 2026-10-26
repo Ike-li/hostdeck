@@ -241,7 +241,7 @@ Background jobs can be searched by part of their name or ID and filtered by runn
 
 Job details use expanded compact fields with the runtime state and action beside the name. macOS adds PID, configured command, launch rules, configuration and both log paths, plus bounded tails. Windows adds service identity, PID, start mode, account and command, plus matching recent service events. Logs stay collapsed and share a 512 KiB page limit; unreadable optional information is explained on the task. Docker monitoring is a separate M1 plugin.
 
-The built-in **Docker containers** plugin provides a compact searchable container list, counted state filters and overview counts. It shows selected metadata and bounded recent stdout/stderr logs using the installed Docker CLI. The engine must already be running on this computer; remote endpoints are refused, and installation does not start Docker or a container. Local Unix sockets, named pipes and literal loopback TCP endpoints are supported. Container start/restart is the following slice.
+The built-in **Docker containers** plugin provides a compact searchable container list, counted state filters and overview counts. It shows selected metadata and bounded recent stdout/stderr logs using the installed Docker CLI. The engine must already be running on this computer; remote endpoints are refused, and installation does not start Docker or a container. Local Unix sockets, named pipes and literal loopback TCP endpoints are supported. Confirmed actions start stopped or newly created containers and restart running ones. Paused and transition states offer no action; all actions recheck the full container ID and current connection.
 
 ## Scheduled task configuration preview
 

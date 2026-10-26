@@ -2,11 +2,13 @@ package run
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -151,5 +153,43 @@ func TestDockerCommandOptionsMergeBothLogStreamsAndKeepEnvironmentScoped(t *test
 	out, err = external(context.Background(), t.TempDir(), command, env, 1024, false)
 	if err != nil || string(out) != "child" || os.Getenv("HOSTDECK_CHILD_VALUE") != "parent" {
 		t.Fatalf("scoped environment %q %v", out, err)
+	}
+}
+
+func TestNativeDockerErrorsSayTheLastDiagnosticOnlyOnce(t *testing.T) {
+	dir := t.TempDir()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "docker"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), body, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("DOCKER_CONTEXT", "")
+	t.Setenv("DOCKER_HOST", "unix:///fixture.sock")
+	t.Setenv("HOSTDECK_FAKE", "fail")
+	out, err := Output(context.Background(), dir, []string{"@hostdeck", "docker", "detail"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reply struct {
+		Error map[string]string `json:"error"`
+	}
+	if err := json.Unmarshal(out, &reply); err != nil {
+		t.Fatal(err)
+	}
+	for _, lang := range []string{"en", "zh-CN"} {
+		if strings.Count(reply.Error[lang], "the actual problem") != 1 {
+			t.Fatalf("%s repeats or loses the diagnostic: %s", lang, reply.Error[lang])
+		}
 	}
 }

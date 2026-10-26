@@ -49,6 +49,26 @@ func fakeDockerCLI(args []string) {
 				json.NewEncoder(os.Stdout).Encode(r)
 			}
 		}
+	case "start", "restart":
+		id := args[len(args)-1]
+		found := false
+		for _, row := range rows {
+			if row["id"] == id {
+				row["status"] = "running"
+				row["exitCode"] = 0
+				found = true
+			}
+		}
+		if !found {
+			fmt.Fprint(os.Stderr, "fixture container missing")
+			os.Exit(1)
+		}
+		encoded, _ := json.Marshal(rows)
+		if err := os.WriteFile(os.Getenv("HOSTDECK_E2E_DOCKER_STATE"), encoded, 0600); err != nil {
+			fmt.Fprint(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println(id)
 	case "logs":
 		fmt.Println("2026-10-26T00:00:00Z stdout line 中文")
 		fmt.Fprintln(os.Stderr, "2026-10-26T00:00:01Z stderr line")
