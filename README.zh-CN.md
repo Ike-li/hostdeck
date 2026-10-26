@@ -146,7 +146,7 @@ card:
 
 在 Windows 上，后台任务数量同时计入警告和错误。只有可再次启动、允许停止且正在运行或已暂停的服务才提供重启。路径会先展开和规范化，再过滤 Windows 系统服务。
 
-发布第一个版本之前，清单格式还可能变。
+发布第一个版本之前，清单格式还可能变。[docs/PLUGINS.zh-CN.md](docs/PLUGINS.zh-CN.md) 写全了：`plugin.yaml` 的每个字段，hostdeck 怎么运行插件的程序，程序又该打印什么。
 
 ## 磁盘变化
 
@@ -203,7 +203,7 @@ hostdeck plugin reload --url http://127.0.0.1:4678
 
 ## 工作原理
 
-[docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md) 讲了各个组成部分、每种请求的经过，以及安全模型。[docs/DESIGN.zh-CN.md](docs/DESIGN.zh-CN.md) 是控制台的设计规范：令牌、组件和通用模式，每项都写了取值、理由和守住它的测试。
+[docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md) 讲了各个组成部分、每种请求的经过，以及安全模型。[docs/PLUGINS.zh-CN.md](docs/PLUGINS.zh-CN.md) 是插件的约定。[docs/DESIGN.zh-CN.md](docs/DESIGN.zh-CN.md) 是控制台的设计规范：令牌、组件和通用模式，每项都写了取值、理由和守住它的测试。
 
 ## 平台
 

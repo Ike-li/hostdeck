@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -337,5 +338,52 @@ func TestAPluginMayDescribeItself(t *testing.T) {
 	}
 	if d := got[0].Description; d.ByLang["en"] != "Shows a demo." || d.ByLang["zh-CN"] != "演示用。" {
 		t.Errorf("description %+v", d)
+	}
+}
+
+// yamlFields lists the fields of t as the plugin reference writes them, such
+// as card.rows[].value. Text and thresholds are values of their own: the
+// reference gives a threshold's keys once.
+func yamlFields(t reflect.Type, prefix string) []string {
+	var fields []string
+	for i := range t.NumField() {
+		f := t.Field(i)
+		name, opts, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		if name == "-" {
+			continue
+		}
+		ft := f.Type
+		if ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		switch {
+		case opts == "inline":
+			fields = append(fields, yamlFields(ft, prefix)...)
+		case ft.Kind() == reflect.Slice && ft.Elem().Kind() == reflect.Struct:
+			fields = append(fields, yamlFields(ft.Elem(), prefix+name+"[].")...)
+		case ft.Kind() == reflect.Struct && ft != reflect.TypeFor[Text]() && ft != reflect.TypeFor[Threshold]():
+			fields = append(fields, yamlFields(ft, prefix+name+".")...)
+		default:
+			fields = append(fields, prefix+name)
+		}
+	}
+	return fields
+}
+
+func TestThePluginReferenceNamesEveryManifestField(t *testing.T) {
+	fields := append(yamlFields(reflect.TypeFor[manifest](), ""), yamlFields(reflect.TypeFor[Threshold](), "")...)
+	if !slices.Contains(fields, "card.rows[].warn") || !slices.Contains(fields, "above") {
+		t.Fatalf("the manifest's fields were not all found: %v", fields)
+	}
+	for _, doc := range []string{"PLUGINS.md", "PLUGINS.zh-CN.md"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "docs", doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range fields {
+			if !strings.Contains(string(data), "`"+field+"`") {
+				t.Errorf("docs/%s does not name `%s`", doc, field)
+			}
+		}
 	}
 }

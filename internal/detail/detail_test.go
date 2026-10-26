@@ -243,3 +243,34 @@ func TestConcurrentActionsWaitAndReReadBeforeRunning(t *testing.T) {
 		t.Errorf("second action error = %+v, want not_offered after first action changed state", secondErr)
 	}
 }
+
+// jsonFields lists the fields of t as the plugin reference writes them, such
+// as items[].actions[].label.
+func jsonFields(t reflect.Type, prefix string) []string {
+	var fields []string
+	for i := range t.NumField() {
+		f := t.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if ft := f.Type; ft.Kind() == reflect.Slice && ft.Elem().Kind() == reflect.Struct {
+			fields = append(fields, jsonFields(ft.Elem(), prefix+name+"[].")...)
+		} else {
+			fields = append(fields, prefix+name)
+		}
+	}
+	return fields
+}
+
+func TestThePluginReferenceNamesEveryFieldADetailProgramPrints(t *testing.T) {
+	fields := jsonFields(reflect.TypeFor[Item](), "items[].")
+	for _, doc := range []string{"PLUGINS.md", "PLUGINS.zh-CN.md"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "docs", doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range fields {
+			if !strings.Contains(string(data), "`"+field+"`") {
+				t.Errorf("docs/%s does not name `%s`", doc, field)
+			}
+		}
+	}
+}

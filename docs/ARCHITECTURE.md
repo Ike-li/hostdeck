@@ -74,19 +74,7 @@ Static shell text is worded from `data-i18n` attributes in one pass; nodes the s
 
 ## Plugins
 
-A plugin is a folder; its folder name is its ID. A folder whose name starts with a dot is skipped: that is how a plugin is disabled. `plugin.yaml` declares any of:
-
-- **`page`**: a sidebar entry. `proxy` embeds a local web UI through its own forwarding port; `link` opens a URL in a new tab.
-- **`card`**: a card on the overview, either declarative or a program.
-  - `http`: a URL and headers (`${env:NAME}` allowed), a `value` and `rows` given as gjson paths, a `label`, and `warn` / `error` thresholds (`above`, `below`, `equals` or `not`). `interval` says how long a reading is kept (1 minute by default).
-  - `exec`: a command, with a `windows` variant, that prints the card as JSON:
-    `{"status": "ok|warn|error", "value": …, "label": …, "rows": [{"name": …, "value": …, "status": …}]}`, or `{"error": …}`.
-- **`detail`**: a sidebar entry whose page lists items. Its program prints `{"items": [{"id", "name", "status", "value", "fields": [{"name", "value"}], "log", "actions": [{"id", "label"}]}]}`.
-- **`actions`**: the program run for an action on an item, as `<command> <action id> <item id>`. It may print `{"message": …}` or `{"error": …}`.
-
-`description` says what the plugin does and what to change before using it; the plugins page shows it.
-
-Text shown to people is a string, or `{en: …, zh-CN: …}`. Programs run in the plugin's folder; on Windows, scripts should be UTF-8 with a BOM and write UTF-8.
+A plugin is a folder; its folder name is its ID. A folder whose name starts with a dot is skipped: that is how a plugin is disabled. `plugin.yaml` declares a `page` (a sidebar entry: `proxy` embeds a local web UI through its own forwarding port, `link` opens a URL in a new tab), a `card` on the overview (`http`, declared in the manifest, or `exec`, a program that prints it), a `detail` page whose program lists items, and `actions` that a program runs on those items. [PLUGINS.md](PLUGINS.md) is the contract: every field, how the programs run and what they print. `internal/plugin` reads the manifest, `internal/card` and `internal/detail` read what the programs print, and their tests check that PLUGINS.md names every field they accept.
 
 ## What happens when…
 

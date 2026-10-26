@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -408,5 +409,36 @@ func TestAPendingCardKeepsShowingItsLastValue(t *testing.T) {
 	defer cancel()
 	if v := cache.Get(ctx, p); !v.Pending || v.Value != "old" {
 		t.Errorf("got %+v, want the last value, pending", v)
+	}
+}
+
+// jsonFields lists the fields of t as the plugin reference writes them, such
+// as rows[].status.
+func jsonFields(t reflect.Type, prefix string) []string {
+	var fields []string
+	for i := range t.NumField() {
+		f := t.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if ft := f.Type; ft.Kind() == reflect.Slice && ft.Elem().Kind() == reflect.Struct {
+			fields = append(fields, jsonFields(ft.Elem(), prefix+name+"[].")...)
+		} else {
+			fields = append(fields, prefix+name)
+		}
+	}
+	return fields
+}
+
+func TestThePluginReferenceNamesEveryFieldACardProgramPrints(t *testing.T) {
+	fields := jsonFields(reflect.TypeFor[printed](), "")
+	for _, doc := range []string{"PLUGINS.md", "PLUGINS.zh-CN.md"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "docs", doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range fields {
+			if !strings.Contains(string(data), "`"+field+"`") {
+				t.Errorf("docs/%s does not name `%s`", doc, field)
+			}
+		}
 	}
 }

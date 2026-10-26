@@ -146,7 +146,7 @@ Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`
 
 On Windows, the jobs count includes warnings and errors. Restart is offered only for a startable running or paused service that accepts Stop. Paths are expanded and normalized before Windows system services are filtered out.
 
-The manifest format may still change before the first release.
+The manifest format may still change before the first release. [docs/PLUGINS.md](docs/PLUGINS.md) gives all of it: every field of `plugin.yaml`, how hostdeck runs a plugin's programs, and what they print.
 
 ## Disk history
 
@@ -203,7 +203,7 @@ All connection commands, including `help`, write one JSON result to stdout. Succ
 
 ## How it works
 
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes the pieces, what happens on each request, and the security model. [docs/DESIGN.md](docs/DESIGN.md) is the console's design system: its tokens, components and patterns, with their values, their reasons and the tests that keep them.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes the pieces, what happens on each request, and the security model. [docs/PLUGINS.md](docs/PLUGINS.md) is the plugin contract. [docs/DESIGN.md](docs/DESIGN.md) is the console's design system: its tokens, components and patterns, with their values, their reasons and the tests that keep them.
 
 ## Platforms
 

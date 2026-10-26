@@ -73,19 +73,7 @@ flowchart LR
 
 ## 插件
 
-一个插件就是一个文件夹，文件夹名就是它的 ID。以点开头的文件夹会被跳过，停用插件就是靠这一点。`plugin.yaml` 里可以声明以下几项：
-
-- **`page`**：侧栏的一项。`proxy` 通过单独的转发端口内嵌一个本机网页界面；`link` 在新标签页里打开一个地址。
-- **`card`**：总览上的一张卡片，声明式的或者由程序生成。
-  - `http`：一个地址和若干请求头（可以写 `${env:NAME}`），用 gjson 路径写出的 `value` 和 `rows`，一个 `label`，以及 `warn` / `error` 阈值（`above`、`below`、`equals`、`not` 四选一）。`interval` 表示一次读数保留多久，默认 1 分钟。
-  - `exec`：一条命令（可以另写 `windows` 版本），把卡片按 JSON 打印出来：
-    `{"status": "ok|warn|error", "value": …, "label": …, "rows": [{"name": …, "value": …, "status": …}]}`，或者 `{"error": …}`。
-- **`detail`**：侧栏的一项，它的页面列出若干条目。它的程序打印 `{"items": [{"id", "name", "status", "value", "fields": [{"name", "value"}], "log", "actions": [{"id", "label"}]}]}`。
-- **`actions`**：对条目执行操作时运行的程序，调用方式是 `<命令> <操作 id> <条目 id>`。它可以打印 `{"message": …}` 或 `{"error": …}`。
-
-`description` 说明插件做什么、用之前要改什么，插件页会显示它。
-
-给人看的文字可以是一个字符串，也可以是 `{en: …, zh-CN: …}`。程序在插件自己的文件夹里运行；Windows 上的脚本应当存成带 BOM 的 UTF-8，并输出 UTF-8。
+一个插件就是一个文件夹，文件夹名就是它的 ID。以点开头的文件夹会被跳过，停用插件就是靠这一点。`plugin.yaml` 里可以声明 `page`（侧栏的一项：`proxy` 通过单独的转发端口内嵌一个本机网页界面，`link` 在新标签页里打开一个地址）、总览上的 `card`（`http` 直接在清单里声明，`exec` 由程序打印）、由程序列出条目的 `detail` 详情页，以及由程序对这些条目执行的 `actions`。[PLUGINS.zh-CN.md](PLUGINS.zh-CN.md) 是插件的约定：每个字段、程序怎么运行、程序打印什么。清单由 `internal/plugin` 读取，程序的输出由 `internal/card` 和 `internal/detail` 读取，它们的测试会检查 PLUGINS 文档写到了它们接受的每个字段。
 
 ## 各个操作的经过
 

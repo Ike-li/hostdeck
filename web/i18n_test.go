@@ -136,3 +136,19 @@ func TestAgentPromptsClarifyPageIDsExecKeysOptionalFieldsAndVerification(t *test
 		}
 	}
 }
+
+// The rules that make a plugin program fail are the ones an agent cannot guess
+// from an example; docs/PLUGINS.md gives them in full.
+func TestTheAgentPromptSaysWhatMakesAPluginProgramFail(t *testing.T) {
+	for path, subs := range map[string][]string{
+		"i18n/en.json":    {"exactly one JSON value", "unknown field", "exit code other than 0", "30 seconds", `{"error":"Reason"} with exit code 0`, "id is required and unique"},
+		"i18n/zh-CN.json": {"恰好一个 JSON 值", "不认识的字段", "退出码不为 0", "30 秒", `{"error":"失败原因"}，退出码仍为 0`, "id 必填且各不相同"},
+	} {
+		contract := dict(t, path)["help.agent.contract"]
+		for _, sub := range subs {
+			if !strings.Contains(contract, sub) {
+				t.Errorf("%s help.agent.contract lacks %q", path, sub)
+			}
+		}
+	}
+}
