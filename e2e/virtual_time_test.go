@@ -44,7 +44,8 @@ func pauseTime(t *testing.T, ctx context.Context) {
 // Observe timer creation at the clock boundary while virtual time is paused.
 // A paused clock also holds back tasks on most of Blink's queues, such as a
 // promise resolution Blink defers, so each look that finds no timer lets the
-// clock run for a microsecond.
+// clock run for a microsecond. Timer discovery must not require every pending
+// request to finish: its response task can itself be held by the paused clock.
 func waitForTimer(t *testing.T, ctx context.Context, delay, cursor int) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -59,7 +60,7 @@ func waitForTimer(t *testing.T, ctx context.Context, delay, cursor int) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the browser never armed its %d ms timer", delay)
 		}
-		advanceTime(t, ctx, time.Microsecond)
+		advanceClock(t, ctx, time.Microsecond, emulation.VirtualTimePolicyAdvance)
 		time.Sleep(10 * time.Millisecond)
 	}
 }
@@ -70,12 +71,17 @@ var clockBound = 10 * time.Second
 
 func advanceTime(t *testing.T, ctx context.Context, duration time.Duration) {
 	t.Helper()
+	advanceClock(t, ctx, duration, emulation.VirtualTimePolicyPauseIfNetworkFetchesPending)
+}
+
+func advanceClock(t *testing.T, ctx context.Context, duration time.Duration, policy emulation.VirtualTimePolicy) {
+	t.Helper()
 	bounded, cancel := context.WithTimeout(ctx, clockBound)
 	defer cancel()
 	events := chromedp.Events(bounded, emulation.VirtualTimeBudgetExpired)
 	budget := float64(duration) / float64(time.Millisecond)
 	if _, err := chromedp.Call(bounded, emulation.SetVirtualTimePolicy, emulation.SetVirtualTimePolicyParams{
-		Policy: emulation.VirtualTimePolicyPauseIfNetworkFetchesPending, Budget: &budget, MaxVirtualTimeTaskStarvationCount: 1000,
+		Policy: policy, Budget: &budget, MaxVirtualTimeTaskStarvationCount: 1000,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -325,5 +331,50 @@ func confirmationExpires(t *testing.T, ctx context.Context, selector, armed, idl
 	advanceTime(t, ctx, 2*time.Millisecond)
 	if got := text(t, ctx, selector); got != idle {
 		t.Fatalf("confirmation did not expire after four seconds: %q", got)
+	}
+}
+
+func TestTimerDiscoveryRunsRendererTasksWhileAnotherRequestIsStillOpen(t *testing.T) {
+	sent, release := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/held" {
+			close(sent)
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			return
+		}
+		fmt.Fprint(w, "<!doctype html><title>timer discovery</title>")
+	}))
+	defer server.Close()
+	defer close(release)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(server.URL))
+	pauseTime(t, ctx)
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`fetch('/held'), undefined`)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sent:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the pending request never reached the server")
+	}
+	before, err := chromedp.Run(ctx, chromedp.Evaluate[float64](`(() => {
+ const channel=new MessageChannel();
+ channel.port1.onmessage=()=>{window.__timerDiscoveryStartedAt=performance.now();setTimeout(()=>{},1234);};
+ channel.port2.postMessage(null);
+ return performance.now();
+ })()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForTimer(t, ctx, 1234, 0)
+	times, err := chromedp.Run(ctx, chromedp.Evaluate[[]float64](`[performance.now(), window.__timerDiscoveryStartedAt]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(times) != 2 || times[0]-times[1] >= 1 {
+		t.Fatalf("timer discovery consumed the new timer's budget: %v (origin %.3f)", times, before)
 	}
 }
