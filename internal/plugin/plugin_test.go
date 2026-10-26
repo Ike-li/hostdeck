@@ -287,6 +287,7 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 	}{
 		{"name: Demo\n" + card, "schema"},
 		{"schema: 2\nname: Demo\n" + card, "schema 2"},
+		{"schema: 2\nname: Demo\n" + card, "reads schema: 1"},
 		{"schema: 1\n" + card, "name"},
 		{"schema: 1\nname: Demo\n", "page, detail or card"},
 		{"schema: 1\nname: Demo\npage: {link: 'https://wiki.example/'}\ndetail: {exec: {command: [sh, d.sh]}}\n", "page or detail"},

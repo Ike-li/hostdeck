@@ -2,7 +2,7 @@
 
 [简体中文](PLUGINS.zh-CN.md)
 
-This is the plugin contract: what a plugin folder holds, every field of `plugin.yaml`, how hostdeck runs a plugin's programs and what they print. It is `schema: 1`, which may still change before the first release. `internal/plugin` reads the manifest; tests check that every field it accepts is named here, in both languages.
+This is the plugin contract: what a plugin folder holds, every field of `plugin.yaml`, how hostdeck runs a plugin's programs and what they print. It is `schema: 1`, which may still change before the first release; [Compatibility](#compatibility) says what is kept after it. `internal/plugin` reads the manifest; tests check that every field it accepts is named here, in both languages.
 
 The [README](../README.md#run-from-source) has three short manifests to start from, and [`examples/`](../examples) holds complete plugins, among them disk space and background jobs, whose cards and detail pages come from scripts for macOS and Windows.
 
@@ -138,6 +138,10 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": �
 An action's button needs a second click. hostdeck then runs the detail program again, and runs the action only if that item still offers it; otherwise the page says so and reads the list again. One action runs at a time, across every plugin. The action program runs as `<command…> <action id> <item id>`, and runs to its end or its deadline even if the page that asked for it is closed, so that a restart is never stopped halfway. The two IDs are ones your detail program printed a moment before; treat them as data, never as code.
 
 The program may print nothing, `{"message": …}`, which the page shows as the result, or `{"error": …}`; both are text. With nothing printed, the page says the action is done. The page reads the detail again a moment later.
+
+## Compatibility
+
+Until the first release, `schema: 1` may still change, and the commit that changes it says what an existing plugin needs. From the first release, the manifest and what programs print only gain optional fields and values within `schema: 1`; nothing is removed, renamed or given another meaning. A plugin that uses a newer field needs a hostdeck that knows it: an older one refuses the plugin and names the field's line. A change that cannot be made this way takes `schema: 2`, and its release says how to move a plugin. [ARCHITECTURE.md](ARCHITECTURE.md#contracts-and-compatibility) gives the rules for every contract.
 
 ## Trust
 

@@ -199,6 +199,30 @@ hostdeck plugin reload --url http://127.0.0.1:4678
 
 所有接入命令，包括 `help`，都向 stdout 输出一份 JSON。成功包含 `ok: true` 和 `data`，失败包含 `ok: false` 和 `error.code`、`error.message`，有时还有恢复信息。退出码 **0** 为成功，**1** 为操作或校验失败，**2** 为参数错误。PowerShell 每次调用原生命令后都要检查 `$LASTEXITCODE`。文件已保存但重载失败时，`data.saved` 为 true；本机自定义安装还会用 `data.path` 给出文件位置，API 修改在 ID 已知时返回 ID；修复报错后重新加载，不要重复安装。`plugin reload` 遇到损坏插件或转发错误返回非零；重载发生致命错误时保留之前的加载状态。
 
+`data` 里有什么：
+
+- `plugin validate`：`data.valid`、`data.schema`（这个 hostdeck 读取的清单版本）、`data.path`（文件夹的绝对路径）和 `data.name`。
+- `page add`、`page update`、`plugin install`、`plugin enable` 和 `plugin disable`：`data.id`、`data.path`（插件的文件夹，停用时以点开头）、`data.saved`、`data.loaded`、`data.disabled`、`data.available`（已启用，并且加载时没有出错）和 `data.plugin`，即控制台自己对这个插件的记录。
+- `plugin list`、`plugin catalog` 和 `plugin reload`：控制台的插件目录。其中的 `pluginDir` 和 `installed` 列表（每项的 `id`、`loaded`、`disabled`、`broken`、`error`）是 CLI 自己会读的部分。
+
+`error.code` 要么是 CLI 自己的错误码，要么是控制台返回的错误码；后者在 [web/i18n/zh-CN.json](web/i18n/zh-CN.json) 的 `error.<code>` 下有说明：
+
+| 错误码 | 含义 |
+| --- | --- |
+| `usage` | 命令、某个参数或 `--url` 不对；退出码为 2 |
+| `invalid_manifest` | `--from` 里的 `plugin.yaml` 加载不了；消息里写了原因 |
+| `invalid_source` | 源文件夹读不了，里面有链接或特殊文件，或者包含了插件目录 |
+| `already_added` | 已经有启用或停用的插件用了这个 ID |
+| `install_busy` | 同一个 ID 的另一次安装正在进行 |
+| `install_failed` | 复制或放置文件夹失败 |
+| `connection_failed` | `--url` 上没有控制台应答 |
+| `request_failed` | 请求没能发出，或者控制台拒绝了它但没给错误码 |
+| `invalid_response` | 控制台的回答不是这个 CLI 能读的，比如版本不同的控制台 |
+| `not_loaded` | 文件已经保存，但插件没有加载；看 `data.plugin` |
+| `plugins_unavailable` | `plugin reload` 做完了，但有启用的插件损坏或没有加载；看 `data.installed` |
+
+从第一个正式版本起，命令、参数、退出码，以及这里列出的键和错误码都会保留；可能新增。先看 `ok` 和退出码，不认识的键忽略，不认识的错误码当作失败处理。`error.message` 是给人看的，措辞可能变。`data.plugin` 和插件目录的其余部分跟随控制台自己的 API，任何版本都可能变。见[约定与兼容](docs/ARCHITECTURE.zh-CN.md#约定与兼容)。
+
 `loaded` 只表示 hostdeck 加载了清单，不代表外部服务健康，需要打开卡片或网页验证实际读数。CLI 校验与服务端加载分别使用各自的环境变量；新增密钥必须提供给运行中的服务端，必要时经过授权重启。普通文件改动可以通过 `plugin reload` 生效，无需重启。校验和复制本身不运行脚本，之后的卡片或详情请求仍按原协议执行可信插件程序。网页仍然不能提交或写入命令。
 
 ## 工作原理

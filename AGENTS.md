@@ -3,9 +3,9 @@
 hostdeck is one Go program serving a console on 127.0.0.1, for macOS and Windows: a sidebar of local web UIs and an overview of plugin cards. Read these before changing behaviour:
 
 - `README.md`: goals, **Not planned**, roadmap, the plugin manifest. Its scope is the owner's to decide.
-- `docs/ARCHITECTURE.md`: the packages, what each request does, the **security model**, tests and CI.
+- `docs/ARCHITECTURE.md`: the packages, what each request does, the **contracts and compatibility**, the **security model**, tests and CI.
 - `docs/DESIGN.md`: the design system: tokens, components, patterns and accessibility, with values, reasons and the tests that keep them. A change to the console's look updates it in the same commit.
-- `docs/PLUGINS.md`: the plugin contract: the folder, every field of `plugin.yaml`, how plugin programs run and what they print. A change to what the manifest parser or the programs' decoders accept updates it, the built-in examples and the agent prompt (`help.agent.contract`) in the same commit; tests check that it names every field.
+- `docs/PLUGINS.md`: the plugin contract: the folder, every field of `plugin.yaml`, how plugin programs run and what they print. Tests check that it names every field the manifest parser and the programs' decoders accept.
 
 Each also exists as `*.zh-CN.md`. Change both languages in the same commit.
 
@@ -35,6 +35,7 @@ go run . --dir "$(mktemp -d)" --addr 127.0.0.1:0   # a throwaway instance; it lo
 - After green, break the new code once by hand (a **mutation**), watch a test go red, restore it, and record it under `Tested:`.
 - The frontend is plain ES modules in `web/`: no build step, no npm. The API answers with error **codes**; the page words them from `web/i18n/en.json` and `web/i18n/zh-CN.json`, which hold the same keys (`web/i18n_test.go` checks).
 - Every API call that changes something checks the console's `Origin`. A new one gets a line in the security model saying what it can write.
+- The plugin folder and manifest, what plugin programs print, the CLI and the files in hostdeck's folder are **contracts** (ARCHITECTURE, Contracts and compatibility); `/api/*` is not. A change to a contract updates where it is written down, the built-in examples and the agent prompts (`help.agent.*`) in the same commit, and the body says what an existing plugin, script or file needs. From the first release, keep the rules written there.
 - Platform code sits behind build tags (`_unix.go`, `_windows.go`). Only CI runs Windows.
 
 ## Commit, PR, merge
@@ -108,6 +109,8 @@ The independent disk-history plugin now runs inside hostdeck on macOS and Window
 An embedded service can now send browser notifications. Its More actions offer Notifications…, a dialog with one step for the console's origin, which a framed page is checked against while it is open, and one for the service's forwarding port, which its service worker's push notifications are checked against. The second step opens a small window that the proxy serves on that port at `/.well-known/hostdeck/notifications`; it asks on a click, posts the answer to the console and closes. When the browser has blocked an address, each step says where to turn it on (the icon left of the address bar; for the push step a full tab opened by Open 127.0.0.1:<port>) and updates by itself once it is on, because the owner's real Chrome had blocked a forwarding port. With a window, Chrome and Edge keep a click's permission request open for the user's answer rather than refusing it; headless they refuse it, so the browser test sets each answer through DevTools. A real push delivery and Firefox or Safari are untried.
 
 The plugin contract now has one written home, `docs/PLUGINS.md` and its Chinese twin: the folder, every field of `plugin.yaml`, the HTTP card's limits, how programs run (30 seconds, the process tree ended, one JSON value on stdout decoded strictly, a nonzero exit read as an error with stderr's last line) and what card, detail and action programs print. Tests in `internal/plugin`, `internal/card` and `internal/detail` fail when a field they accept is not named there. ARCHITECTURE's Plugins section points to it instead of repeating the JSON, and the agent prompt now says what makes a program fail. A detail item without a `name` still loads and shows an empty heading; the reference tells authors to give every item one.
+
+ARCHITECTURE now names hostdeck's contracts (the plugin folder and manifest, what plugin programs print, the CLI, the files in hostdeck's folder) apart from what is its own (`/api/*`, the page, the Go packages), and says what each keeps. Until the first release a contract may change in one commit that updates its documents, examples and prompts; from the first `v*` tag, `schema: 1` and the CLI only gain, a breaking plugin change takes `schema: 2`, and a release reads the files earlier ones wrote, with no promise for going back. The README lists every key the CLI writes in `data` and every error code it answers with by itself; two CLI tests keep those lists complete.
 
 Remaining M0 work, outside the UI/UX pass:
 

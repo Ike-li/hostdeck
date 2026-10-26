@@ -199,6 +199,30 @@ Use named flags after the command. `page update` accepts only supplied `--name`,
 
 All connection commands, including `help`, write one JSON result to stdout. Success has `ok: true` and `data`; failure has `ok: false` and `error.code` / `error.message`, sometimes with recovery data. Exit **0** means success, **1** an operation/validation failure, and **2** invalid command arguments. In PowerShell, inspect `$LASTEXITCODE` after each native call. If files were saved but reloading failed, `data.saved` is true. A local custom install also returns `data.path`; API changes include the ID when it is known: fix the error and reload rather than install a duplicate. `plugin reload` returns nonzero for broken plugins or forwarding failures while retaining the loaded state on a fatal reload error.
 
+What `data` holds:
+
+- `plugin validate`: `data.valid`, `data.schema` (the manifest version this hostdeck reads), `data.path` (the folder's absolute path) and `data.name`.
+- `page add`, `page update`, `plugin install`, `plugin enable` and `plugin disable`: `data.id`, `data.path` (the plugin's folder, starting with a dot when it is disabled), `data.saved`, `data.loaded`, `data.disabled`, `data.available` (enabled and loaded without an error) and `data.plugin`, the console's own entry for the plugin.
+- `plugin list`, `plugin catalog` and `plugin reload`: the console's catalog. Its `pluginDir` and `installed` list, each entry with `id`, `loaded`, `disabled`, `broken` and `error`, are what the CLI itself reads.
+
+`error.code` is one of the CLI's own codes, or a code the console answered with, which the console words under `error.<code>` in [web/i18n/en.json](web/i18n/en.json):
+
+| Code | Meaning |
+| --- | --- |
+| `usage` | The command, a flag or `--url` is not valid; exit code 2 |
+| `invalid_manifest` | The `plugin.yaml` in `--from` does not load; the message says why |
+| `invalid_source` | The source folder cannot be read, holds a link or special file, or contains the plugin directory |
+| `already_added` | An enabled or disabled plugin already has that ID |
+| `install_busy` | Another install of that ID is running |
+| `install_failed` | Copying or publishing the folder failed |
+| `connection_failed` | No console answered at `--url` |
+| `request_failed` | The request could not be made, or the console refused it without a code |
+| `invalid_response` | The console's answer was not what this CLI reads, as from a console of another version |
+| `not_loaded` | The files were saved, but the plugin did not load; see `data.plugin` |
+| `plugins_unavailable` | `plugin reload` finished, but an enabled plugin is broken or did not load; see `data.installed` |
+
+From the first release, the commands, flags, exit codes, and the keys and codes named here are kept; new ones may be added. Read `ok` and the exit code first, ignore keys you do not know, and treat a code you do not know as a failure. `error.message` is for people, and its words may change. `data.plugin` and the rest of the catalog follow the console's own API, which may change in any release. See [Contracts and compatibility](docs/ARCHITECTURE.md#contracts-and-compatibility).
+
 `loaded` means hostdeck loaded the manifest, not that the external service is healthy. Open its card/page to verify actual readings. CLI validation and server loading use their respective environments; a new secret must be supplied to the running server, which may need an authorized restart. Manual edits can be activated with `plugin reload` without a restart. Validation and copying themselves do not run scripts; later card/detail requests run trusted plugin programs as before. The web UI still cannot submit or write commands.
 
 ## How it works

@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -335,6 +337,77 @@ func TestAnUnrelatedJSONServiceCannotMasqueradeAsTheConsole(t *testing.T) {
 		got := command(t, 1, "plugin", action, "--url", srv.URL)
 		if got.Get("error.code").String() != "invalid_response" {
 			t.Fatal(got.Raw)
+		}
+	}
+}
+
+func readmes(t *testing.T) map[string]string {
+	t.Helper()
+	docs := map[string]string{}
+	for _, name := range []string{"README.md", "README.zh-CN.md"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs[name] = string(data)
+	}
+	return docs
+}
+
+var failureCode = regexp.MustCompile(`Failure\{"([a-z_]+)"`)
+
+// An agent branches on error.code, so a code the CLI answers with by itself is
+// part of what the README promises to keep.
+func TestTheReadmeNamesEveryErrorCodeTheCLIAnswersWith(t *testing.T) {
+	sources, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var codes []string
+	for _, path := range sources {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range failureCode.FindAllStringSubmatch(string(data), -1) {
+			codes = append(codes, m[1])
+		}
+	}
+	slices.Sort(codes)
+	codes = slices.Compact(codes)
+	if !slices.Contains(codes, "usage") {
+		t.Fatalf("the CLI's error codes were not all found: %v", codes)
+	}
+	for name, doc := range readmes(t) {
+		for _, code := range codes {
+			if !strings.Contains(doc, "`"+code+"`") {
+				t.Errorf("%s does not name the CLI's error code `%s`", name, code)
+			}
+		}
+	}
+}
+
+func TestTheReadmeNamesEveryKeyTheCLIPutsInData(t *testing.T) {
+	url, _ := runningConsole(t)
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "plugin.yaml"), []byte("schema: 1\nname: Demo\npage: {link: 'https://example.test/'}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	results := []gjson.Result{
+		command(t, 0, "plugin", "validate", "--from", source),
+		command(t, 0, "page", "add", "--url", url, "--address", "https://example.test/", "--mode", "link"),
+	}
+	for name, doc := range readmes(t) {
+		for _, result := range results {
+			result.Get("data").ForEach(func(key, _ gjson.Result) bool {
+				if !strings.Contains(doc, "`data."+key.String()+"`") {
+					t.Errorf("%s does not name `data.%s`", name, key.String())
+				}
+				return true
+			})
 		}
 	}
 }

@@ -140,6 +140,27 @@ Local custom installation runs in the CLI process: `plugin.ReadFolder` uses the 
 
 `POST /api/plugins/reload` checks Origin and uses the same change lock and loader as existing mutations, then returns the catalog. Fatal load failures retain previous loaded state. The CLI checks actual loading and forwarding errors rather than reporting file publication as full success; a failed post-install reload returns nonzero with `saved: true` and the published path. `plugin reload` reports broken enabled plugins as failure. Validation uses CLI environment variables, while loading uses the server’s environment. Card/detail programs run on later reads according to the existing protocol, not as part of validation/copying.
 
+## Contracts and compatibility
+
+Some of what hostdeck reads and writes is depended on from outside its own code: by plugins, by scripts, and by the files one release leaves for the next. These are its contracts:
+
+| Contract | Written down in |
+| --- | --- |
+| A plugin folder and its `plugin.yaml` | [PLUGINS.md](PLUGINS.md) |
+| What a plugin's programs are given and print | [PLUGINS.md](PLUGINS.md#programs) |
+| The CLI: its commands, flags, JSON result, `error.code` values and exit codes | [README](../README.md#cli-for-agents) |
+| The files in hostdeck's folder: `layout.json`, `ports.json`, the plugin folders with their dot and `.trash` names, and what a built-in plugin keeps in its own folder, such as disk history's `config.json` and `data/history.json` | This document |
+
+Everything else is hostdeck's own and may change in any commit: `/api/*` and its JSON, the addresses under `/.well-known/hostdeck/` that the proxy answers, the page's markup, classes and dictionary keys, and the Go packages. The CLI and the agent prompts use `/api/*`, but always from the same hostdeck: the CLI is to be the same version as the console it talks to, and the console writes the prompts itself.
+
+Until the first release, a contract may change without a transition. The commit that changes one also changes where it is written down, the built-in examples and the agent prompts, and its body says what an existing plugin, script or file needs.
+
+From the first release, the first `v*` tag:
+
+- **Plugins.** Within `schema: 1`, the manifest and what programs print only gain optional fields and values; nothing is removed, renamed or given another meaning. Since a field hostdeck does not know is an error, an older hostdeck refuses a plugin that uses a newer field, naming its line, rather than running half of it. A change that cannot be made this way takes `schema: 2`, and the release that brings it says how to move a plugin. A manifest of a schema hostdeck does not read is refused with the schema it does read (`TestInvalidManifestsAreRejectedNamingTheProblem`).
+- **The CLI.** The commands, flags, exit codes, and the keys and codes the README names are kept; new ones may be added. `error.message` and `data.plugin` are not part of it. `TestTheReadmeNamesEveryErrorCodeTheCLIAnswersWith` and `TestTheReadmeNamesEveryKeyTheCLIPutsInData` keep the README's lists complete.
+- **Files.** A release reads what earlier releases wrote in hostdeck's folder, and may write a file back in its own format when it saves it; running an earlier release on that folder afterwards is not supported. `layout.json` and `ports.json` are read leniently, so a key a release does not know is ignored. Disk history's `data/history.json` carries `version: 1` and refuses any other, so a new version there has to read the old one first. A forwarding port stays with its plugin's ID.
+
 ## Security model
 
 Everything rests on hostdeck being reachable from this machine only.

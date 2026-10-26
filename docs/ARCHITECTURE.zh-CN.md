@@ -139,6 +139,27 @@ Tab 顺序上的第一项是一个跳到主要内容的链接：它是页面的�
 
 `POST /api/plugins/reload` 校验 Origin，与现有修改共用同一把锁和加载器，然后返回目录信息。致命加载失败保留之前的加载状态。CLI 会检查实际加载和转发错误，不把文件发布当作完全成功；安装后的重载失败返回非零退出码，并给出 `saved: true` 和已发布位置。`plugin reload` 将损坏的启用插件报告为失败。校验使用 CLI 的环境变量，加载使用服务端环境。卡片与详情程序仍在之后的读取请求中按原协议执行，校验和复制不运行它们。
 
+## 约定与兼容
+
+hostdeck 读写的东西里，有一部分是它自己的代码之外的东西在依赖：插件、脚本，以及上一个版本留给下一个版本的文件。这些是它的约定：
+
+| 约定 | 写在哪里 |
+| --- | --- |
+| 插件文件夹和它的 `plugin.yaml` | [PLUGINS.zh-CN.md](PLUGINS.zh-CN.md) |
+| 插件的程序收到什么、打印什么 | [PLUGINS.zh-CN.md](PLUGINS.zh-CN.md#程序) |
+| CLI：命令、参数、JSON 结果、`error.code` 的取值和退出码 | [README](../README.zh-CN.md#给-agent-使用的-cli) |
+| hostdeck 文件夹里的文件：`layout.json`、`ports.json`，插件文件夹以及以点开头和 `.trash` 里的名字，还有自带插件存在自己文件夹里的东西，比如磁盘变化的 `config.json` 和 `data/history.json` | 本文档 |
+
+其余都是 hostdeck 自己的，任何一次提交都可能改：`/api/*` 和它的 JSON、代理自己应答的 `/.well-known/hostdeck/` 下的地址、页面的结构、类名和词典键，以及 Go 包。CLI 和给 agent 的提示词都用 `/api/*`，但总是来自同一个 hostdeck：CLI 要和它连接的控制台同一版本，提示词由控制台自己生成。
+
+第一个正式版本之前，约定可以直接改，不留过渡。改约定的那次提交要同时改它写在的地方、自带的示例和给 agent 的提示词，并在提交说明里写清楚已有的插件、脚本或文件要怎么改。
+
+从第一个正式版本起，也就是第一个 `v*` 标签起：
+
+- **插件。** 在 `schema: 1` 之内，清单和程序的输出只增加可选的字段和取值；不删除、不改名、不改含义。因为 hostdeck 不认识的字段算错误，旧版 hostdeck 遇到用了新字段的插件会拒绝它并指出所在的行，而不是只运行一半。不能这样加进去的改动用 `schema: 2`，引入它的版本要说明插件怎么迁移。hostdeck 不读的 schema 会被拒绝，并说明它读的是哪个（`TestInvalidManifestsAreRejectedNamingTheProblem`）。
+- **CLI。** 命令、参数、退出码，以及 README 列出的键和错误码都会保留；可能新增。`error.message` 和 `data.plugin` 不在其内。`TestTheReadmeNamesEveryErrorCodeTheCLIAnswersWith` 和 `TestTheReadmeNamesEveryKeyTheCLIPutsInData` 保证 README 的列表是全的。
+- **文件。** 新版本能读旧版本在 hostdeck 文件夹里写下的东西，保存时可以按自己的格式写回；之后再在这个文件夹上运行旧版本，不在支持范围内。`layout.json` 和 `ports.json` 按宽松方式读取，版本不认识的键会被忽略。磁盘变化的 `data/history.json` 带着 `version: 1`，遇到别的版本就拒绝，所以那里要出新版本，得先能读旧的。转发端口始终跟着插件的 ID。
+
 ## 安全模型
 
 一切都建立在「只有这台机器能访问 hostdeck」这一点上。
