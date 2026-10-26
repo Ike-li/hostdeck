@@ -75,7 +75,7 @@ func TestDiskHistoryInstallsScansTracksAndShowsSavedChangesInBothLanguages(t *te
 			if err := os.WriteFile(file, bytes.Repeat([]byte("a"), 8192), 0600); err != nil {
 				t.Fatal(err)
 			}
-			do(t, ctx, chromedp.Click(chromedp.CSS(scan)), chromedp.Click(chromedp.CSS(scan)))
+			do(t, ctx, chromedp.Click(chromedp.CSS(scan)), chromedp.WaitVisible(chromedp.CSS(scan+`.armed`)), chromedp.Click(chromedp.CSS(scan)))
 			waitDiskSnapshots(t, historyFile, target, 2)
 			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
 			waitDiskValue(t, ctx, "8.19 KB")
@@ -169,7 +169,17 @@ func waitDiskSnapshots(t *testing.T, file, target string, count int) {
 
 func waitDiskValue(t *testing.T, ctx context.Context, value string) {
 	t.Helper()
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector('.disk-total')?.textContent === %q`, value))); err != nil {
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`(() => {
+ const view = document.querySelector('.disk-view');
+ const status = view?.querySelector('.disk-scanbar .disk-meta')?.textContent || '';
+ // A saved number can already be visible while a refresh or scan still owns
+ // the controls. Wait for the same readiness a person can see before clicking.
+ return view?.getAttribute('aria-busy') === 'false' &&
+   !document.querySelector('#service-reload').disabled &&
+   !view.querySelector('[data-action="scan"]')?.disabled &&
+   !status.startsWith('Scanning ') && !status.startsWith('正在扫描 ') &&
+   view.querySelector('.disk-total')?.textContent === %q;
+})()`, value))); err != nil {
 		t.Fatal(err)
 	}
 }
