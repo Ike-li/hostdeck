@@ -137,8 +137,10 @@ func clearSiteData(w http.ResponseWriter, r *http.Request, redeem func(string) b
 // origin, so a service framed by the console cannot be asked from inside its
 // frame, and its service worker, which runs without the console, needs this
 // port's own permission. The page asks on a click, tells the console what the
-// browser answered and closes; an answer given before closes it at once. It
-// writes nothing, so it takes no token.
+// browser answered and closes; an answer given before closes it at once. A
+// blocked address cannot be asked again from a page, so then the window stays,
+// says where the browser keeps the setting, and closes once it is turned on.
+// It writes nothing, so it takes no token.
 func askForNotifications(w http.ResponseWriter, r *http.Request, consoleOrigin string) {
 	text := notifyEN
 	if r.URL.Query().Get("lang") == "zh-CN" {
@@ -147,7 +149,7 @@ func askForNotifications(w http.ResponseWriter, r *http.Request, consoleOrigin s
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	origin, _ := json.Marshal(consoleOrigin)
-	fmt.Fprintf(w, notifyPage, text.lang, text.title, text.title, text.hint, text.allow, origin)
+	fmt.Fprintf(w, notifyPage, text.lang, text.title, text.title, text.hint, text.blocked, text.allow, origin)
 }
 
 func dropDirective(policy, name string) string {
@@ -184,23 +186,32 @@ var (
 )
 
 var (
-	notifyEN = struct{ lang, title, hint, allow string }{"en", "Notifications from this service", "Your browser asks once for this address. This window closes when you answer.", "Allow notifications"}
-	notifyZH = struct{ lang, title, hint, allow string }{"zh-CN", "这个服务的通知", "浏览器会为这个地址询问一次，回答后这个窗口会自动关闭。", "允许通知"}
+	notifyEN = struct{ lang, title, hint, blocked, allow string }{"en", "Notifications from this service", "Your browser asks once for this address. This window closes when you answer.", "Your browser has blocked notifications for this address. Click the icon to the left of the address bar and turn on Notifications; this window then closes by itself.", "Allow notifications"}
+	notifyZH = struct{ lang, title, hint, blocked, allow string }{"zh-CN", "这个服务的通知", "浏览器会为这个地址询问一次，回答后这个窗口会自动关闭。", "浏览器已阻止这个地址的通知。点地址栏左边的图标，打开「通知」，这个窗口随后会自动关闭。", "允许通知"}
 )
 
 const notifyPage = `<!doctype html><html lang="%s"><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>%s</title>
 <body style="font: 15px/1.6 -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; margin: 0; padding: 24px">
 <p style="font-size: 1.2em; margin: 0 0 .4em">%s</p>
-<p style="opacity: .7; margin: 0 0 1em">%s</p>
+<p id="hint" style="opacity: .7; margin: 0 0 1em">%s</p>
+<p id="blocked" hidden style="margin: 0">%s</p>
 <button id="allow" type="button" style="font: inherit; min-height: 44px; padding: 0 16px">%s</button>
 <script>
-const answer = (permission) => {
+const allow = document.getElementById('allow'), hint = document.getElementById('hint'), blocked = document.getElementById('blocked');
+const settle = (permission) => {
   if (opener) opener.postMessage({ type: 'hostdeck:notifications', permission }, %s);
-  close();
+  if (permission !== 'denied') return close();
+  allow.hidden = hint.hidden = true;
+  blocked.hidden = false;
 };
-if (!('Notification' in window)) answer('unsupported');
-else if (Notification.permission !== 'default') answer(Notification.permission);
-else document.getElementById('allow').onclick = () => Notification.requestPermission().then(answer);
+if (!('Notification' in window)) settle('unsupported');
+else {
+  navigator.permissions.query({ name: 'notifications' }).then((status) => {
+    status.onchange = () => { if (Notification.permission !== 'denied') settle(Notification.permission); };
+  });
+  if (Notification.permission !== 'default') settle(Notification.permission);
+  else allow.onclick = () => Notification.requestPermission().then(settle);
+}
 </script>`
 
 const unreachablePage = `<!doctype html><html lang="%s"><meta charset="utf-8"><meta name="color-scheme" content="light dark">

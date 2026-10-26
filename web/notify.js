@@ -33,11 +33,19 @@ export function openNotifications(p) {
   dialog.replaceChildren(head, body, footer);
 
   const served = new URL(p.url).origin;
-  const showPage = (permission) => show('page', permission, location.origin);
-  const showPush = (permission) => show('push', permission, served);
+  const showPage = (permission) => show('page', permission, location);
+  const showPush = (permission) => show('push', permission, new URL(served));
   showPage('Notification' in window ? Notification.permission : 'unsupported');
   const showLastPush = () => showPush(state.notifyPush.get(p.id) ?? 'unchecked');
   showLastPush();
+  // The console's own answer can change in the browser's site settings while
+  // the dialog is open; the step follows it.
+  let pageAnswer = null;
+  navigator.permissions?.query({ name: 'notifications' }).then((status) => {
+    if (!dialog.open) return;
+    pageAnswer = status;
+    status.onchange = () => showPage(Notification.permission);
+  });
 
   $('notify-page-allow').addEventListener('click', async () => {
     feedback($('notify-page-status'), t('notify.asking'));
@@ -49,7 +57,10 @@ export function openNotifications(p) {
     const url = new URL(NOTIFICATIONS_PATH, served);
     url.searchParams.set('lang', state.lang);
     clearInterval(watching);
-    asking = open(url, 'hostdeck-notifications', 'popup,width=440,height=320');
+    // A blocked address is turned on from the address bar, which a full tab
+    // is sure to show; asking needs no more than a small window.
+    const blocked = state.notifyPush.get(p.id) === 'denied';
+    asking = blocked ? open(url, 'hostdeck-notifications') : open(url, 'hostdeck-notifications', 'popup,width=440,height=320');
     if (!asking) return feedback($('notify-push-status'), t('notify.popupBlocked', { origin: location.origin }), true);
     feedback($('notify-push-status'), t('notify.asking'));
     watching = setInterval(() => {
@@ -68,6 +79,7 @@ export function openNotifications(p) {
   dialog.onclose = () => {
     removeEventListener('message', onMessage);
     clearInterval(watching);
+    if (pageAnswer) pageAnswer.onchange = null;
     const trigger = $('service-more').querySelector('.more-trigger');
     if (state.current?.id === p.id && trigger.checkVisibility()) trigger.focus();
   };
@@ -86,19 +98,20 @@ function step(kind, heading, hint, allow) {
   return section;
 }
 
-// show words one step's answer. Only an undecided page step can still prompt;
-// the push step can always look again, since its window reads the answer.
-function show(kind, permission, origin) {
+// show words one step's answer. Only an undecided page step can still prompt.
+// A blocked step says where its address is turned on: the page step in this
+// page's address bar, the push step in its window, which waits there for it.
+function show(kind, permission, address) {
   const status = $(`notify-${kind}-status`);
   const button = $(`notify-${kind}-allow`);
   const words = {
     granted: t('notify.on'),
-    denied: t('notify.denied', { origin }),
+    denied: t(`notify.${kind}.denied`, { origin: address.origin }),
     default: t('notify.notYet'),
     unchecked: t('notify.unchecked'),
     unsupported: t('notify.unsupported'),
   }[permission] ?? t('notify.notYet');
   feedback(status, words, permission === 'denied' || permission === 'unsupported');
   button.hidden = permission === 'granted' || permission === 'unsupported' || (kind === 'page' && permission === 'denied');
-  button.textContent = t(permission === 'denied' ? 'notify.checkAgain' : 'notify.allow');
+  button.textContent = kind === 'push' && permission === 'denied' ? t('notify.open', { host: address.host }) : t('notify.allow');
 }

@@ -468,7 +468,7 @@ Sorting, multiple selection and paging: none now; each comes as a product slice 
 
 ### 3.5 Dialog [Shipped]
 
-There is one dialog element, a native `<dialog>` opened with `showModal()`. It holds the editor, or a service's notifications: a step for each address the browser asks about, each with its heading, what it covers, its answer as a `status` (an `alert` when blocked, in `--error`) and an Allow button, and Close alone in the foot. A step's button goes once its answer is On; a blocked push step offers Check again, since its window reads the answer anew.
+There is one dialog element, a native `<dialog>` opened with `showModal()`. It holds the editor, or a service's notifications: a step for each address the browser asks about, each with its heading, what it covers, its answer as a `status` (an `alert` when blocked, in `--error`) and an Allow button, and Close alone in the foot. A step's button goes once its answer is On. A page cannot ask again for an address the browser blocked, so a blocked step says where to turn it on and follows the change by itself: the page step names the icon left of this page's address bar and has no button; the push step's button becomes Open 127.0.0.1:<port>, a full tab, since a tab is sure to show the address bar. Why: the user is never left to find the setting for a port they did not know about.
 
 | Part | Value |
 | --- | --- |

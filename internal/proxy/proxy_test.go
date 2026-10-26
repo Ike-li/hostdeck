@@ -247,7 +247,10 @@ func TestTheNotificationsPageAsksOnTheServicesPortInTheConsolesLanguage(t *testi
 
 	// The console says its own language: the page opens outside it, and the
 	// browser's Accept-Language may disagree with the language picked there.
-	for query, want := range map[string]string{"?lang=zh-CN": "允许通知", "?lang=en": "Allow notifications", "": "Allow notifications"} {
+	// Each page also carries, for when the browser has blocked this address,
+	// where in the browser to turn notifications on.
+	zh, en := []string{"允许通知", "地址栏左边的图标"}, []string{"Allow notifications", "left of the address bar"}
+	for query, want := range map[string][]string{"?lang=zh-CN": zh, "?lang=en": en, "": en} {
 		req, _ := http.NewRequest(http.MethodGet, proxy+NotificationsPath+query, nil)
 		req.Header.Set("Accept-Language", "zh-CN")
 		if query == "?lang=zh-CN" {
@@ -259,8 +262,13 @@ func TestTheNotificationsPageAsksOnTheServicesPortInTheConsolesLanguage(t *testi
 		}
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(body), want) {
-			t.Errorf("%q: status %d, %s, body %q; want a page saying %s", query, resp.StatusCode, resp.Header.Get("Content-Type"), body, want)
+		if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+			t.Errorf("%q: status %d, %s; want an HTML page", query, resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+		for _, words := range want {
+			if !strings.Contains(string(body), words) {
+				t.Errorf("%q: the page does not say %q: %s", query, words, body)
+			}
 		}
 		if !strings.Contains(string(body), `"`+consoleOrigin+`"`) {
 			t.Errorf("%q: the page does not address its answer to the console only: %s", query, body)
