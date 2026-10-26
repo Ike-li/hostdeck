@@ -547,6 +547,9 @@ esac
 		t.Fatalf("items %q, want %q", ids, want)
 	}
 	running, idle, failed, evil := v.Items[0], v.Items[1], v.Items[2], v.Items[3]
+	if running.Group != "running" || idle.Group != "idle" || failed.Group != "attention" {
+		t.Fatalf("groups: %+v", v.Items)
+	}
 	if running.Status != "ok" || running.Value != "running" || len(running.Actions) != 1 || running.Actions[0].ID != "restart" || running.Actions[0].Label.ByLang["zh-CN"] != "重启" {
 		t.Errorf("running %+v, want a restart", running)
 	}

@@ -84,9 +84,7 @@ func TestWindowsJobsClassifyFixedServicesAndOfferOnlyAllowedActions(t *testing.T
 			t.Errorf("row %d: %+v, want %s", i, got.Rows[i], want)
 		}
 	}
-	var view struct {
-		Items []detail.Item `json:"items"`
-	}
+	var view detail.View
 	if err := run.Decode(windowsJobsOutput(t, "detail.ps1", false), &view); err != nil {
 		t.Fatal(err)
 	}
@@ -145,9 +143,7 @@ func TestWindowsJobsNeverOfferRestartForDisabledOrUncontrollableServices(t *test
 	}
 	// Disabled services must also be blocked when the current instance accepts Stop.
 	services = append(services, map[string]any{"Name": "disabledrunning", "PathName": `C:\Tools\service.exe`, "State": "Running", "StartMode": "Disabled", "AcceptStop": true})
-	var view struct {
-		Items []detail.Item `json:"items"`
-	}
+	var view detail.View
 	if err := run.Decode(windowsJobsServicesOutput(t, "detail.ps1", false, services), &view); err != nil {
 		t.Fatal(err)
 	}

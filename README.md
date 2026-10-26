@@ -236,3 +236,5 @@ macOS and Windows. Windows is **experimental** until it has been tried by hand; 
 ## License
 
 [MIT](LICENSE)
+
+Background jobs can be searched by part of their name or ID and filtered by running, not running or needs attention, with a disabled group on Windows. Counts follow the search. Filters last through refreshes and language changes in the current page session.

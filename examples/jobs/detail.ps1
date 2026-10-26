@@ -26,6 +26,10 @@ function Add-JobField($fields, [string]$en, [string]$zh, [string]$value) {
 
 $items = New-Object System.Collections.Generic.List[string]
 foreach ($job in @(Get-IncludedServices $services)) {
+	$group = 'idle'
+	if ($job.State -eq 'Running') { $group = 'running' }
+	if ($job.Status -in @('warn','error')) { $group = 'attention' }
+	if ($job.Value -eq 'disabled') { $group = 'disabled' }
 	$fields = New-Object System.Collections.Generic.List[string]
 	Add-JobField $fields 'Program' '程序' $job.Program
 	Add-JobField $fields 'State' '状态' $job.State
@@ -39,7 +43,7 @@ foreach ($job in @(Get-IncludedServices $services)) {
 	} elseif ($job.Action -eq 'start') {
 		$actions = ',"actions":[{"id":"start","label":{"en":"Run","zh-CN":"运行"}}]'
 	}
-	$items.Add("{`"id`":$idJson,`"name`":$nameJson,`"status`":`"$($job.Status)`",`"value`":$valueJson,`"fields`":[" + ($fields -join ',') + "]$actions}")
+	$items.Add("{`"id`":$idJson,`"name`":$nameJson,`"status`":`"$($job.Status)`",`"group`":`"$group`",`"value`":$valueJson,`"fields`":[" + ($fields -join ',') + "]$actions}")
 }
 
-'{"items":[' + ($items -join ',') + ']}'
+'{"groups":[{"id":"running","label":{"en":"Running","zh-CN":"运行中"}},{"id":"idle","label":{"en":"Not running","zh-CN":"未运行"}},{"id":"attention","label":{"en":"Needs attention","zh-CN":"需要处理"}},{"id":"disabled","label":{"en":"Disabled","zh-CN":"已禁用"}}],"items":[' + ($items -join ',') + ']}'

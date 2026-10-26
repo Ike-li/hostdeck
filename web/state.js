@@ -24,6 +24,7 @@ export const state = {
   pendingOverview: null, // a reading waiting until card controls lose focus
   overview: null, // the last answer of /api/cards
   failure: null, // why the backend could not be read
+  detailFilters: new Map(), // plugin id -> session-only search and group choice
   frames: new Map(), // plugin id -> its iframe or detail view, kept so each page keeps its state
   clearing: false,
   clearFailure: null, // why the last clearing failed

@@ -1,4 +1,4 @@
-import { $, el, feedback } from './dom.js';
+import { $, el, feedback, announce } from './dom.js';
 import { getJSON, postJSON } from './api.js';
 import { t, pick, explain } from './i18n.js';
 import { twoClicks } from './confirm.js';
@@ -53,17 +53,73 @@ export async function loadDetail(p, view) {
 
 export function renderDetail(p, view) {
   view.lang = state.lang;
-  const { items, error } = view.data;
+  const { items, error, groups = [] } = view.data;
+  view.querySelector('.detail-tools')?.remove();
   const list = view.querySelector('.detail-list');
   if (error) {
     const note = el('p', 'banner', explain(error));
     note.setAttribute('role', 'alert');
     list.replaceChildren(note);
   } else if (!items?.length) {
-    list.replaceChildren(el('p', 'empty', t('detail.empty')));
+    if (groups.length) renderDetailTools(p, view);
+    else list.replaceChildren(el('p', 'empty', t('detail.empty')));
   } else {
-    list.replaceChildren(...items.map((item) => detailItem(p, item, view)));
+    if (groups.length) renderDetailTools(p, view);
+    else list.replaceChildren(...items.map((item) => detailItem(p, item, view)));
   }
+}
+
+function renderDetailTools(p, view) {
+  const choice = state.detailFilters.get(p.id) || { search: '', group: 'all' };
+  state.detailFilters.set(p.id, choice);
+  const tools = el('div', 'detail-tools');
+  const form = el('div', 'detail-search');
+  const label = el('label', 'edit-field', t('detail.search'));
+  const input = el('input');
+  input.type = 'search';
+  input.value = choice.search;
+  input.placeholder = t('detail.searchHint');
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  label.append(input);
+  const clear = el('button', 'btn detail-clear', t('detail.clear'));
+  clear.type = 'button';
+  form.append(label, clear);
+  const filters = el('div', 'detail-groups');
+  filters.setAttribute('role', 'group');
+  filters.setAttribute('aria-label', t('detail.filter'));
+  tools.append(form, filters);
+  view.querySelector('.detail-list').before(tools);
+  const update = () => {
+    const items = view.data.items || [];
+    const groups = [{ id: 'all', label: t('detail.all') }, ...view.data.groups];
+    if (!groups.some(g => g.id === choice.group)) choice.group = 'all';
+    const query = choice.search.trim().toLocaleLowerCase();
+    const matched = items.filter(it => `${pick(it.name)}\n${it.id}`.toLocaleLowerCase().includes(query));
+    const selected = matched.filter(it => choice.group === 'all' || it.group === choice.group);
+    selected.sort((a, b) => (Number(['warn', 'error'].includes(b.status)) - Number(['warn', 'error'].includes(a.status))) || (groups.findIndex(g => g.id === a.group) - groups.findIndex(g => g.id === b.group)) || pick(a.name).localeCompare(pick(b.name), state.lang, { sensitivity: 'base' }));
+    for (const g of groups) {
+      let button = [...filters.children].find(b => b.dataset.group === g.id);
+      if (!button) {
+        button = el('button', 'btn');
+        button.type = 'button';
+        button.dataset.group = g.id;
+        button.addEventListener('click', () => { choice.group = g.id; update(); });
+        filters.append(button);
+      }
+      const count = g.id === 'all' ? matched.length : matched.filter(it => it.group === g.id).length;
+      button.textContent = `${pick(g.label)} (${count})`;
+      button.setAttribute('aria-pressed', String(choice.group === g.id));
+    }
+    clear.disabled = !choice.search;
+    const list = view.querySelector('.detail-list');
+    if (selected.length) list.replaceChildren(...selected.map(it => detailItem(p, it, view)));
+    else list.replaceChildren(el('p', 'empty', t(!items.length ? 'detail.empty' : query ? 'detail.noMatches' : 'detail.groupEmpty')));
+    announce(t('detail.matches', { count: selected.length, total: items.length }));
+  };
+  input.addEventListener('input', () => { choice.search = input.value; update(); });
+  clear.addEventListener('click', () => { choice.search = input.value = ''; update(); input.focus(); });
+  update();
 }
 
 function detailItem(p, item, view) {

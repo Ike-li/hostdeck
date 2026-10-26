@@ -910,3 +910,5 @@ Writing this document against the code found six places where the code fell shor
 | #96 | Colours, radii, weights and easing are tested; the unused `--ease-exit` is removed | `TestColoursAreWrittenOnlyInTheThemeBlocks`, `TestCornersComeFromTheRadiusScale` and others |
 
 One item is left on purpose: tying a server error to its field (the [Reserved] note in 3.2). Today's error words already say which field is wrong; it waits for an error code whose words cannot.
+
+Grouped detail pages place a labelled name/ID search and wrapping counted filter buttons above their items. Search is case-insensitive, trims outer whitespace, intersects the selected group and keeps input focus. Counts reflect the search across groups. Empty data, no search matches, an empty group and a failed reading have distinct messages. Search and group choices last for the browser session, through refreshes and language changes.

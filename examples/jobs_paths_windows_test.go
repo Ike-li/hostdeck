@@ -38,9 +38,7 @@ func TestWindowsJobsResolveProgramPathsBeforeDecidingWhichServicesToList(t *test
 			want[tc.id] = tc.program
 		}
 	}
-	var view struct {
-		Items []detail.Item `json:"items"`
-	}
+	var view detail.View
 	if err := run.Decode(windowsJobsServicesOutput(t, "detail.ps1", false, services), &view); err != nil {
 		t.Fatal(err)
 	}
@@ -61,9 +59,7 @@ func TestWindowsJobsResolveProgramPathsBeforeDecidingWhichServicesToList(t *test
 
 func TestWindowsJobsPreserveTheStateSeparatorInPowerShell51(t *testing.T) {
 	services := []map[string]any{{"Name": "failed", "PathName": `C:\Tools\service.exe`, "State": "Stopped", "StartMode": "Auto"}}
-	var view struct {
-		Items []detail.Item `json:"items"`
-	}
+	var view detail.View
 	if err := run.Decode(windowsJobsServicesOutput(t, "detail.ps1", false, services), &view); err != nil {
 		t.Fatal(err)
 	}

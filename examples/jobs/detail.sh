@@ -22,6 +22,7 @@ add_field() {
 if ! labels=$(jobs_labels "$domain"); then
 	jobs_error 'Could not list launchd jobs for this user.' '读不到当前用户的 launchd 任务。'
 fi
+groups='[{"id":"running","label":{"en":"Running","zh-CN":"运行中"}},{"id":"idle","label":{"en":"Not running","zh-CN":"未运行"}},{"id":"attention","label":{"en":"Needs attention","zh-CN":"需要处理"}}]'
 items=
 while IFS= read -r label; do
 	[ -n "$label" ] || continue
@@ -30,6 +31,9 @@ while IFS= read -r label; do
 	esac
 	jobs_read "$domain" "$label"
 	jobs_classify
+	group=idle
+	if [ "$jobs_state" = running ]; then group=running; fi
+	if [ "$jobs_status" = error ] || [ "$jobs_status" = warn ]; then group=attention; fi
 	fields=
 	[ -n "$jobs_program" ] && add_field Program "程序" "$jobs_program"
 	[ -n "$jobs_state" ] && add_field State "状态" "$jobs_state"
@@ -49,7 +53,7 @@ while IFS= read -r label; do
 			;;
 		esac
 	fi
-	item="$item}"
+	item="$item,\"group\":\"$group\"}"
 	if [ -n "$items" ]; then
 		items="$items,$item"
 	else
@@ -59,4 +63,4 @@ done <<EOF
 $labels
 EOF
 
-printf '{"items":[%s]}\n' "$items"
+printf '{"groups":%s,"items":[%s]}\n' "$groups" "$items"

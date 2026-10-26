@@ -123,6 +123,10 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": â€
 
 | Field | Type | What it is |
 | --- | --- | --- |
+| `presentation` | `compact` or omitted | Optional compact list layout; omission keeps the existing layout |
+| `groups[].id` | string | Optional unique, nonblank group ID; `all` is reserved |
+| `groups[].label` | text | Nonblank group label, in display order |
+| `items[].group` | string | A declared group ID, required on every item when groups are given; groups enable session-only name/ID search and counted filters |
 | `items[].id` | string | Required, and different for each item; the action program is given it |
 | `items[].name` | text | Required. The item's heading. Missing, `null`, empty or whitespace-only text, or a language object with no nonblank text is an error, and the page shows no items. One language with nonblank text is enough |
 | `items[].status` | `ok`, `warn`, `error`, or left out | The item's state, shown in words |

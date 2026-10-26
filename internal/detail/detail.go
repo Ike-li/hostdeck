@@ -27,11 +27,19 @@ var ActTimeout = 30 * time.Second
 
 // View is a detail page as the page receives it.
 type View struct {
-	Items []Item      `json:"items,omitempty"`
-	Error *card.Error `json:"error,omitempty"`
+	Items        []Item      `json:"items,omitempty"`
+	Presentation string      `json:"presentation,omitempty"`
+	Groups       []Group     `json:"groups,omitempty"`
+	Error        *card.Error `json:"error,omitempty"`
+}
+
+type Group struct {
+	ID    string      `json:"id"`
+	Label plugin.Text `json:"label"`
 }
 
 type Item struct {
+	Group   string        `json:"group,omitempty"`
 	ID      string        `json:"id"`
 	Name    plugin.Text   `json:"name"`
 	Status  string        `json:"status,omitempty"`
@@ -56,8 +64,10 @@ func Read(ctx context.Context, p plugin.Plugin) View {
 	ctx, cancel := context.WithTimeout(ctx, ReadTimeout)
 	defer cancel()
 	var printed struct {
-		Items []Item      `json:"items"`
-		Error plugin.Text `json:"error"`
+		Items        []Item      `json:"items"`
+		Presentation string      `json:"presentation"`
+		Groups       []Group     `json:"groups"`
+		Error        plugin.Text `json:"error"`
 	}
 	if err := run.JSON(ctx, p.Dir, p.Detail.Exec.Args(), &printed); err != nil {
 		return View{Error: card.CommandError(ctx, err)}
@@ -68,7 +78,30 @@ func Read(ctx context.Context, p plugin.Plugin) View {
 	if err := check(printed.Items); err != nil {
 		return View{Error: &card.Error{Code: "command_output", Detail: err.Error()}}
 	}
-	return View{Items: printed.Items}
+	v := View{Items: printed.Items, Presentation: printed.Presentation, Groups: printed.Groups}
+	if err := v.checkGroups(); err != nil {
+		return View{Error: &card.Error{Code: "command_output", Detail: err.Error()}}
+	}
+	return v
+}
+
+func (v View) checkGroups() error {
+	if v.Presentation != "" && v.Presentation != "compact" {
+		return fmt.Errorf("unknown detail presentation %q", v.Presentation)
+	}
+	ids := make(map[string]bool)
+	for _, g := range v.Groups {
+		if strings.TrimSpace(g.ID) == "" || g.ID == "all" || !named(g.Label) || ids[g.ID] {
+			return fmt.Errorf("invalid or repeated detail group %q", g.ID)
+		}
+		ids[g.ID] = true
+	}
+	for _, it := range v.Items {
+		if (len(v.Groups) > 0 || it.Group != "") && !ids[it.Group] {
+			return fmt.Errorf("item %q has unknown group %q", it.ID, it.Group)
+		}
+	}
+	return nil
 }
 
 func check(items []Item) error {
