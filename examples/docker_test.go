@@ -56,6 +56,9 @@ func TestTheRealDockerCLIFormatsOnlyTheSelectedContainerInformation(t *testing.T
 	id := strings.Repeat("a", 64)
 	var healthEnabled atomic.Bool
 	healthEnabled.Store(true)
+	var runtimeState atomic.Value
+	runtimeState.Store("running")
+	var engineActions atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("API-Version", "1.44")
 		w.Header().Set("Content-Type", "application/json")
@@ -72,11 +75,20 @@ func TestTheRealDockerCLIFormatsOnlyTheSelectedContainerInformation(t *testing.T
 			return
 		}
 		if strings.HasSuffix(path, "/containers/"+id+"/json") {
-			payload := map[string]any{"Id": id, "Name": "/web", "Created": "2026-10-26T00:00:00Z", "Path": "/bin/app", "Args": []string{"--label", "a b"}, "RestartCount": 2, "State": map[string]any{"Status": "running", "Running": true, "ExitCode": 0, "OOMKilled": false, "Error": "", "StartedAt": "2026-10-26T00:00:00Z", "FinishedAt": "0001-01-01T00:00:00Z", "Health": map[string]any{"Status": "healthy", "Log": []any{map[string]any{"Output": "unrelated-health-output"}}}}, "Config": map[string]any{"Image": "example/image:1", "Tty": false, "Env": []string{"UNRELATED_SECRET=must-not-be-shown"}}, "HostConfig": map[string]any{"RestartPolicy": map[string]any{"Name": "unless-stopped"}}, "NetworkSettings": map[string]any{"Ports": map[string]any{"80/tcp": []map[string]string{{"HostIp": "127.0.0.1", "HostPort": "8080"}}}, "Networks": map[string]any{"app-net": map[string]any{"IPAddress": "172.18.0.2"}}}, "Mounts": []any{}}
+			payload := map[string]any{"Id": id, "Name": "/web", "Created": "2026-10-26T00:00:00Z", "Path": "/bin/app", "Args": []string{"--label", "a b"}, "RestartCount": 2, "State": map[string]any{"Status": runtimeState.Load().(string), "Running": runtimeState.Load().(string) == "running", "ExitCode": 0, "OOMKilled": false, "Error": "", "StartedAt": "2026-10-26T00:00:00Z", "FinishedAt": "0001-01-01T00:00:00Z", "Health": map[string]any{"Status": "healthy", "Log": []any{map[string]any{"Output": "unrelated-health-output"}}}}, "Config": map[string]any{"Image": "example/image:1", "Tty": false, "Env": []string{"UNRELATED_SECRET=must-not-be-shown"}}, "HostConfig": map[string]any{"RestartPolicy": map[string]any{"Name": "unless-stopped"}}, "NetworkSettings": map[string]any{"Ports": map[string]any{"80/tcp": []map[string]string{{"HostIp": "127.0.0.1", "HostPort": "8080"}}}, "Networks": map[string]any{"app-net": map[string]any{"IPAddress": "172.18.0.2"}}}, "Mounts": []any{}}
 			if !healthEnabled.Load() {
 				delete(payload["State"].(map[string]any), "Health")
 			}
 			json.NewEncoder(w).Encode(payload)
+			return
+		}
+		if r.Method == http.MethodPost && (strings.HasSuffix(path, "/containers/"+id+"/start") || strings.HasSuffix(path, "/containers/"+id+"/restart")) {
+			if _, overridden := r.URL.Query()["t"]; overridden {
+				t.Error("overrode Docker's configured stop timeout")
+			}
+			engineActions.Add(1)
+			runtimeState.Store("running")
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if strings.HasSuffix(path, "/containers/"+id+"/logs") {
@@ -129,6 +141,23 @@ func TestTheRealDockerCLIFormatsOnlyTheSelectedContainerInformation(t *testing.T
 	got = detail.Read(context.Background(), p)
 	if got.Error != nil || len(got.Items) != 1 || got.Items[0].Group != "running" {
 		t.Fatalf("container without health check: %+v %+v", got, got.Error)
+	}
+
+	for _, op := range []string{"restart", "start"} {
+		if op == "start" {
+			runtimeState.Store("exited")
+		}
+		got = detail.Read(context.Background(), p)
+		if got.Error != nil || len(got.Items) != 1 {
+			t.Fatalf("action preflight %+v", got.Error)
+		}
+		_, problem := detail.Act(context.Background(), p, got.Items[0].ID, op)
+		if problem != nil {
+			t.Fatalf("real CLI %s: %+v", op, problem)
+		}
+	}
+	if engineActions.Load() != 2 {
+		t.Fatalf("real CLI did not reach both engine actions: %d", engineActions.Load())
 	}
 
 }

@@ -178,6 +178,8 @@ Everything rests on hostdeck being reachable from this machine only.
 - A plugin program cannot outlive its deadline: its whole process tree is ended.
 - The jobs plugin's restart and run actions are that plugin's own programs, as the disk plugin's open action is. They do not give a web page a new way to write a command. An action runs only when the detail, read again at that moment, still offers it, and only for a label or service name made of letters, digits, dots, underscores and hyphens. The whole name must match, including any trailing newline. Windows restart is offered only for a running or paused service that accepts Stop and can be started; disabled services and transition states offer no action. The deadline ends `launchctl` or `sc.exe`. The service itself is not in that process tree, so it is not ended with them.
 
+- Docker's native start/restart uses the existing Origin-checked action endpoint. It can change only the selected local container's runtime state, after offered-action revalidation, endpoint fingerprint checking and fresh full-ID inspection. It accepts only start/restart, never arbitrary CLI arguments, names or shortened IDs. It writes no hostdeck or Docker configuration.
+
 Plugins themselves are trusted: they are folders you put there, and they run with your rights.
 
 ## Disk history
@@ -226,7 +228,7 @@ Drawer keyboard tests wait for the initial workspace and the open animation, the
 
 ## Not there yet
 
-Background checks and notifications (M2), Docker start/restart actions and the port view (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
+Background checks and notifications (M2), the port view (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
 
 Detail programs may declare named groups and an optional compact presentation. The console filters the returned items locally by name/ID and group; session-only choices live in page state, with no new API or stored file. Invalid group declarations refuse the reading instead of silently dropping items. Older plugins need no changes; new optional detail fields require a hostdeck version that accepts them.
 
@@ -236,4 +238,4 @@ Jobs detail enrichment stays in the shipped shell/PowerShell programs: plutil on
 
 `internal/dockerview` is a stateless native card/detail program. `internal/run` supplies its process runner, so Docker CLI queries keep the same deadlines, output caps and process-tree cleanup as external plugins, with an explicit child environment and combined log streams. The native package selects only displayed inspect fields, never container environment variables. No Docker SDK, interpreter, daemon, extra listening port or stored file is introduced.
 
-The Docker endpoint is validated and pinned; detail IDs bind the full container ID to an endpoint fingerprint, so a different context cannot silently reuse an old item ID. No daemon mutation is offered in the monitoring slice. Existing plugins and stored files need no migration; `@hostdeck docker` needs a binary that includes the new native program.
+The Docker endpoint is validated and pinned; detail IDs bind the full container ID to an endpoint fingerprint, so a different context cannot silently reuse an old item ID. Confirmed actions can now start stopped/created containers and restart running ones through the existing Origin-checked action endpoint. Existing plugins and stored files need no migration; `@hostdeck docker` needs a binary that includes the new native program.
