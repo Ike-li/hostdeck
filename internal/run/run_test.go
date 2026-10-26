@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -19,6 +20,11 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	case "print":
 		fmt.Print(`{"value": "42"}`)
+	case "mixed":
+		fmt.Fprint(os.Stdout, "stdout line\n")
+		fmt.Fprint(os.Stderr, "stderr line\n")
+	case "environment":
+		fmt.Fprint(os.Stdout, os.Getenv("HOSTDECK_CHILD_VALUE"))
 	case "fail":
 		fmt.Fprint(os.Stderr, "first line\nthe actual problem\n")
 		os.Exit(3)
@@ -120,5 +126,30 @@ func TestDecodeRejectsTrailingOutput(t *testing.T) {
 		if err := Decode([]byte(out), &got); !errors.As(err, &outErr) {
 			t.Errorf("Decode(%q) = %v, want *OutputError", out, err)
 		}
+	}
+}
+
+func TestDockerCommandOptionsMergeBothLogStreamsAndKeepEnvironmentScoped(t *testing.T) {
+	command := fake(t, "mixed")
+	out, err := external(context.Background(), t.TempDir(), command, nil, 10, true)
+	if err != nil || len(out) != 10 || string(out) != "stdout lin" {
+		t.Fatalf("bounded combined log %q %v", out, err)
+	}
+	out, err = external(context.Background(), t.TempDir(), command, nil, 1024, true)
+	if err != nil || !strings.Contains(string(out), "stdout line") || !strings.Contains(string(out), "stderr line") {
+		t.Fatalf("combined log %q %v", out, err)
+	}
+	t.Setenv("HOSTDECK_FAKE", "environment")
+	t.Setenv("HOSTDECK_CHILD_VALUE", "parent")
+	env := []string{}
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "HOSTDECK_CHILD_VALUE=") {
+			env = append(env, e)
+		}
+	}
+	env = append(env, "HOSTDECK_CHILD_VALUE=child")
+	out, err = external(context.Background(), t.TempDir(), command, env, 1024, false)
+	if err != nil || string(out) != "child" || os.Getenv("HOSTDECK_CHILD_VALUE") != "parent" {
+		t.Fatalf("scoped environment %q %v", out, err)
 	}
 }

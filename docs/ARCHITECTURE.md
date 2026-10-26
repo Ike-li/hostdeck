@@ -54,6 +54,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/card` | Turns a plugin's card into what the overview shows. `http` cards: GET, pick values with gjson paths, colour them with thresholds, hide secrets in errors. `exec` cards: run the program and read the card it prints. `Cache` keeps each card for its interval and answers "pending" when a card takes longer than the overview waits. |
 | `internal/detail` | Runs a plugin's detail program and its actions. Before an action runs, the detail is read again, and the action must still be offered for that item. |
 | `internal/run` | Runs a plugin program in its folder with a deadline, caps its output, and kills everything it started: a process group on macOS, a Job Object on Windows. Decodes the JSON it prints strictly. |
+| `internal/dockerview` | Native Docker monitoring through a bounded CLI runner, local endpoint pinning and selected inspect fields. |
 | `internal/diskhistory` | Native disk-history operations, bounded rooted filesystem traversal, atomic JSON history, process-held writer locks, cancellable scans and opt-in hourly tracking. |
 | `internal/console` | The console's HTTP handler: the page from `web/`, the API, and the checks every request passes. |
 | `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache and notifications addresses itself. |
@@ -225,11 +226,17 @@ Drawer keyboard tests wait for the initial workspace and the open animation, the
 
 ## Not there yet
 
-Background checks and notifications (M2), Docker and port views (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
+Background checks and notifications (M2), Docker start/restart actions and the port view (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
 
 Detail programs may declare named groups and an optional compact presentation. The console filters the returned items locally by name/ID and group; session-only choices live in page state, with no new API or stored file. Invalid group declarations refuse the reading instead of silently dropping items. Older plugins need no changes; new optional detail fields require a hostdeck version that accepts them.
 
 Jobs detail enrichment stays in the shipped shell/PowerShell programs: plutil on macOS, service metadata and one bounded event query on Windows. No Python, daemon, port or new API is added. Log previews read only regular files or service events, share a 512 KiB response budget and never affect health classification. Detail scalar decoding now also preserves localized text objects; legacy numbers still leave the API as strings.
+
+## Docker monitoring
+
+`internal/dockerview` is a stateless native card/detail program. `internal/run` supplies its process runner, so Docker CLI queries keep the same deadlines, output caps and process-tree cleanup as external plugins, with an explicit child environment and combined log streams. The native package selects only displayed inspect fields, never container environment variables. No Docker SDK, interpreter, daemon, extra listening port or stored file is introduced.
+
+The Docker endpoint is validated and pinned; detail IDs bind the full container ID to an endpoint fingerprint, so a different context cannot silently reuse an old item ID. No daemon mutation is offered in the monitoring slice. Existing plugins and stored files need no migration; `@hostdeck docker` needs a binary that includes the new native program.
 
 ## Proposed scheduled-script tasks
 

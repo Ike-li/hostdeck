@@ -32,6 +32,10 @@ import (
 var binary string
 
 func TestMain(m *testing.M) {
+	if strings.EqualFold(strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe"), "docker") {
+		fakeDockerCLI(os.Args[1:])
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "fake-plugin" {
 		fakePlugin(os.Args[2:])
 		return
@@ -1545,8 +1549,9 @@ card:
 // The plugins page orders plugins by the name it shows, not by the folder.
 func TestThePluginsPageListsPluginsByName(t *testing.T) {
 	dir := t.TempDir()
-	writePlugin(t, dir, "a", "schema: 1\nname: {en: Beta, zh-CN: 乙}\npage: {link: 'https://b.example/'}\n")
-	writePlugin(t, dir, "b", "schema: 1\nname: {en: Alpha, zh-CN: 甲}\npage: {link: 'https://a.example/'}\n")
+	// Use existing built-in IDs so this remains a short catalog as examples grow.
+	writePlugin(t, dir, "docker", "schema: 1\nname: {en: Beta, zh-CN: 乙}\npage: {link: 'https://b.example/'}\n")
+	writePlugin(t, dir, "jobs", "schema: 1\nname: {en: Alpha, zh-CN: 甲}\npage: {link: 'https://a.example/'}\n")
 	url := startConsole(t, dir)
 	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
 
@@ -1555,7 +1560,7 @@ func TestThePluginsPageListsPluginsByName(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)),
 		chromedp.WaitVisible(chromedp.CSS(`#catalog-installed .catalog-item`)),
 	)
-	if got := idsOf(t, ctx, "#catalog-installed .catalog-item"); !slices.Equal(got, []string{"b", "a"}) {
+	if got := idsOf(t, ctx, "#catalog-installed .catalog-item"); !slices.Equal(got, []string{"jobs", "docker"}) {
 		t.Errorf("plugins page order %v, want 甲 then 乙", got)
 	}
 	if shown, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => { const s = document.querySelector('#catalog-search'); return !!s && !s.hidden; })()`)); err != nil || shown {

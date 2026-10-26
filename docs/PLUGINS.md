@@ -153,6 +153,16 @@ Plugins are trusted: they are folders you put there, and their programs run with
 
 Background jobs use compact grouped details. macOS reads configuration with system plutil and shows PID, configured arguments, launch rules, configuration and log paths. Log tails read at most 16 KiB and 20 lines per distinct file within one item. Windows shows service identity, PID, start mode, account and full command, and matches structured properties in the latest 200 Service Control Manager events, up to 20 per service. All previews share a 512 KiB page budget. Missing configuration, inaccessible logs, no matching events and truncation are local field messages; they do not change job health or action permissions. Existing string/number detail values keep their behavior; localized values use the same en/zh-CN text objects as labels and require a newer hostdeck.
 
+## Native Docker monitoring
+
+The built-in `docker` plugin uses `['@hostdeck', docker, card]` and `['@hostdeck', docker, detail]` with the existing card/detail JSON contract. It needs a Docker CLI on hostdeck's PATH and a running engine. Installation does not start Docker or any container, and creates only the manifest.
+
+The effective Docker context is selected with Docker's environment precedence (`DOCKER_CONTEXT` before `DOCKER_HOST`, otherwise the selected context). The plugin accepts a local Unix socket, `npipe:////./pipe/...`, or a literal loopback TCP address. It pins that endpoint for every daemon command and removes context/host overrides from that child's environment. TLS settings for loopback TCP can be supplied through Docker's existing environment variables; context-specific TLS material is not imported. Remote, named-host TCP and SSH endpoints are refused.
+
+Details show image, state, health, times, exit status, restart policy/count, ports, networks, mounts and command arguments; environment variables and health-check output are not requested. The overview running count includes unhealthy running containers; its cleanly stopped/not-started row excludes failures. Running containers with an unhealthy check and containers that exited unsuccessfully need attention; a clean stop or a newly created container does not. Paused containers have their own group. A starting health check is shown without declaring a failure.
+
+Recent logs combine stdout and stderr, request the last 20 lines without following, retain at most 16 KiB per container and share 512 KiB per page. The whole page has five seconds for optional log reads, and each has at most one second. Unsupported logging drivers, missing logs or time/size limits produce local notes without losing container information. A failed list or inspection refuses the whole reading instead of reporting a healthy zero.
+
 ## Proposed scheduled-script tasks
 
 The scheduled-script plugin has a proposed, unimplemented [task contract](TASKS.md): ordinary executable tasks, schedules, execution outcomes and bounded logs. Its fields belong to a separate `tasks.json`, not `plugin.yaml`. The manifest and program protocol on this page are unchanged; creating that file does not enable scheduling in the current program.
