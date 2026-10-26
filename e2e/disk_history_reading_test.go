@@ -123,7 +123,11 @@ func TestDiskHistoryLetsReadersFollowTheNumbersThroughTimeAndIntoADirectory(t *t
 				t.Fatal(err)
 			}
 			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
+			if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('.disk-view').getAttribute('aria-busy')==='false'`)); err != nil {
+				t.Fatal(err)
+			}
 			check(`document.querySelector('[data-range="7d"]').getAttribute('aria-pressed')==='true' && document.querySelector('.disk-crumbs').textContent.includes('Library')`)
+			do(t, ctx, chromedp.Focus(chromedp.CSS(`.disk-line svg`)))
 			for _, width := range []int64{1280, 768, 520} {
 				for _, theme := range []string{"light", "dark"} {
 					do(t, ctx, chromedp.EmulateViewport(width, 900))
@@ -131,6 +135,7 @@ func TestDiskHistoryLetsReadersFollowTheNumbersThroughTimeAndIntoADirectory(t *t
 						t.Fatal(err)
 					}
 					check(`document.documentElement.scrollWidth<=innerWidth && document.querySelector('.disk-history').scrollWidth<=document.querySelector('.disk-history').clientWidth+1 && [...document.querySelectorAll('.disk-history button')].filter(b=>!b.hidden).every(b=>b.getBoundingClientRect().height>=44)`)
+					check(`document.activeElement.matches('.disk-line svg')`)
 				}
 			}
 			do(t, ctx, chromedp.Focus(chromedp.CSS(`.disk-line svg`)), chromedp.KeyEvent(kb.ArrowRight))

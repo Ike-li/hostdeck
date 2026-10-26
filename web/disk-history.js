@@ -101,7 +101,11 @@ export function createDiskHistory(p) {
     const width = view.clientWidth;
     if (width > 0 && width !== view.diskWidth && view.diskData && !view.querySelector('.armed')) {
       view.diskWidth = width;
-      renderDiskHistory(p, view);
+      // Resize the existing SVG rather than replacing controls or a focused chart.
+      for (const [selector, bars] of [['.disk-line .disk-chart', false], ['.disk-bars .disk-chart', true]]) {
+        const box = view.querySelector(selector);
+        if (box) chart(view.diskData, bars, view, p, box);
+      }
     }
   });
   view.diskObserver.observe(view);
@@ -254,11 +258,13 @@ function svgElement(tag, attrs = {}, text) {
   return node;
 }
 
-function chart(data, bars, view, p) {
-  const box = el('div', 'disk-chart');
+function chart(data, bars, view, p, existing) {
+  const box = existing || el('div', 'disk-chart');
   const width = Math.max(300, Math.min(928, view.clientWidth - 80));
-  const svg = svgElement('svg', { viewBox: `0 0 ${width} 230`, tabindex: '0', role: 'img', 'data-key': bars ? 'bars' : 'line', 'aria-label': t(bars ? 'disk.barsKeyboard' : 'disk.lineKeyboard') });
-  const reading = el('p', 'disk-chart-reading');
+  const svg = box.querySelector('svg') || svgElement('svg', { tabindex: '0', role: 'img', 'data-key': bars ? 'bars' : 'line' });
+  svg.setAttribute('viewBox', `0 0 ${width} 230`);
+  svg.replaceChildren();
+  const reading = box.querySelector('.disk-chart-reading') || el('p', 'disk-chart-reading');
   const values = bars ? data.periods : data.points;
   let cursor = Math.min(view[bars ? 'diskBarIndex' : 'diskLineIndex'] || 0, values.length - 1);
   const times = values.map(v => Date.parse(bars ? v.to : v.time));
@@ -322,14 +328,14 @@ function chart(data, bars, view, p) {
     view.diskChoice.from = same ? '' : v.from; view.diskChoice.to = same ? '' : v.to;
     loadDiskHistory(p, view);
   }
-  svg.addEventListener('focus', () => show(cursor));
-  svg.addEventListener('pointermove', event => {
+  svg.onfocus = () => show(cursor);
+  svg.onpointermove = event => {
     const bounds = svg.getBoundingClientRect(), px = (event.clientX - bounds.left) / bounds.width * width;
     let nearest = 0;
     times.forEach((at, i) => { if (Math.abs(x(at) - px) < Math.abs(x(times[nearest]) - px)) nearest = i; });
     show(nearest);
-  });
-  svg.addEventListener('keydown', event => {
+  };
+  svg.onkeydown = event => {
     if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(event.key)) event.preventDefault();
     if (event.key === 'ArrowLeft') show(Math.max(0, cursor - 1));
     if (event.key === 'ArrowRight') show(Math.min(values.length - 1, cursor + 1));
@@ -337,7 +343,8 @@ function chart(data, bars, view, p) {
     if (event.key === 'End') show(values.length - 1);
     if (event.key === 'Enter' || event.key === ' ') choose(cursor);
     if (event.key === 'Escape' && bars && view.diskChoice.from) { view.diskChoice.from = view.diskChoice.to = ''; loadDiskHistory(p, view); }
-  });
-  box.append(svg, reading); show(cursor);
+  };
+  if (!existing) box.append(svg, reading);
+  show(cursor);
   return box;
 }
