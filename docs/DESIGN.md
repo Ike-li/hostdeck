@@ -914,3 +914,7 @@ One item is left on purpose: tying a server error to its field (the [Reserved] n
 Grouped detail pages place a labelled name/ID search and wrapping counted filter buttons above their items. Search is case-insensitive, trims outer whitespace, intersects the selected group and keeps input focus. Counts reflect the search across groups. Empty data, no search matches, an empty group and a failed reading have distinct messages. Search and group choices last for the browser session, through refreshes and language changes.
 
 Compact detail lists keep the name, written runtime state and actions in one wrapping header with 44px controls. Items use 16px padding and 12px separation; fields use 13px words, a 96px label column and 4px/12px gaps. Fields stay expanded and paths wrap, while logs remain collapsed and bounded at 240px. Other detail layouts keep their larger values and separate action area.
+
+A compact detail state and its descriptive field values can be localized text, selected on the page just like labels. Configuration and log read failures appear as local explanatory fields instead of replacing a healthy task or removing its actions. Log previews remain read-only, collapsed by default, and use the existing scrollable disclosure.
+
+The selected detail filter uses accent words on the accent tint; while pressed its words use the text token on the shared pressed tint, keeping at least 4.5:1 in both themes. The stylesheet tint test measures both states.

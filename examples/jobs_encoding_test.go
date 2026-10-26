@@ -16,7 +16,7 @@ func TestJobDetailsPreserveControlCharactersAndUnicodeInPaths(t *testing.T) {
 		t.Fatalf("detail %+v, want valid JSON for a path containing control characters", v)
 	}
 	if !slices.ContainsFunc(v.Items[0].Fields, func(f detail.Field) bool {
-		return f.Name.ByLang["en"] == "Program" && string(f.Value) == path
+		return f.Name.ByLang["en"] == "Program" && f.Value.String() == path
 	}) {
 		t.Errorf("fields %+v, want the original path preserved", v.Items[0].Fields)
 	}

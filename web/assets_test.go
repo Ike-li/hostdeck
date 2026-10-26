@@ -552,6 +552,8 @@ func TestWordsStayReadableOnTheTintsTheyAreWrittenOn(t *testing.T) {
 		why, fg, bg, surface string
 		status               string
 	}{
+		{"a selected detail group", v(`.detail-groups [aria-pressed="true"]`, "color"), v(`.detail-groups [aria-pressed="true"]`, "background"), "--bg", ""},
+		{"a pressed detail group", v(`.detail-groups [aria-pressed="true"]:active:not(:disabled)`, "color"), v(".btn:active:not(:disabled)", "background"), "--bg", ""},
 		{"a healthy status on its pill", v(".pill", "color"), v(".pill", "background"), "--panel", "--ok"},
 		{"a warning on its pill", v(".pill", "color"), v(".pill", "background"), "--panel", "--warn"},
 		{"a problem on its pill", v(".pill", "color"), v(".pill", "background"), "--panel", "--error"},

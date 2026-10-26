@@ -116,7 +116,7 @@ function renderDetailTools(p, view) {
     const list = view.querySelector('.detail-list');
     if (selected.length) list.replaceChildren(...selected.map(it => detailItem(p, it, view)));
     else list.replaceChildren(el('p', 'empty', t(!items.length ? 'detail.empty' : query ? 'detail.noMatches' : 'detail.groupEmpty')));
-    announce(t('detail.matches', { count: selected.length, total: items.length }));
+    if (state.current?.id === p.id) announce(t('detail.matches', { count: selected.length, total: items.length }));
   };
   input.addEventListener('input', () => { choice.search = input.value; update(); });
   clear.addEventListener('click', () => { choice.search = input.value = ''; update(); input.focus(); });
@@ -129,12 +129,12 @@ function detailItem(p, item, view) {
   const head = el('header', 'detail-head');
   head.append(el('h2', 'detail-name', pick(item.name)));
   const compact = view.data.presentation === 'compact';
-  if (item.status) head.append(el('span', 'pill detail-status', compact && item.value != null ? item.value : t(`card.status.${item.status}`)));
+  if (compact && item.value != null || item.status) head.append(el('span', 'pill detail-status', compact && item.value != null ? pick(item.value) : t(`card.status.${item.status}`)));
   section.append(head);
-  if (!compact && item.value !== undefined && item.value !== null) section.append(el('p', 'detail-value', item.value));
+  if (!compact && item.value !== undefined && item.value !== null) section.append(el('p', 'detail-value', pick(item.value)));
   if (item.fields?.length) {
     const fields = el('dl', 'detail-fields');
-    for (const f of item.fields) fields.append(el('dt', null, pick(f.name)), el('dd', null, f.value));
+    for (const f of item.fields) fields.append(el('dt', null, pick(f.name)), el('dd', null, pick(f.value)));
     section.append(fields);
   }
   if (item.log) {

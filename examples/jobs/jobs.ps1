@@ -90,6 +90,10 @@ function Get-IncludedServices($Services) {
 			State    = [string]$svc.State
 			Program  = Get-ServiceProgram ([string]$svc.PathName)
 			ExitCode = [string]$svc.ExitCode
+            StartMode = [string]$svc.StartMode
+            Account = [string]$svc.StartName
+            PID = [string]$svc.ProcessId
+            Command = [string]$svc.PathName
 		}
 	}
 }

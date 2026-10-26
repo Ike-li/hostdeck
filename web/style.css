@@ -781,6 +781,7 @@ h1 {
 .detail-search input { width: 100%; min-width: 0; }
 .detail-groups { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .detail-groups [aria-pressed="true"] { color: var(--accent); background: var(--tint-accent); }
+.detail-groups [aria-pressed="true"]:active:not(:disabled) { color: var(--text); }
 
 /* ---- Detail view ----------------------------------------------------- */
 .detail-view {

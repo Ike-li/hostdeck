@@ -76,8 +76,8 @@ func TestADetailListsTheItemsItsCommandPrints(t *testing.T) {
 
 	want := View{Items: []Item{
 		{
-			ID: "svc", Name: plugin.Text{ByLang: map[string]string{"en": "Service", "zh-CN": "服务"}}, Status: "warn", Value: "3",
-			Fields:  []Field{{Name: plugin.Text{All: "PID"}, Value: "4242"}},
+			ID: "svc", Name: plugin.Text{ByLang: map[string]string{"en": "Service", "zh-CN": "服务"}}, Status: "warn", Value: Value{Text: plugin.Text{All: "3"}},
+			Fields:  []Field{{Name: plugin.Text{All: "PID"}, Value: Value{Text: plugin.Text{All: "4242"}}}},
 			Log:     "line 1\nline 2",
 			Actions: []Action{{ID: "restart", Label: plugin.Text{ByLang: map[string]string{"en": "Restart", "zh-CN": "重启"}}}},
 		},

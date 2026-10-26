@@ -238,3 +238,5 @@ macOS and Windows. Windows is **experimental** until it has been tried by hand; 
 [MIT](LICENSE)
 
 Background jobs can be searched by part of their name or ID and filtered by running, not running or needs attention, with a disabled group on Windows. Counts follow the search. Filters last through refreshes and language changes in the current page session.
+
+Job details use expanded compact fields with the runtime state and action beside the name. macOS adds PID, configured command, launch rules, configuration and both log paths, plus bounded tails. Windows adds service identity, PID, start mode, account and command, plus matching recent service events. Logs stay collapsed and share a 512 KiB page limit; unreadable optional information is explained on the task. Docker remains a separate planned M1 plugin.

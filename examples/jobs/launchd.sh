@@ -52,6 +52,9 @@ jobs_read() {
 	if ! info=$(launchctl print "$1/$2" 2>/dev/null); then
 		jobs_error "Could not read launchd job: $2" "读不到这条 launchd 任务：$2"
 	fi
+	jobs_path=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*path = //p' | head -n 1)
+	jobs_pid=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*pid = //p' | head -n 1)
+	jobs_stderr=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*stderr path = //p' | head -n 1)
 	jobs_state=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*state = //p' | head -n 1)
 	jobs_code=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*last exit code = //p' | head -n 1)
 	jobs_signal=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*last terminating signal = //p' | head -n 1)

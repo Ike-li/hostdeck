@@ -95,7 +95,7 @@ func TestTheDiskExampleListsTheHomeFoldersDiskWithAnOpenAction(t *testing.T) {
 	}
 	home := v.Items[i]
 	if !slices.ContainsFunc(home.Fields, func(f detail.Field) bool {
-		return f.Name.ByLang["zh-CN"] == "已用" && strings.HasSuffix(string(f.Value), "%")
+		return f.Name.ByLang["zh-CN"] == "已用" && strings.HasSuffix(f.Value.String(), "%")
 	}) {
 		t.Errorf("fields %+v, want how much is used", home.Fields)
 	}
@@ -550,26 +550,26 @@ esac
 	if running.Group != "running" || idle.Group != "idle" || failed.Group != "attention" {
 		t.Fatalf("groups: %+v", v.Items)
 	}
-	if running.Status != "ok" || running.Value != "running" || len(running.Actions) != 1 || running.Actions[0].ID != "restart" || running.Actions[0].Label.ByLang["zh-CN"] != "重启" {
+	if running.Status != "ok" || running.Value.String() != "Running" || len(running.Actions) != 1 || running.Actions[0].ID != "restart" || running.Actions[0].Label.ByLang["zh-CN"] != "重启" {
 		t.Errorf("running %+v, want a restart", running)
 	}
-	if idle.Status != "ok" || idle.Value != "idle" || len(idle.Actions) != 1 || idle.Actions[0].ID != "start" || idle.Actions[0].Label.ByLang["en"] != "Run" {
+	if idle.Status != "ok" || idle.Value.String() != "Not running" || len(idle.Actions) != 1 || idle.Actions[0].ID != "start" || idle.Actions[0].Label.ByLang["en"] != "Run" {
 		t.Errorf("idle %+v, want a run", idle)
 	}
-	if failed.Status != "error" || failed.Value != "not running · exit 1" || len(failed.Actions) != 1 || failed.Actions[0].ID != "start" {
+	if failed.Status != "error" || failed.Value.String() != "not running · exit 1" || len(failed.Actions) != 1 || failed.Actions[0].ID != "start" {
 		t.Errorf("failed %+v, want it started", failed)
 	}
 	if len(evil.Actions) != 0 {
 		t.Errorf("actions %+v, want none for a name that could point at another job", evil.Actions)
 	}
 	if !slices.ContainsFunc(running.Fields, func(f detail.Field) bool {
-		return f.Name.ByLang["zh-CN"] == "程序" && f.Value == "/usr/bin/ssh"
+		return f.Name.ByLang["zh-CN"] == "程序" && f.Value.String() == "/usr/bin/ssh"
 	}) || !slices.ContainsFunc(running.Fields, func(f detail.Field) bool {
-		return f.Name.ByLang["zh-CN"] == "上次退出" && f.Value == "255"
+		return f.Name.ByLang["zh-CN"] == "上次退出" && f.Value.String() == "255"
 	}) || !slices.ContainsFunc(running.Fields, func(f detail.Field) bool {
-		return f.Name.ByLang["zh-CN"] == "运行次数" && f.Value == "4"
+		return f.Name.ByLang["zh-CN"] == "运行次数" && f.Value.String() == "4"
 	}) || !slices.ContainsFunc(running.Fields, func(f detail.Field) bool {
-		return f.Name.ByLang["zh-CN"] == "标准输出" && f.Value == "/tmp/running.log"
+		return f.Name.ByLang["zh-CN"] == "标准输出" && f.Value.String() == "/tmp/running.log"
 	}) {
 		t.Errorf("fields %+v, want the program, last exit, runs and stdout path", running.Fields)
 	}

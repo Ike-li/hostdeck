@@ -36,14 +36,14 @@ func TestAJobThatDiedFromASignalNeedsAttentionUntilItRunsAgain(t *testing.T) {
 			}
 			it := v.Items[0]
 			if state == "running" {
-				if c.Status != "ok" || c.Value != "0" || it.Status != "ok" || it.Value != "running" {
+				if c.Status != "ok" || c.Value != "0" || it.Status != "ok" || it.Value.String() != "Running" {
 					t.Errorf("a running job must ignore its previous signal: card %+v, item %+v", c, it)
 				}
-			} else if c.Status != "error" || c.Value != "1" || len(c.Rows) != 1 || it.Status != "error" || !strings.Contains(string(it.Value), "signal Segmentation fault: 11") {
+			} else if c.Status != "error" || c.Value != "1" || len(c.Rows) != 1 || it.Status != "error" || !strings.Contains(it.Value.String(), "signal Segmentation fault: 11") {
 				t.Errorf("card %+v, item %+v; want the signal death reported", c, it)
 			}
 			if !slices.ContainsFunc(it.Fields, func(f detail.Field) bool {
-				return f.Name.ByLang["en"] == "Last signal" && f.Name.ByLang["zh-CN"] == "上次终止信号" && f.Value == "Segmentation fault: 11"
+				return f.Name.ByLang["en"] == "Last signal" && f.Name.ByLang["zh-CN"] == "上次终止信号" && f.Value.String() == "Segmentation fault: 11"
 			}) {
 				t.Errorf("fields %+v, want the last signal preserved", it.Fields)
 			}
@@ -62,7 +62,7 @@ func TestAJobThatHasNeverRunIsIdleInsteadOfFailed(t *testing.T) {
 	if v.Error != nil || len(v.Items) != 1 {
 		t.Fatalf("detail %+v", v)
 	}
-	if it := v.Items[0]; it.Status != "ok" || it.Value != "idle" || len(it.Actions) != 1 || it.Actions[0].ID != "start" {
+	if it := v.Items[0]; it.Status != "ok" || it.Value.String() != "Not running" || len(it.Actions) != 1 || it.Actions[0].ID != "start" {
 		t.Errorf("item %+v, want an idle job that may be run", it)
 	}
 }

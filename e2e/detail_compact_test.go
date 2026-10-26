@@ -16,7 +16,7 @@ func TestCompactDetailsKeepStateAndActionsTogetherWithoutChangingOtherDetails(t 
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	item := `"items":[{"id":"long","name":"A very long background job name 中文 keeps wrapping inside its own row","status":"error","value":"not running · exit 78","fields":[{"name":{"en":"Command","zh-CN":"命令"},"value":"` + strings.Repeat("/a-very-long-path", 30) + `"}],"log":"` + strings.Repeat("log line\\n", 40) + `","actions":[{"id":"start","label":{"en":"Run","zh-CN":"运行"}}]}]`
+	item := `"items":[{"id":"long","name":"A very long background job name 中文 keeps wrapping inside its own row","status":"error","value":{"en":"Not running · exit 78","zh-CN":"未运行 · 退出码 78"},"fields":[{"name":{"en":"Command","zh-CN":"命令"},"value":"` + strings.Repeat("/a-very-long-path", 30) + `"}],"log":"` + strings.Repeat("log line\\n", 40) + `","actions":[{"id":"start","label":{"en":"Run","zh-CN":"运行"}}]}]`
 	for id, printed := range map[string]string{"compact": `{"presentation":"compact",` + item + `}`, "ordinary": `{` + item + `}`} {
 		writePlugin(t, dir, id, fmt.Sprintf("schema: 1\nname: %s\ndetail:\n  exec: {command: [%q, fake-plugin, detail-json, '%s']}\nactions:\n  exec: {command: [%q, fake-plugin, action]}\n", id, exe, printed, exe))
 	}
@@ -25,6 +25,13 @@ func TestCompactDetailsKeepStateAndActionsTogetherWithoutChangingOtherDetails(t 
 		t.Run(lang, func(t *testing.T) {
 			ctx := openBrowser(t, lang)
 			do(t, ctx, chromedp.Navigate(url+"#/compact"), chromedp.WaitVisible(chromedp.CSS(`.detail-item`)))
+			wantState := "Not running · exit 78"
+			if lang == "zh-CN" {
+				wantState = "未运行 · 退出码 78"
+			}
+			if got := text(t, ctx, `.detail-status`); got != wantState {
+				t.Fatalf("state %q, want %q", got, wantState)
+			}
 			for _, width := range []int64{1280, 768, 520} {
 				for _, theme := range []string{"light", "dark"} {
 					do(t, ctx, chromedp.EmulateViewport(width, 800))

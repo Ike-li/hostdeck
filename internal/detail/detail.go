@@ -39,19 +39,19 @@ type Group struct {
 }
 
 type Item struct {
-	Group   string        `json:"group,omitempty"`
-	ID      string        `json:"id"`
-	Name    plugin.Text   `json:"name"`
-	Status  string        `json:"status,omitempty"`
-	Value   plugin.Scalar `json:"value,omitempty"`
-	Fields  []Field       `json:"fields,omitempty"`
-	Log     string        `json:"log,omitempty"`
-	Actions []Action      `json:"actions,omitempty"`
+	Group   string      `json:"group,omitempty"`
+	ID      string      `json:"id"`
+	Name    plugin.Text `json:"name"`
+	Status  string      `json:"status,omitempty"`
+	Value   Value       `json:"value,omitzero"`
+	Fields  []Field     `json:"fields,omitempty"`
+	Log     string      `json:"log,omitempty"`
+	Actions []Action    `json:"actions,omitempty"`
 }
 
 type Field struct {
-	Name  plugin.Text   `json:"name"`
-	Value plugin.Scalar `json:"value"`
+	Name  plugin.Text `json:"name"`
+	Value Value       `json:"value"`
 }
 
 type Action struct {

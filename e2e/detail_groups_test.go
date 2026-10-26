@@ -3,6 +3,7 @@ package e2e
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,10 +18,13 @@ func TestDetailSearchAndGroupsKeepTheirStateAcrossReadingsAndLanguages(t *testin
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	ran := filepath.Join(dir, "ran")
+	t.Setenv("HOSTDECK_E2E_RAN", ran)
 	writePlugin(t, dir, "grouped", fmt.Sprintf("schema: 1\nname: Jobs\ndetail:\n  exec: {command: [%q, fake-plugin, detail-json, '%s']}\nactions:\n  exec: {command: [%q, fake-plugin, action]}\n", exe, groupedDetail, exe))
 	url := startConsole(t, dir)
 	for _, lang := range []string{"en", "zh-CN"} {
 		t.Run(lang, func(t *testing.T) {
+			os.Remove(ran)
 			ctx := openBrowser(t, lang)
 			do(t, ctx, chromedp.Navigate(url+"#/grouped"))
 			if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!!document.querySelector('.detail-search input')`, chromedp.WithPollingTimeout(5*time.Second))); err != nil {
@@ -42,6 +46,14 @@ func TestDetailSearchAndGroupsKeepTheirStateAcrossReadingsAndLanguages(t *testin
 				t.Fatal(err)
 			}
 			check(`document.querySelector('.detail-search input').value === ' SERVICE ' && document.querySelector('[data-group="attention"]').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.detail-item').length === 1`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-item .action`)), chromedp.Click(chromedp.CSS(`.detail-item .action`)))
+			if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!!document.querySelector('.detail-note:not([hidden])') && !document.querySelector('.detail-item .action').disabled`, chromedp.WithPollingTimeout(6*time.Second))); err != nil {
+				t.Fatal(err)
+			}
+			check(`document.querySelector('.detail-search input').value === ' SERVICE ' && document.querySelector('[data-group="attention"]').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.detail-item').length === 1`)
+			if got, err := os.ReadFile(ran); err != nil || string(got) != "start failed" {
+				t.Fatalf("action event: %q %v", got, err)
+			}
 			next := "zh-CN"
 			if lang == "zh-CN" {
 				next = "en"

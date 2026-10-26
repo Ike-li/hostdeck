@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,10 @@ func windowsJobsOutput(t *testing.T, script string, failed bool) []byte {
 }
 
 func windowsJobsServicesOutput(t *testing.T, script string, failed bool, services []map[string]any) []byte {
+	return windowsJobsServicesAndEventsOutput(t, script, failed, services, `return @()`)
+}
+
+func windowsJobsServicesAndEventsOutput(t *testing.T, script string, failed bool, services []map[string]any, eventScript string) []byte {
 	t.Helper()
 	data, err := json.Marshal(services)
 	if err != nil {
@@ -48,6 +53,7 @@ func windowsJobsServicesOutput(t *testing.T, script string, failed bool, service
 	} else {
 		body += "$items = @'\n" + string(data) + "\n'@ | ConvertFrom-Json\nforeach ($item in $items) { $item }\n"
 	}
+	body += "}\nfunction Get-WinEvent { param($FilterHashtable,$MaxEvents,$ErrorAction)\n" + eventScript + "\n"
 	path, err := filepath.Abs(filepath.Join("jobs", script))
 	if err != nil {
 		t.Fatal(err)
@@ -173,5 +179,40 @@ func TestWindowsJobsCountWarningsEvenWhenThereAreNoErrors(t *testing.T) {
 	}
 	if got.Status != "warn" || got.Value != "2" || len(got.Rows) != 2 {
 		t.Fatalf("card %+v, want two warning jobs needing attention", got)
+	}
+}
+
+func TestWindowsJobDetailsKeepServiceIdentityAndBoundedMatchingEvents(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows service reader")
+	}
+	services := []map[string]any{{"Name": "service-id", "DisplayName": "服务名称", "PathName": `C:\Tools\run.exe --flag`, "State": "Running", "StartMode": "Auto", "StartName": `LocalSystem`, "ProcessId": 4242, "AcceptStop": true}}
+	eventScript := `if ($MaxEvents -ne 200) { throw 'unbounded event query' }
+ [pscustomobject]@{TimeCreated='2026-10-26T00:00:00Z';Id=7036;Message='matched event 中文';Properties=@([pscustomobject]@{Value='service-id'})}
+ [pscustomobject]@{TimeCreated='2026-10-26T00:00:00Z';Id=7036;Message='unrelated service-id message';Properties=@([pscustomobject]@{Value='another-service'})}`
+	out := windowsJobsServicesAndEventsOutput(t, "detail.ps1", false, services, eventScript)
+	var view detail.View
+	if err := run.Decode(out, &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Items) != 1 {
+		t.Fatalf("items %+v", view)
+	}
+	encoded, _ := json.Marshal(view.Items[0])
+	all := string(encoded)
+	for _, want := range []string{"service-id", "4242", "LocalSystem", "--flag", "matched event 中文"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q: %s", want, all)
+		}
+	}
+	if strings.Contains(view.Items[0].Log, "unrelated") {
+		t.Fatal("associated a message-only match with the service")
+	}
+	out = windowsJobsServicesAndEventsOutput(t, "detail.ps1", false, services, `throw 'fixture event access refused'`)
+	if err := run.Decode(out, &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Items) != 1 || len(view.Items[0].Actions) != 1 || !strings.Contains(string(out), "fixture event access refused") {
+		t.Fatalf("event failure lost the task: %s", out)
 	}
 }

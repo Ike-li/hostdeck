@@ -130,9 +130,9 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": â€
 | `items[].id` | string | Required, and different for each item; the action program is given it |
 | `items[].name` | text | Required. The item's heading. Missing, `null`, empty or whitespace-only text, or a language object with no nonblank text is an error, and the page shows no items. One language with nonblank text is enough |
 | `items[].status` | `ok`, `warn`, `error`, or left out | The item's state, shown in words |
-| `items[].value` | string or number | The item's main value |
+| `items[].value` | string, number or localized text | The item's main value |
 | `items[].fields[].name` | text | A field's name |
-| `items[].fields[].value` | string or number | A field's value |
+| `items[].fields[].value` | string, number or localized text | A field's value |
 | `items[].log` | string | Shown under Last lines of the log, in a box of its own that scrolls; print the last lines, not a whole file |
 | `items[].actions[].id` | string | Required; the action program is given it |
 | `items[].actions[].label` | text | The action's button |
@@ -150,3 +150,5 @@ Until the first release, `schema: 1` may still change, and the commit that chang
 ## Trust
 
 Plugins are trusted: they are folders you put there, and their programs run with your rights. The console's web page cannot write a program into a manifest; the security model in [ARCHITECTURE.md](ARCHITECTURE.md#security-model) says what each change from the page can write. Copy a plugin only from a source you trust.
+
+Background jobs use compact grouped details. macOS reads configuration with system plutil and shows PID, configured arguments, launch rules, configuration and log paths. Log tails read at most 16 KiB and 20 lines per distinct file within one item. Windows shows service identity, PID, start mode, account and full command, and matches structured properties in the latest 200 Service Control Manager events, up to 20 per service. All previews share a 512 KiB page budget. Missing configuration, inaccessible logs, no matching events and truncation are local field messages; they do not change job health or action permissions. Existing string/number detail values keep their behavior; localized values use the same en/zh-CN text objects as labels and require a newer hostdeck.

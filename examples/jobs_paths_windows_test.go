@@ -47,7 +47,7 @@ func TestWindowsJobsResolveProgramPathsBeforeDecidingWhichServicesToList(t *test
 		for _, field := range it.Fields {
 			switch field.Name.ByLang["en"] {
 			case "Program":
-				got[it.ID] = string(field.Value)
+				got[it.ID] = field.Value.String()
 			}
 		}
 	}
@@ -63,7 +63,7 @@ func TestWindowsJobsPreserveTheStateSeparatorInPowerShell51(t *testing.T) {
 	if err := run.Decode(windowsJobsServicesOutput(t, "detail.ps1", false, services), &view); err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Items) != 1 || view.Items[0].Value != "Stopped · Auto" {
+	if len(view.Items) != 1 || view.Items[0].Value.String() != "Stopped · Auto" {
 		t.Fatalf("items %+v, want the UTF-8 separator preserved", view.Items)
 	}
 }

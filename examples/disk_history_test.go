@@ -91,7 +91,7 @@ func TestDiskHistoryRecordsChangesAndRetainsHistoryAfterReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := scanHistory(t, p)
-	if v.Items[0].Value != "4.10 KB" {
+	if v.Items[0].Value.String() != "4.10 KB" {
 		t.Fatalf("first scan %+v", v.Items[0])
 	}
 	if err := os.WriteFile(file, []byte(strings.Repeat("a", 8192)), 0600); err != nil {
@@ -104,12 +104,12 @@ func TestDiskHistoryRecordsChangesAndRetainsHistoryAfterReload(t *testing.T) {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		v = readHistory(t, p)
-		if v.Items[0].Value == "8.19 KB" {
+		if v.Items[0].Value.String() == "8.19 KB" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if v.Items[0].Value != "8.19 KB" || strings.Count(v.Items[0].Log, "UTC") != 2 {
+	if v.Items[0].Value.String() != "8.19 KB" || strings.Count(v.Items[0].Log, "UTC") != 2 {
 		t.Fatalf("second scan %+v", v.Items[0])
 	}
 	c := card.Fetch(context.Background(), p)
