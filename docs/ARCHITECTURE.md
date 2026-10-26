@@ -230,3 +230,7 @@ Background checks and notifications (M2), Docker and port views (M1), a desktop 
 Detail programs may declare named groups and an optional compact presentation. The console filters the returned items locally by name/ID and group; session-only choices live in page state, with no new API or stored file. Invalid group declarations refuse the reading instead of silently dropping items. Older plugins need no changes; new optional detail fields require a hostdeck version that accepts them.
 
 Jobs detail enrichment stays in the shipped shell/PowerShell programs: plutil on macOS, service metadata and one bounded event query on Windows. No Python, daemon, port or new API is added. Log previews read only regular files or service events, share a 512 KiB response budget and never affect health classification. Detail scalar decoding now also preserves localized text objects; legacy numbers still leave the API as strings.
+
+## Proposed scheduled-script tasks
+
+[TASKS.md](TASKS.md) defines the proposed v1 data contract and acceptance boundaries for an independent scheduled-script plugin. Its scheduler, runner and persistence are separate responsibilities inside hostdeck; ordinary task output is distinct from card/detail/action JSON. This is documentation only: no scheduling package, HTTP endpoint, accepted file format or command-editing UI has been added. Existing plugins, scripts and saved files require no migration.

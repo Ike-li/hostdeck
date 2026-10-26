@@ -152,3 +152,7 @@ Until the first release, `schema: 1` may still change, and the commit that chang
 Plugins are trusted: they are folders you put there, and their programs run with your rights. The console's web page cannot write a program into a manifest; the security model in [ARCHITECTURE.md](ARCHITECTURE.md#security-model) says what each change from the page can write. Copy a plugin only from a source you trust.
 
 Background jobs use compact grouped details. macOS reads configuration with system plutil and shows PID, configured arguments, launch rules, configuration and log paths. Log tails read at most 16 KiB and 20 lines per distinct file within one item. Windows shows service identity, PID, start mode, account and full command, and matches structured properties in the latest 200 Service Control Manager events, up to 20 per service. All previews share a 512 KiB page budget. Missing configuration, inaccessible logs, no matching events and truncation are local field messages; they do not change job health or action permissions. Existing string/number detail values keep their behavior; localized values use the same en/zh-CN text objects as labels and require a newer hostdeck.
+
+## Proposed scheduled-script tasks
+
+The scheduled-script plugin has a proposed, unimplemented [task contract](TASKS.md): ordinary executable tasks, schedules, execution outcomes and bounded logs. Its fields belong to a separate `tasks.json`, not `plugin.yaml`. The manifest and program protocol on this page are unchanged; creating that file does not enable scheduling in the current program.
