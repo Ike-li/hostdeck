@@ -243,3 +243,10 @@ The Docker endpoint is validated and pinned; detail IDs bind the full container 
 ## Scheduled task configuration preview
 
 The first scheduled-task slice provides configuration preview. `scheduled-tasks` installs `plugin.yaml` and an empty `tasks.json`; `@hostdeck tasks card|detail` validates and displays tasks in process. Reads execute no command and write no state; actions and automatic scheduling are not available yet. [TASKS.md](TASKS.md) defines fields, defaults and the planned complete behavior. Existing plugins and files need no migration.
+
+
+## Manual scheduled-script execution
+
+`@hostdeck tasks card|detail|action` retains the existing protocol; task scripts themselves print ordinary logs. A neutral process layer keeps task management independent of native dispatch. The same binary's private `--internal-task-worker` mode is process plumbing, not a public CLI. The worker joins its process group or Job Object, then receives the script definition only after its start record and identity are durably saved. Losing the parent pipe cleans the process tree. Existing plugin programs keep their 30-second JSON rules.
+
+The existing Origin-checked detail action may write only this plugin's `data/state.json`, logs, owner lock and unpublished temporary state file; it does not write commands, other plugins or layout. Stop binds a run ID. Refused reloads appear as actionless diagnostic rows. Directory changes cancel tasks and wait for handles to close. [TASKS.md](TASKS.md) specifies state, deadlines and output bounds. Existing plugins and files need no migration.

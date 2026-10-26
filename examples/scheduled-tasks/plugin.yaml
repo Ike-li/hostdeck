@@ -2,8 +2,8 @@ schema: 1
 name: {en: Scheduled tasks, zh-CN: 定时任务}
 icon: ⏱
 description:
-  en: Local script tasks configured in tasks.json. This first slice validates and displays configuration only; execution and automatic scheduling are not available yet. Installation and reads never run a script.
-  zh-CN: 在 tasks.json 中配置本机脚本任务。当前切片只校验和展示配置，尚未提供执行和自动调度。安装和读取都不会运行脚本。
+  en: Local scripts configured in tasks.json, with confirmed manual run/stop, timeouts, results and bounded logs. Automatic scheduling follows in a later slice. Installation and reads never run a script.
+  zh-CN: 在 tasks.json 中配置本机脚本，通过确认操作手动运行或停止，查看超时、结果和有界日志。自动调度将在后续切片提供。安装和读取都不会运行脚本。
 card:
   interval: 5s
   exec:
@@ -11,3 +11,6 @@ card:
 detail:
   exec:
     command: ['@hostdeck', tasks, detail]
+actions:
+  exec:
+    command: ['@hostdeck', tasks, action]

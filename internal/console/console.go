@@ -28,6 +28,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/ports"
 	"github.com/Ike-li/hostdeck/internal/proxy"
+	"github.com/Ike-li/hostdeck/internal/tasks"
 	"github.com/Ike-li/hostdeck/web"
 )
 
@@ -477,6 +478,13 @@ func (s *server) writeCatalog(w http.ResponseWriter, installed []catalog.Plugin,
 				problem = portError(served.Err)
 			}
 		}
+		if problem == nil {
+			if native, ok := s.plugin(p.ID); ok && tasks.IsNative(native) {
+				if issue := tasks.Issue(native.Dir); !issue.IsZero() {
+					problem = &card.Error{Code: "reported", Text: issue}
+				}
+			}
+		}
 		listing.Installed = append(listing.Installed, listed{p, loaded || broken, broken, problem})
 	}
 	for _, e := range builtIn {
@@ -690,6 +698,9 @@ func (s *server) suspendNative(ctx context.Context, id string) (func(), error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, detail.ReadTimeout)
 	defer cancel()
+	if tasks.IsNative(p) {
+		return tasks.Suspend(ctx, p.Dir)
+	}
 	return diskhistory.Suspend(ctx, p.Dir)
 }
 

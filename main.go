@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,8 +12,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Ike-li/hostdeck/examples"
@@ -23,10 +27,15 @@ import (
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/ports"
+	"github.com/Ike-li/hostdeck/internal/process"
 	"github.com/Ike-li/hostdeck/internal/proxy"
+	"github.com/Ike-li/hostdeck/internal/tasks"
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--internal-task-worker" {
+		os.Exit(process.Worker())
+	}
 	log.SetFlags(0)
 	if args := os.Args[1:]; len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		os.Exit(cli.Run(args, os.Stdout))
@@ -62,6 +71,13 @@ func run(args []string) error {
 		return err
 	}
 	pluginDir := filepath.Join(dir, "plugins")
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tasks.Close(ctx, pluginDir); err != nil {
+			log.Printf("tasks: shutdown: %v", err)
+		}
+	}()
 	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
 		return err
 	}
@@ -72,8 +88,15 @@ func run(args []string) error {
 	consolePort := ln.Addr().(*net.TCPAddr).Port
 	tokens := onetime.New(time.Now)
 	f := &forwarders{portsFile: filepath.Join(dir, "ports.json"), consolePort: consolePort, tokens: tokens}
+	var lifecycle sync.Mutex
+	stopping := false
 	// The console calls reload one change at a time.
 	reload := func() (console.Loaded, error) {
+		lifecycle.Lock()
+		defer lifecycle.Unlock()
+		if stopping {
+			return console.Loaded{}, errors.New("hostdeck is shutting down")
+		}
 		plugins, broken, err := plugin.Load(pluginDir)
 		if err != nil {
 			return console.Loaded{}, err
@@ -86,6 +109,9 @@ func run(args []string) error {
 			return console.Loaded{}, err
 		}
 		diskhistory.Sync(pluginDir, plugins)
+		if err := tasks.Sync(pluginDir, plugins); err != nil {
+			return console.Loaded{}, err
+		}
 		log.Printf("hostdeck: %d plugins in %s", len(plugins), pluginDir)
 		return console.Loaded{Plugins: plugins, Broken: broken, Served: served}, nil
 	}
@@ -98,7 +124,7 @@ func run(args []string) error {
 		return err
 	}
 	log.Printf("hostdeck: http://%s/", ln.Addr())
-	return http.Serve(ln, console.Handler(console.Config{
+	server := &http.Server{Handler: console.Handler(console.Config{
 		Origin:    fmt.Sprintf("http://127.0.0.1:%d", consolePort),
 		Plugins:   loaded.Plugins,
 		Broken:    loaded.Broken,
@@ -108,7 +134,30 @@ func run(args []string) error {
 		Tokens:    tokens,
 		Layout:    arranged,
 		Reload:    reload,
-	}))
+	})}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		<-ctx.Done()
+		bounded, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		lifecycle.Lock()
+		stopping = true
+		if err := tasks.Close(bounded, pluginDir); err != nil {
+			log.Printf("tasks: shutdown: %v", err)
+		}
+		lifecycle.Unlock()
+		server.Shutdown(bounded)
+	}()
+	err = server.Serve(ln)
+	stop()
+	<-done
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 // forwarders re-serve each plugin's proxied page on a port of its own, from

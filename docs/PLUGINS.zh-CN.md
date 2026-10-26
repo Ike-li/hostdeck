@@ -170,3 +170,10 @@ Docker 操作使用 `['@hostdeck', docker, action] <操作-id> <条目-id>`。`s
 ## 定时任务配置预览
 
 定时任务的首片现已提供配置预览。`scheduled-tasks` 安装 `plugin.yaml` 和空的 `tasks.json`，使用 `@hostdeck tasks card|detail` 在进程内校验并展示任务；读取不执行命令或写入状态，尚未提供操作和自动调度。字段、默认值和后续完整行为见 [TASKS.zh-CN.md](TASKS.zh-CN.md)。此新增插件不要求现有插件或文件迁移。
+
+
+## 定时脚本手动执行
+
+`@hostdeck tasks card|detail|action` 复用现有协议，任务脚本本身输出普通日志。新的中立进程层让任务管理器不依赖原生分派；同一二进制的私有 `--internal-task-worker` 模式只用于工作进程通信，不是公开 CLI。工作进程先归入进程组或 Job Object，启动记录及身份成功写入后才收到脚本配置；父进程管道断开时清理进程树。原插件程序保留 30 秒和 JSON 规则。
+
+现有检查 Origin 的详情操作可以写入该插件的 `data/state.json`、日志、所有者锁及未发布临时状态文件，不写命令、其他插件或布局。停止绑定具体运行 ID，重载错误显示为无操作的诊断条目；插件目录变化前取消并等待任务释放句柄。状态、时限和日志边界见 [TASKS.zh-CN.md](TASKS.zh-CN.md)。现有插件与文件无需迁移。

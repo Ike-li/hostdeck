@@ -15,6 +15,7 @@ import (
 
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
 	"github.com/Ike-li/hostdeck/internal/dockerview"
+	"github.com/Ike-li/hostdeck/internal/process"
 	"github.com/Ike-li/hostdeck/internal/tasks"
 )
 
@@ -78,15 +79,15 @@ func external(ctx context.Context, dir string, command, env []string, limit int,
 		cmd.Stderr = stdout
 	}
 	cmd.WaitDelay = WaitDelay
-	t, err := newTree(cmd)
+	t, err := process.NewTree(cmd, "")
 	if err != nil {
 		return nil, err
 	}
-	defer t.close()
+	defer t.Close()
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	if err := t.started(); err != nil {
+	if err := t.Started(); err != nil {
 		return nil, err
 	}
 	err = cmd.Wait()
