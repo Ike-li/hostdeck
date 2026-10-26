@@ -35,6 +35,9 @@ type Schedule struct {
 	Cron     *string `json:"cron,omitempty"`
 	Timezone *string `json:"timezone,omitempty"`
 	Every    *string `json:"every,omitempty"`
+	interval time.Duration
+	compiled *cronSpec
+	location *time.Location
 }
 
 type Execution struct {

@@ -140,6 +140,9 @@ func TestRecoveryMarksAnUnfinishedRunInterruptedAndRequiresExplicitResume(t *tes
 
 func TestASecondConsoleCannotWriteAndLosingTheOwnerCleansItsWorker(t *testing.T) {
 	dir, p := fixture(t, "block", "30s")
+	if err := tasks.Close(context.Background(), filepath.Dir(dir)); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOSTDECK_TASK_BLOCK_DURATION", "10s")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -499,8 +502,8 @@ func TestARefusedHistoryPruneKeepsDurableLogReferencesAndFiles(t *testing.T) {
 	record["finished_at"] = stamp
 	saveState(t, dir, s)
 	before, _ := os.ReadFile(filepath.Join(dir, "data/state.json"))
-	tasks.Sync(filepath.Dir(dir), []plugin.Plugin{p})
 	blockStateWrites(t, dir)
+	tasks.Sync(filepath.Dir(dir), []plugin.Plugin{p})
 	if v := operation(t, dir, "action", "run", "sample"); v["error"] == nil {
 		t.Fatal("prune succeeded without a state write")
 	}
@@ -545,7 +548,7 @@ func TestCorruptionDuringARunIsNotOverwrittenByItsCompletion(t *testing.T) {
 	}
 }
 
-func fixture(t *testing.T, mode, timeout string) (string, plugin.Plugin) {
+func fixture(t *testing.T, mode, timeout string, options ...tasks.Option) (string, plugin.Plugin) {
 	t.Helper()
 	t.Setenv("HOSTDECK_TASK_MODE", mode)
 	t.Setenv("HOSTDECK_TASK_SECRET", "private-fixture-value")
@@ -560,7 +563,7 @@ func fixture(t *testing.T, mode, timeout string) (string, plugin.Plugin) {
 		t.Fatal(err)
 	}
 	p := plugin.Plugin{ID: "scheduled-tasks", Dir: dir, Detail: &plugin.Detail{Exec: &plugin.Exec{Command: []string{"@hostdeck", "tasks", "detail"}}}}
-	tasks.Sync(root, []plugin.Plugin{p})
+	tasks.Sync(root, []plugin.Plugin{p}, options...)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

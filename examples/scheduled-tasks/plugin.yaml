@@ -2,8 +2,8 @@ schema: 1
 name: {en: Scheduled tasks, zh-CN: 定时任务}
 icon: ⏱
 description:
-  en: Local scripts configured in tasks.json, with confirmed manual run/stop, timeouts, results and bounded logs. Interrupted tasks require confirmed cleanup before Resume. Automatic scheduling follows in a later slice. Installation and reads never run a script.
-  zh-CN: 在 tasks.json 中配置本机脚本，通过确认操作手动运行或停止，查看超时、结果和有界日志。中断任务需确认旧进程树清空后才能恢复。自动调度将在后续切片提供。安装和读取都不会运行脚本。
+  en: Local scripts configured in tasks.json, with confirmed manual run/stop, timeouts, results and bounded logs. Interrupted tasks require confirmed cleanup before Resume. Cron and interval schedules run while hostdeck runs, with Pause/Resume and no catch-up or automatic retry. Installation and reads never run a script.
+  zh-CN: 在 tasks.json 中配置本机脚本，通过确认操作手动运行或停止，查看超时、结果和有界日志。中断任务需确认旧进程树清空后才能恢复。hostdeck 运行期间按 Cron 或固定间隔调度，可暂停／恢复，不补跑或自动重试。安装和读取都不会运行脚本。
 card:
   interval: 5s
   exec:

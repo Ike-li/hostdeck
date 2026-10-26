@@ -37,6 +37,10 @@ type entry struct {
 	state                         saved
 	running                       map[string]*running
 	stopping, retired             bool
+	clock                         Clock
+	stopClock                     func()
+	next                          map[string]time.Time
+	nextPrune                     time.Time
 }
 
 var registry = struct {
@@ -55,7 +59,7 @@ func lookup(dir string) *entry {
 }
 
 // Sync is called only on startup or explicit plugin reload, never by a read.
-func Sync(root string, plugins []plugin.Plugin) error {
+func Sync(root string, plugins []plugin.Plugin, options ...Option) error {
 	root, _ = filepath.Abs(root)
 	wanted := map[string]bool{}
 	for _, p := range plugins {
@@ -110,7 +114,10 @@ func Sync(root string, plugins []plugin.Plugin) error {
 				r.Close()
 				return err
 			}
-			e = &entry{dir: dir, root: r, identity: info, state: emptyState(), running: map[string]*running{}}
+			e = &entry{dir: dir, root: r, identity: info, state: emptyState(), running: map[string]*running{}, clock: realClock{}, next: map[string]time.Time{}}
+			for _, option := range options {
+				option(e)
+			}
 			registry.Lock()
 			registry.items[dir] = e
 			registry.Unlock()
@@ -157,6 +164,17 @@ func (e *entry) refreshLocked() {
 			e.stateErr = e.recoverLocked()
 		}
 	}
+	if e.valid && e.configErr == nil && e.stateErr == nil && e.ownerErr == nil {
+		if err := e.initializeScheduleLocked(); err != nil && e.ownerErr == nil {
+			e.stateErr = err
+		}
+	}
+	if e.valid && (len(e.cfg.Tasks) > 0 || len(e.state.Runs) > 0) && !e.stopping && !e.retired && e.stopClock == nil {
+		e.stopClock = e.clock.Every(time.Second, e.tick)
+	} else if len(e.cfg.Tasks) == 0 && len(e.state.Runs) == 0 && e.stopClock != nil {
+		e.stopClock()
+		e.stopClock = nil
+	}
 }
 
 func stopEntry(ctx context.Context, e *entry, reason string) error {
@@ -166,6 +184,23 @@ func stopEntry(ctx context.Context, e *entry, reason string) error {
 		return nil
 	}
 	e.stopping = true
+	if e.stopClock != nil {
+		e.stopClock()
+		e.stopClock = nil
+	}
+	if reason == "plugin_disabled" && e.owner != nil && e.stateErr == nil {
+		now := e.now()
+		for id, ts := range e.state.Tasks {
+			ts.Eligible = false
+			if now.After(ts.Cursor) {
+				ts.Cursor = now
+			}
+			e.state.Tasks[id] = ts
+		}
+		if err := e.saveLocked(); err != nil {
+			e.stateErr = err
+		}
+	}
 	var wait []chan struct{}
 	for _, r := range e.running {
 		if r.reason == "" {
@@ -238,12 +273,18 @@ func Suspend(ctx context.Context, dir string) (func(), error) {
 			if err != nil {
 				return
 			}
-			restored := &entry{dir: e.dir, root: root, identity: info, state: emptyState(), running: map[string]*running{}}
+			restored := &entry{dir: e.dir, root: root, identity: info, state: emptyState(), running: map[string]*running{}, clock: e.clock, next: map[string]time.Time{}}
 			restored.refreshLocked()
 			registry.Lock()
 			if registry.items[e.dir] == nil {
 				registry.items[e.dir] = restored
 			} else {
+				if restored.stopClock != nil {
+					restored.stopClock()
+				}
+				if restored.owner != nil {
+					restored.owner.Close()
+				}
 				root.Close()
 			}
 			registry.Unlock()
@@ -344,11 +385,47 @@ func (e *entry) action(op, id string) (string, error) {
 		}
 		ts := e.runtimeLocked(t)
 		ts.Paused = false
-		ts.Cursor = time.Now().UTC()
+		now := e.now()
+		if now.After(ts.Cursor) {
+			ts.Cursor = now
+		}
+		ts.Eligible = true
+		if t.Schedule.Every != nil && ts.Anchor == nil {
+			ts.Anchor = &now
+		}
 		e.state.Tasks[id] = ts
 		if err := e.saveLocked(); err != nil {
 			ts.Paused = true
 			e.state.Tasks[id] = ts
+			e.stateErr = err
+			return "", err
+		}
+		e.next[id] = t.Schedule.next(ts.Cursor, ts.Anchor)
+		return id, nil
+	}
+	if op == "pause" {
+		if !*t.Enabled {
+			return "", errors.New("task is disabled in tasks.json")
+		}
+		if e.stateErr != nil {
+			return "", e.stateErr
+		}
+		if e.ownerErr != nil {
+			return "", e.ownerErr
+		}
+		if err := e.claimLocked(); err != nil {
+			return "", err
+		}
+		ts := e.runtimeLocked(t)
+		ts.Paused = true
+		ts.Eligible = false
+		now := e.now()
+		if now.After(ts.Cursor) {
+			ts.Cursor = now
+		}
+		e.state.Tasks[id] = ts
+		delete(e.next, id)
+		if err := e.saveLocked(); err != nil {
 			e.stateErr = err
 			return "", err
 		}
@@ -408,7 +485,7 @@ func (e *entry) startLocked(t Task, trigger string, due *time.Time) (string, err
 		e.root.Remove(outPath)
 		return "", err
 	}
-	now := time.Now().UTC()
+	now := e.now()
 	e.state.Runs = append(e.state.Runs, Record{ID: id, TaskID: t.ID, Revision: ts.Revision, Trigger: trigger, ScheduledAt: due, AcceptedAt: now, Status: "starting", Logs: logs{Stdout: &outPath, Stderr: &errPath}})
 	e.state.Active[id] = process.Identity{Token: id}
 	if err = e.saveLocked(); err != nil {
@@ -478,7 +555,7 @@ func (e *entry) execute(t Task, r *running, out, errout *os.File) {
 			e.mu.Lock()
 			defer e.mu.Unlock()
 			record := e.record(r.id)
-			now := time.Now().UTC()
+			now := e.now()
 			record.StartedAt = &now
 			record.Status = "running"
 			return e.saveLocked()
@@ -491,7 +568,7 @@ func (e *entry) execute(t Task, r *running, out, errout *os.File) {
 	defer e.mu.Unlock()
 	defer close(r.done)
 	record := e.record(r.id)
-	now := time.Now().UTC()
+	now := e.now()
 	record.FinishedAt = &now
 	record.ExitCode = result.Code
 	record.Status = "succeeded"
@@ -554,9 +631,17 @@ func (e *entry) execute(t Task, r *running, out, errout *os.File) {
 	}
 }
 
-func marshalAction(id string, err error) ([]byte, error) {
+func marshalAction(op, id string, err error) ([]byte, error) {
 	if err != nil {
 		return json.Marshal(map[string]any{"error": text("Task action failed: "+err.Error(), "任务操作失败："+err.Error())})
 	}
-	return json.Marshal(map[string]any{"message": text("Accepted task operation for run "+id, "已接受任务操作，运行编号 "+id)})
+	message := text("Accepted run "+id, "已接受运行，编号 "+id)
+	if strings.HasPrefix(op, "stop:") {
+		message = text("Stopping run "+id, "正在停止运行 "+id)
+	} else if op == "pause" {
+		message = text("Schedule paused for "+id+". Active work may finish.", "已暂停 "+id+" 的计划，当前运行可继续完成。")
+	} else if op == "resume" {
+		message = text("Schedule resumed for "+id+". Only future occurrences will run.", "已恢复 "+id+" 的计划，只运行未来的触发。")
+	}
+	return json.Marshal(map[string]any{"message": message})
 }

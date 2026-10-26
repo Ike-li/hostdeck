@@ -29,6 +29,7 @@ type taskState struct {
 	Digest         string     `json:"digest"`
 	ScheduleDigest string     `json:"schedule_digest"`
 	Paused         bool       `json:"paused"`
+	Eligible       bool       `json:"eligible,omitempty"`
 	Anchor         *time.Time `json:"anchor_at"`
 	Cursor         time.Time  `json:"cursor_at"`
 	Missed         uint64     `json:"missed"`
@@ -315,7 +316,7 @@ func (e *entry) recoverLocked() error {
 		if !activeStatus(r.Status) {
 			continue
 		}
-		now := time.Now().UTC()
+		now := e.now()
 		r.Status = "interrupted"
 		r.Reason = str("recovery")
 		r.FinishedAt = &now
@@ -346,7 +347,7 @@ func (e *entry) pruneLocked(reserve int) error {
 	}
 	previous := e.state
 	e.state.Tasks = maps.Clone(e.state.Tasks)
-	now := time.Now().UTC()
+	now := e.now()
 	terminal := 0
 	changed := false
 	remove := []string{}
@@ -448,6 +449,16 @@ func (e *entry) pruneLocked(reserve int) error {
 	for _, path := range remove {
 		if err := e.root.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
+		}
+	}
+	e.nextPrune = time.Time{}
+	for _, r := range e.state.Runs {
+		if activeStatus(r.Status) || e.state.Active[r.ID].Token != "" {
+			continue
+		}
+		expiry := r.AcceptedAt.Add(30*24*time.Hour + time.Nanosecond)
+		if e.nextPrune.IsZero() || expiry.Before(e.nextPrune) {
+			e.nextPrune = expiry
 		}
 	}
 	return nil

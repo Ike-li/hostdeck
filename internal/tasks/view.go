@@ -44,10 +44,10 @@ func Execute(ctx context.Context, dir string, args []string) ([]byte, error) {
 	if len(args) == 4 && args[0] == "tasks" && args[1] == "action" {
 		e := lookup(dir)
 		if e == nil {
-			return marshalAction("", errors.New("task plugin is not active"))
+			return marshalAction(args[2], "", errors.New("task plugin is not active"))
 		}
 		id, err := e.action(args[2], args[3])
-		return marshalAction(id, err)
+		return marshalAction(args[2], id, err)
 	}
 	if len(args) != 2 || args[0] != "tasks" || (args[1] != "card" && args[1] != "detail") {
 		return nil, errors.New("unknown task operation")
@@ -138,27 +138,55 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 			schedule = *t.Schedule.Every
 		}
 		command := t.Exec.Command
-		it := item{ID: t.ID, Name: t.Name, Group: g, Status: status, Value: value, Fields: []field{{text("Schedule", "计划"), schedule}, {text("Command", "命令"), strings.Join(command, " ")}, {text("Working directory", "工作目录"), t.Exec.Dir}, {text("Timeout", "超时"), t.Timeout}, {text("Availability", "可用性"), text("Manual execution is available; automatic scheduling follows in a later slice.", "已提供手动执行，自动调度将在后续切片提供。")}}}
-		if r := e.running[t.ID]; r != nil {
-			if r.ctx.Err() == nil {
-				it.Actions = append(it.Actions, action{"stop:" + r.id, text("Stop", "停止")})
+		it := item{ID: t.ID, Name: t.Name, Group: g, Status: status, Value: value, Fields: []field{{text("Schedule", "计划"), schedule}, {text("Command", "命令"), strings.Join(command, " ")}, {text("Working directory", "工作目录"), t.Exec.Dir}, {text("Timeout", "超时"), t.Timeout}, {text("Availability", "可用性"), text("Automatic scheduling runs while hostdeck is running.", "hostdeck 运行期间自动调度。")}}}
+		if current := e.running[t.ID]; current != nil {
+			last = e.record(current.id)
+			if current.ctx.Err() == nil {
+				it.Actions = append(it.Actions, action{"stop:" + current.id, text("Stop", "停止")})
 			}
-		} else if *t.Enabled && ts.Paused && e.stateErr == nil && e.ownerErr == nil {
-			clean := true
-			for _, record := range e.state.Runs {
-				if record.TaskID == t.ID {
-					if identity, ok := e.state.Active[record.ID]; ok && identity.PID != 0 && !process.Gone(identity) {
+		}
+		if *t.Enabled && e.stateErr == nil && e.ownerErr == nil {
+			if ts.Paused {
+				clean := true
+				for _, record := range e.state.Runs {
+					if record.TaskID != t.ID {
+						continue
+					}
+					identity, ok := e.state.Active[record.ID]
+					if !ok {
+						continue
+					}
+					if current := e.running[t.ID]; current != nil && current.id == record.ID {
+						continue
+					}
+					if identity.PID != 0 && !process.Gone(identity) {
 						clean = false
 						it.Fields = append(it.Fields, field{text("Needs local inspection", "需要本地检查"), fmt.Sprintf("worker PID %d", identity.PID)})
 					}
 				}
+				if clean {
+					it.Actions = append(it.Actions, action{"resume", text("Resume", "恢复")})
+				}
+			} else {
+				if e.running[t.ID] == nil {
+					occupied := false
+					for _, record := range e.state.Runs {
+						if record.TaskID == t.ID && e.state.Active[record.ID].Token != "" {
+							occupied = true
+						}
+					}
+					if !occupied {
+						it.Actions = append(it.Actions, action{"run", text("Run now", "立即运行")})
+					}
+				}
+				it.Actions = append(it.Actions, action{"pause", text("Pause schedule", "暂停计划")})
 			}
-			if clean {
-				it.Actions = append(it.Actions, action{"resume", text("Resume", "恢复")})
-			}
-		} else if *t.Enabled && !ts.Paused && e.stateErr == nil && e.ownerErr == nil {
-			it.Actions = append(it.Actions, action{"run", text("Run now", "立即运行")})
 		}
+		if next := e.next[t.ID]; !next.IsZero() && *t.Enabled && !ts.Paused && e.stateErr == nil && e.ownerErr == nil {
+			it.Fields = append(it.Fields, field{text("Next run (UTC)", "下次运行（UTC）"), next.Format(time.RFC3339Nano)})
+		}
+		it.Fields = append(it.Fields, field{text("Missed occurrences", "错过次数"), ts.Missed})
+
 		if last != nil {
 			it.Fields = append(it.Fields, field{text("Last run", "最近运行"), last.AcceptedAt.Format(time.RFC3339)}, field{text("Run ID", "运行编号"), last.ID}, field{text("Result", "结果"), runStatus(last.Status)})
 		}

@@ -13,7 +13,7 @@ type cronSpec struct {
 	daysAny, weekAny bool
 }
 
-func (s Schedule) validate() error {
+func (s *Schedule) validate() error {
 	if (s.Cron == nil) == (s.Every == nil) {
 		return errors.New("choose exactly one of cron and every")
 	}
@@ -22,15 +22,21 @@ func (s Schedule) validate() error {
 		if e != nil || d < time.Minute || d > 365*24*time.Hour || s.Timezone != nil {
 			return errors.New("every requires 1m to 8760h and no timezone")
 		}
+		s.interval = d
 		return nil
 	}
 	if s.Timezone == nil || *s.Timezone == "" || *s.Timezone == "Local" {
 		return errors.New("cron requires an explicit IANA timezone")
 	}
-	if _, e := time.LoadLocation(*s.Timezone); e != nil {
+	location, e := time.LoadLocation(*s.Timezone)
+	if e != nil {
 		return errors.New("unknown timezone")
 	}
-	_, e := parseCron(*s.Cron)
+	c, e := parseCron(*s.Cron)
+	if e == nil {
+		s.compiled = &c
+		s.location = location
+	}
 	return e
 }
 
