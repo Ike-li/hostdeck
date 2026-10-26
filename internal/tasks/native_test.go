@@ -3,12 +3,14 @@ package tasks_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -85,6 +87,13 @@ func TestTaskCommand(t *testing.T) {
 func readState(t *testing.T, dir string) map[string]any {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(dir, "data/state.json"))
+	// Windows can briefly refuse a reader while the writer atomically replaces
+	// this file. Retry only that OS boundary, retaining the bounded failure.
+	until := time.Now().Add(2 * time.Second)
+	for runtime.GOOS == "windows" && (errors.Is(err, syscall.Errno(32)) || os.IsPermission(err)) && time.Now().Before(until) {
+		time.Sleep(10 * time.Millisecond)
+		b, err = os.ReadFile(filepath.Join(dir, "data/state.json"))
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
