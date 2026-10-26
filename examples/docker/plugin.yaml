@@ -1,0 +1,13 @@
+schema: 1
+name: {en: Docker containers, zh-CN: Docker 容器}
+icon: 🐳
+description:
+  en: Containers on this computer, with name/ID search, state filters, image, health, ports, mounts, restart policy and bounded recent logs. Requires an installed Docker CLI and a running local engine. Remote Docker endpoints are refused. Installation does not start Docker or a container.
+  zh-CN: 查看本机容器，按名称或 ID 搜索并按状态筛选，展示镜像、健康状态、端口、挂载、重启策略和有上限的最近日志。需要已安装 Docker 命令行和已运行的本机引擎；不连接远程 Docker。安装不会启动 Docker 或容器。
+card:
+  interval: 30s
+  exec:
+    command: ['@hostdeck', docker, card]
+detail:
+  exec:
+    command: ['@hostdeck', docker, detail]

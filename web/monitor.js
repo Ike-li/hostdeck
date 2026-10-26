@@ -98,7 +98,8 @@ function renderDetailTools(p, view) {
     const query = choice.search.trim().toLocaleLowerCase();
     const matched = items.filter(it => `${pick(it.name)}\n${it.id}`.toLocaleLowerCase().includes(query));
     const selected = matched.filter(it => choice.group === 'all' || it.group === choice.group);
-    selected.sort((a, b) => (Number(['warn', 'error'].includes(b.status)) - Number(['warn', 'error'].includes(a.status))) || (groups.findIndex(g => g.id === a.group) - groups.findIndex(g => g.id === b.group)) || pick(a.name).localeCompare(pick(b.name), state.lang, { sensitivity: 'base' }));
+    const severity = (it) => ({ error: 2, warn: 1 }[it.status] || 0);
+    selected.sort((a, b) => (severity(b) - severity(a)) || (groups.findIndex(g => g.id === a.group) - groups.findIndex(g => g.id === b.group)) || pick(a.name).localeCompare(pick(b.name), state.lang, { sensitivity: 'base' }));
     for (const g of groups) {
       let button = [...filters.children].find(b => b.dataset.group === g.id);
       if (!button) {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
+	"github.com/Ike-li/hostdeck/internal/dockerview"
 )
 
 // WaitDelay bounds the wait for a command's output after it exits or is
@@ -44,16 +45,40 @@ func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
 		return nil, errors.New("empty plugin command")
 	}
 	if command[0] == "@hostdeck" {
-		out, err := diskhistory.Execute(ctx, dir, command[1:])
+		var out []byte
+		var err error
+		if len(command) > 1 && command[1] == "docker" {
+			out, err = dockerview.Execute(ctx, command[1:], func(ctx context.Context, c dockerview.Command) ([]byte, error) {
+				out, err := external(ctx, dir, c.Args, c.Env, c.Limit, c.Combined)
+				var exited *ExitError
+				if errors.As(err, &exited) && exited.LastLine != "" {
+					err = fmt.Errorf("%w: %s", err, exited.LastLine)
+				}
+				return out, err
+			})
+		} else {
+			out, err = diskhistory.Execute(ctx, dir, command[1:])
+		}
 		if err == nil && len(out) > maxOutput {
 			return nil, &OutputError{errors.New("native plugin output exceeds 4 MiB")}
 		}
 		return out, err
 	}
+	return external(ctx, dir, command, nil, maxOutput, false)
+}
+
+func external(ctx context.Context, dir string, command, env []string, limit int, combined bool) ([]byte, error) {
+	if limit <= 0 || limit > maxOutput {
+		limit = maxOutput
+	}
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 	cmd.Dir = dir
-	stdout, stderr := &capped{limit: maxOutput}, &capped{limit: 64 << 10}
+	cmd.Env = env
+	stdout, stderr := &capped{limit: limit}, &capped{limit: 64 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
+	if combined {
+		cmd.Stderr = stdout
+	}
 	cmd.WaitDelay = WaitDelay
 	t, err := newTree(cmd)
 	if err != nil {
@@ -131,4 +156,10 @@ func (c *capped) Write(p []byte) (int, error) {
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// ReadFrom prevents bytes.Buffer's promoted fast path from bypassing Write's
+// cap when os/exec copies a child process's output through io.Copy.
+func (c *capped) ReadFrom(r io.Reader) (int64, error) {
+	return io.Copy(struct{ io.Writer }{c}, r)
 }
