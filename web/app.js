@@ -16,6 +16,7 @@ import {
   flushOverview, loadCards, onCardsMoved, refreshOverview, renderOverview, stopCardsRetry,
 } from './overview.js';
 import { loadMonitor, stopMonitorRetry } from './monitor.js';
+import { stopDiskPolling } from './disk-history.js';
 import { disarmClear, onClearClick, releaseIdleFrames, reloadService, renderService } from './service.js';
 import { openNotifications } from './notify.js';
 import { loadCatalog, pageHint, renderCatalog, wireCatalog } from './catalog.js';
@@ -26,6 +27,7 @@ import { CATALOG, STATUS_EVERY, state } from './state.js';
 // page. Anything else, a malformed address included, is the overview.
 function route() {
   stopMonitorRetry();
+  stopDiskPolling();
   if ($('page-editor').open) $('page-editor').close();
   closePanel();
   state.pendingOverview = null;
