@@ -107,6 +107,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/cards/refresh", s.serveRefresh)
 	mux.HandleFunc("POST /api/clear/{id}", s.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
+	mux.HandleFunc("GET /api/disk-history/{id}", s.serveDiskHistory)
 	mux.HandleFunc("POST /api/action/{id}", s.serveAction)
 	mux.HandleFunc("GET /api/catalog", s.serveCatalog)
 	mux.HandleFunc("POST /api/plugins/reload", s.serveReload)
@@ -129,6 +130,7 @@ type entry struct {
 	Name  plugin.Text `json:"name"`
 	Icon  string      `json:"icon,omitempty"`
 	Type  string      `json:"type"` // proxy | link | detail | card
+	View  string      `json:"view,omitempty"`
 	URL   string      `json:"url,omitempty"`
 	Error *card.Error `json:"error,omitempty"`
 }
@@ -142,6 +144,9 @@ func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case p.Detail != nil:
 			e.Type = "detail"
+			if diskhistory.IsNative(p) {
+				e.View = "disk-history"
+			}
 			entries = append(entries, e)
 			continue
 		case p.Page == nil:

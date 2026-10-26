@@ -37,7 +37,7 @@ func TestDiskHistoryInstallsScansTracksAndShowsSavedChangesInBothLanguages(t *te
 				t.Fatal(err)
 			}
 			cliCommand(t, 0, "plugin", "reload", "--url", url)
-			do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-item[data-id="disk-history"]`)), chromedp.WaitVisible(chromedp.CSS(`.detail-item .btn.action`)))
+			do(t, ctx, chromedp.Click(chromedp.CSS(`#nav .nav-item[data-id="disk-history"]`)), chromedp.WaitVisible(chromedp.CSS(`.disk-history .btn.action`)))
 			if _, err := os.Stat(filepath.Join(pluginDir, "data")); !os.IsNotExist(err) {
 				t.Fatalf("installation/read scanned or wrote data: %v", err)
 			}
@@ -66,8 +66,8 @@ func TestDiskHistoryInstallsScansTracksAndShowsSavedChangesInBothLanguages(t *te
 			if refused.StatusCode != http.StatusForbidden {
 				t.Fatalf("foreign scan: HTTP %d", refused.StatusCode)
 			}
-			const scan = `.detail-item:first-child .detail-actions .btn.action:first-child`
-			do(t, ctx, chromedp.Click(chromedp.CSS(scan)), chromedp.Click(chromedp.CSS(scan)))
+			const scan = `.disk-actions .btn.action[data-action="scan"]`
+			do(t, ctx, chromedp.Click(chromedp.CSS(scan)), chromedp.WaitVisible(chromedp.CSS(scan+`.armed`)), chromedp.Click(chromedp.CSS(scan)))
 			historyFile := filepath.Join(pluginDir, "data", "history.json")
 			waitDiskSnapshots(t, historyFile, target, 1)
 			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
@@ -81,7 +81,7 @@ func TestDiskHistoryInstallsScansTracksAndShowsSavedChangesInBothLanguages(t *te
 			waitDiskValue(t, ctx, "8.19 KB")
 			for _, width := range []int{1280, 520} {
 				do(t, ctx, chromedp.EmulateViewport(int64(width), 860))
-				fits, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.detail-item')].every(e => e.scrollWidth <= e.clientWidth + 1)`))
+				fits, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.disk-history')].every(e => e.scrollWidth <= e.clientWidth + 1)`))
 				if err != nil || !fits {
 					t.Fatalf("%s at %dpx: overflow=%v, %v", lang, width, !fits, err)
 				}
@@ -169,14 +169,14 @@ func waitDiskSnapshots(t *testing.T, file, target string, count int) {
 
 func waitDiskValue(t *testing.T, ctx context.Context, value string) {
 	t.Helper()
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector('.detail-item:first-child .detail-value')?.textContent === %q`, value))); err != nil {
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector('.disk-total')?.textContent === %q`, value))); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func clickDiskAction(t *testing.T, ctx context.Context, label string) {
 	t.Helper()
-	selector := fmt.Sprintf(`(() => [...document.querySelectorAll('.detail-item:first-child .btn.action')].find(b => b.textContent === %q))()`, label)
+	selector := fmt.Sprintf(`(() => [...document.querySelectorAll('.disk-actions .btn.action')].find(b => b.textContent === %q))()`, label)
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](selector+` !== undefined`)); err != nil {
 		t.Fatal(err)
 	}

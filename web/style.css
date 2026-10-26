@@ -115,6 +115,7 @@
   --card-min-catalog: 280px;
   --panel-min: 176px;
   --detail-log-max: 240px;
+  --disk-content-w: 960px;
 }
 
 /* Dark mode overrides the color tokens only; the tints above follow them. */
@@ -1189,6 +1190,54 @@ body:has(.page-editor[open]) main { overflow: hidden; }
 }
 
 .action-panel:popover-open { transition: opacity var(--dur-fast) var(--ease-standard); }
+
+/* ---- Disk history: a reading surface, independent of generic details -- */
+.disk-view { overflow: auto; padding: var(--space-5); background: var(--bg); }
+.disk-history { width: 100%; max-width: var(--disk-content-w); margin: 0 auto; container-type: inline-size; }
+.disk-history > * + * { margin-top: var(--space-3); }
+.disk-meta { color: var(--muted); font-size: var(--text-sm); margin: 0; overflow-wrap: anywhere; }
+.disk-filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-4); }
+.disk-filters .edit-field { flex: 1 1 240px; min-width: 0; }
+.disk-ranges { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.disk-ranges [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: var(--weight-semibold); }
+.disk-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); min-height: var(--control-h); font-size: var(--text-base); overflow-wrap: anywhere; }
+.disk-crumb { border-color: transparent; color: var(--muted); padding: 0 var(--space-2); }
+.disk-current-name { font-weight: var(--weight-semibold); overflow-wrap: anywhere; min-width: 0; }
+.disk-separator { color: var(--muted); }
+.disk-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--space-4); }
+.disk-panel h2 { font-size: var(--text-lg); margin: 0 0 var(--space-2); }
+.disk-scanbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); justify-content: space-between; }
+.disk-scanbar > p { flex: 1 1 280px; }
+.disk-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.disk-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.disk-metric > :is(.disk-total, .disk-change) { font-size: var(--text-2xl); font-weight: var(--weight-semibold); margin: var(--space-1) 0; overflow-wrap: anywhere; }
+.disk-warning { color: var(--warn); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.disk-chart { min-width: 0; }
+.disk-chart svg { display: block; width: 100%; touch-action: pan-y; }
+.disk-axis { fill: var(--muted); font-size: var(--text-xs); }
+.disk-grid { stroke: var(--line); stroke-width: 1; }
+.disk-series { stroke: var(--accent); stroke-width: 2; }
+.disk-point { fill: var(--accent); }
+.disk-guide { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.disk-bar { cursor: pointer; }
+.disk-grow { color: var(--error); fill: var(--error); }
+.disk-shrink { color: var(--accent); fill: var(--accent); }
+.disk-selected-bar { stroke: var(--text); stroke-width: 2; }
+.disk-chart-reading { margin: var(--space-1) 0 0; min-height: 20px; font-size: var(--text-sm); color: var(--muted); }
+.disk-history table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--text-sm); }
+.disk-history :is(th, td) { text-align: right; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); overflow-wrap: anywhere; vertical-align: middle; }
+.disk-history :is(th, td):first-child { text-align: left; width: 50%; padding-left: 0; }
+.disk-history th { font-weight: var(--weight-semibold); color: var(--muted); }
+.disk-directory-name { color: var(--text); border-color: transparent; padding: var(--space-2) 0; text-align: left; justify-content: flex-start; width: 100%; overflow-wrap: anywhere; }
+.disk-directory td .disk-meta { display: block; }
+.disk-records > summary { cursor: pointer; min-height: var(--control-h); font-weight: var(--weight-semibold); }
+.disk-record-scroll { max-height: var(--detail-log-max); overflow: auto; margin-top: var(--space-3); }
+.disk-note { max-width: var(--disk-content-w); margin: 0 auto var(--space-3); }
+.disk-load-error { max-width: var(--disk-content-w); margin: 0 auto var(--space-3); }
+@container (max-width: 460px) {
+  .disk-metrics { grid-template-columns: 1fr; }
+  .disk-history :is(th, td):first-child { width: 44%; }
+}
 
 /* ---- Responsive: viewport breakpoints -------------------------------- */
 /* Media queries own viewport-level layout: the drawer, grid columns, page

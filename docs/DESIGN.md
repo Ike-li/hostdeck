@@ -591,6 +591,14 @@ Each plugin on the Pages & plugins page is a row (`.catalog-entry`, also a `.car
 | Log | A `<details>`, 13px; its `<pre>` at most 240px tall and scrolling, padding 16px, `--bg`, a 1px `--line` edge, 6px corners |
 | Actions | Wrapping, gap 8px, 16px margin and 16px padding above, a 1px `--line` above; button words aligned left and wrapping |
 
+### 3.11.1 Disk history [Shipped]
+
+The native disk-history view has a centred 960px maximum reading width (`--disk-content-w`), 24px outer padding, 16px panel padding, 12px gaps and the shared panel, edge, radius and type tokens. Current size and period change are 24px semibold in two columns; below 460px of content width they stack. The order is scan metadata, configured target and range, breadcrumb, confirmed scan controls, coverage notes, the two values, size curve, period changes, direct subfolders and collapsed scan readings. This lets a reader find the amount, time and cause without reading repeated field cards. Only this view has the reading-width cap.
+
+Charts use native SVG, the accent for size and shrinkage, error colour for growth, signed values and written explanations; colour alone never conveys direction. Arrow keys/Home/End read values, Enter selects a period, Escape clears it, and scan values also appear in a bounded 240px scrollable table. A period selection updates the comparison and folder list while retaining the complete curve. The SVG viewport and tick density adapt to the actual view width, preserving legible labels. Folder rows are semantic tables with 44px named buttons, initially 20 rows. Paths wrap, timestamps use browser-local time and unavailable comparisons use an em dash with a reason. Controls keep focus across reads; polling never rebuilds an armed confirmation.
+
+`TestDiskHistoryLetsReadersFollowTheNumbersThroughTimeAndIntoADirectory` checks the values, period selection, navigation, refresh, chart keyboard controls and layout in both languages, both themes and 1280/768/520px windows. The installation browser test retains real temporary-file scan/tracking and Origin coverage; console tests keep reading free of writes and reject invalid selections or invented deletions.
+
 ### 3.12 Disclosures [Shipped]
 
 Secondary content (the connection help, the plugins folder, logs, prompt previews) sits in a `<details>`. Its `<summary>` is at least 44px tall, `--muted` or 600, with a pointer cursor. Why: native disclosure needs nothing extra for the keyboard or screen readers, and the first screen keeps what can be done directly.

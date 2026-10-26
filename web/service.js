@@ -3,6 +3,7 @@ import { t, pick, explain } from './i18n.js';
 import { iconOf, paintDot } from './plugins.js';
 import { cardElement } from './overview.js';
 import { loadMonitor, loadDetail, renderDetail } from './monitor.js';
+import { createDiskHistory, loadDiskHistory, renderDiskHistory, resumeDiskPolling } from './disk-history.js';
 import { closePanel } from './panel.js';
 import { callRender } from './hooks.js';
 import { ARMED_FOR, IDLE_RELEASE, state } from './state.js';
@@ -51,6 +52,15 @@ export function renderService(p) {
       view.lang = state.lang;
       view.replaceChildren(cardElement(view.data, true));
     }
+  } else if (p.view === 'disk-history') {
+    let view = state.frames.get(p.id);
+    if (!view) {
+      view = createDiskHistory(p);
+      $('frames').append(view);
+      state.frames.set(p.id, view);
+      loadDiskHistory(p, view);
+    } else if (view.diskData && view.lang !== state.lang) renderDiskHistory(p, view);
+    else resumeDiskPolling(p, view);
   } else if (p.type === 'detail') {
     let view = state.frames.get(p.id);
     if (!view) {
@@ -156,6 +166,7 @@ async function clearService(p) {
 export function releaseIdleFrames() {
   for (const [id, since] of state.hiddenSince) {
     if (Date.now() - since < IDLE_RELEASE) continue;
+    state.frames.get(id).diskObserver?.disconnect();
     state.frames.get(id).remove();
     state.frames.delete(id);
     state.hiddenSince.delete(id);
@@ -164,7 +175,8 @@ export function releaseIdleFrames() {
 
 export function reloadService() {
   if (!state.current || !state.frames.has(state.current.id)) return;
-  if (state.current.type === 'detail') loadDetail(state.current, state.frames.get(state.current.id));
+  if (state.current.view === 'disk-history') loadDiskHistory(state.current, state.frames.get(state.current.id));
+  else if (state.current.type === 'detail') loadDetail(state.current, state.frames.get(state.current.id));
   else if (state.current.type === 'card') loadMonitor(state.current, state.frames.get(state.current.id), true);
   else state.frames.get(state.current.id).src = state.current.url;
 }
