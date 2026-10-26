@@ -238,6 +238,6 @@ Jobs detail enrichment stays in the shipped shell/PowerShell programs: plutil on
 
 The Docker endpoint is validated and pinned; detail IDs bind the full container ID to an endpoint fingerprint, so a different context cannot silently reuse an old item ID. No daemon mutation is offered in the monitoring slice. Existing plugins and stored files need no migration; `@hostdeck docker` needs a binary that includes the new native program.
 
-## Proposed scheduled-script tasks
+## Scheduled task configuration preview
 
-[TASKS.md](TASKS.md) defines the proposed v1 data contract and acceptance boundaries for an independent scheduled-script plugin. Its scheduler, runner and persistence are separate responsibilities inside hostdeck; ordinary task output is distinct from card/detail/action JSON. This is documentation only: no scheduling package, HTTP endpoint, accepted file format or command-editing UI has been added. Existing plugins, scripts and saved files require no migration.
+The first scheduled-task slice provides configuration preview. `scheduled-tasks` installs `plugin.yaml` and an empty `tasks.json`; `@hostdeck tasks card|detail` validates and displays tasks in process. Reads execute no command and write no state; actions and automatic scheduling are not available yet. [TASKS.md](TASKS.md) defines fields, defaults and the planned complete behavior. Existing plugins and files need no migration.

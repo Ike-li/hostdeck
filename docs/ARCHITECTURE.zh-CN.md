@@ -236,6 +236,6 @@ Windows 程序路径先展开环境变量，规范化 SystemRoot 和原生前缀
 
 Docker 端点会被校验并固定；详情 ID 将完整容器 ID 绑定到端点指纹，使切换 context 后不能静默复用旧条目 ID。监控切片不提供引擎变更操作。现有插件及存储文件无需迁移；`@hostdeck docker` 需要包含该原生程序的新版二进制。
 
-## 拟定的定时脚本任务
+## 定时任务配置预览
 
-[TASKS.zh-CN.md](TASKS.zh-CN.md) 定义独立定时脚本插件拟定的 v1 数据协议和验收边界。它的调度、执行和存储在 hostdeck 内部分工，普通任务输出与卡片／详情／操作 JSON 分开。本次只有文档，没有增加调度包、HTTP 接口、已接受的文件格式或命令编辑页面。现有插件、脚本和已保存文件不需要迁移。
+定时任务的首片现已提供配置预览。`scheduled-tasks` 安装 `plugin.yaml` 和空的 `tasks.json`，使用 `@hostdeck tasks card|detail` 在进程内校验并展示任务；读取不执行命令或写入状态，尚未提供操作和自动调度。字段、默认值和后续完整行为见 [TASKS.zh-CN.md](TASKS.zh-CN.md)。此新增插件不要求现有插件或文件迁移。

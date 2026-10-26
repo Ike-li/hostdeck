@@ -2,7 +2,7 @@
 
 [简体中文](TASKS.zh-CN.md)
 
-**Proposed v1 contract; not implemented.** This document defines the first scheduled-script plugin. Creating these files in today's hostdeck does not load tasks or run scripts. The implementation must add its parser, examples, tests and agent instructions together before claiming support. No new field in `plugin.yaml`, CLI command or HTTP endpoint is introduced by this document.
+**Implementation status: configuration preview is shipped; execution, persistence and automatic scheduling are not implemented yet.** The built-in `scheduled-tasks` plugin installs an empty `tasks.json`, validates the task fields below and displays them through the existing card/detail protocol with bilingual errors. The current preview loads the file on reads, runs no scripts and creates no runtime state; activation on startup and explicit reload accompanies execution later. The execution, scheduling, state and control rules below remain the proposed v1 contract.
 
 One installed plugin owns multiple tasks. The existing [plugin contract](PLUGINS.md) supplies its card, detail and confirmed actions. A task is an ordinary local program; it need not produce plugin JSON. Scheduling runs inside hostdeck, with no additional service or port: closing the browser does not stop it, but exiting hostdeck does. This version does not install launchd or Windows Task Scheduler entries, download scripts, install dependencies, edit commands from the browser or automatically retry failed runs.
 

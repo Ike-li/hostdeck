@@ -15,6 +15,7 @@ import (
 
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
 	"github.com/Ike-li/hostdeck/internal/dockerview"
+	"github.com/Ike-li/hostdeck/internal/tasks"
 )
 
 // WaitDelay bounds the wait for a command's output after it exits or is
@@ -47,7 +48,9 @@ func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
 	if command[0] == "@hostdeck" {
 		var out []byte
 		var err error
-		if len(command) > 1 && command[1] == "docker" {
+		if len(command) > 1 && command[1] == "tasks" {
+			out, err = tasks.Execute(ctx, dir, command[1:])
+		} else if len(command) > 1 && command[1] == "docker" {
 			out, err = dockerview.Execute(ctx, command[1:], func(ctx context.Context, c dockerview.Command) ([]byte, error) {
 				out, err := external(ctx, dir, c.Args, c.Env, c.Limit, c.Combined)
 				var exited *ExitError

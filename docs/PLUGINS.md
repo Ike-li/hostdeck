@@ -163,6 +163,6 @@ Details show image, state, health, times, exit status, restart policy/count, por
 
 Recent logs combine stdout and stderr, request the last 20 lines without following, retain at most 16 KiB per container and share 512 KiB per page. The whole page has five seconds for optional log reads, and each has at most one second. Unsupported logging drivers, missing logs or time/size limits produce local notes without losing container information. A failed list or inspection refuses the whole reading instead of reporting a healthy zero.
 
-## Proposed scheduled-script tasks
+## Scheduled task configuration preview
 
-The scheduled-script plugin has a proposed, unimplemented [task contract](TASKS.md): ordinary executable tasks, schedules, execution outcomes and bounded logs. Its fields belong to a separate `tasks.json`, not `plugin.yaml`. The manifest and program protocol on this page are unchanged; creating that file does not enable scheduling in the current program.
+The first scheduled-task slice provides configuration preview. `scheduled-tasks` installs `plugin.yaml` and an empty `tasks.json`; `@hostdeck tasks card|detail` validates and displays tasks in process. Reads execute no command and write no state; actions and automatic scheduling are not available yet. [TASKS.md](TASKS.md) defines fields, defaults and the planned complete behavior. Existing plugins and files need no migration.
