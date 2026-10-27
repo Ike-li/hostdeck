@@ -598,13 +598,10 @@ func TestTheDiskExampleShowsItsStatusAndRows(t *testing.T) {
 			t.Errorf("at %dpx the disk detail does not name free space and the gigabytes used: %s", width, report)
 		}
 	}
-	// The language switch sits in the sidebar, which a 520px window keeps off-screen.
-	// Wait until the wider layout has placed the button, or the click lands on the old position.
+	// The wide layout places the button at once, and clears inert a turn later.
+	// A click in that turn does not change the language.
 	do(t, ctx, chromedp.EmulateViewport(1280, 800))
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(() => { const r = document.querySelector('[data-lang="en"]').getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; })()`)); err != nil {
-		t.Fatalf("English language button: %v", err)
-	}
-	do(t, ctx, chromedp.Click(chromedp.CSS(`[data-lang="en"]`)))
+	clickOnScreen(t, ctx, `[data-lang="en"]`)
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === "en" && document.querySelector(".detail-label")?.textContent === "free"`)); err != nil {
 		t.Fatalf("English label: %v; page says %s", err, diskDetailReport(t, ctx))
 	}

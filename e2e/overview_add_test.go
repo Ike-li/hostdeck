@@ -94,7 +94,10 @@ func TestTheOverviewHeaderKeepsAddInViewWhenThePlusCardIsBelowTheFold(t *testing
 		}
 	}
 
-	do(t, ctx, chromedp.EmulateViewport(1280, 800), chromedp.Click(chromedp.CSS(`[data-lang="en"]`)))
+	// The 520px pass leaves the sidebar inert until the wide layout settles.
+	// A click in that turn misses the language control.
+	do(t, ctx, chromedp.EmulateViewport(1280, 800))
+	clickOnScreen(t, ctx, `[data-lang="en"]`)
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.querySelector('#overview-add')?.textContent.trim() === 'Add content'`)); err != nil {
 		t.Fatalf("English overview add link: %v", err)
 	}
