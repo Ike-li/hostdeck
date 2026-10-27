@@ -164,8 +164,10 @@ func UpdateTask(dir, id string, form TaskForm) error {
 	if form.Command != nil {
 		task.Exec = applyCommand(task.Exec, argv, runtime.GOOS, false)
 	}
-	if strings.TrimSpace(form.Timeout) != "" || form.Command != nil || hasSchedule || form.Enabled != nil {
+	if strings.TrimSpace(form.Timeout) != "" {
 		task.Timeout = timeoutFrom(form.Timeout)
+	} else if strings.TrimSpace(task.Timeout) == "" {
+		task.Timeout = timeoutFrom("")
 	}
 	cfg.Tasks[idx] = task
 	if err := e.publishLocked(cfg); err != nil {

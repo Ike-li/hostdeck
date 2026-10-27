@@ -86,6 +86,39 @@ func TestThePageCanCreateATaskAndTheOpenDetailShowsIt(t *testing.T) {
 	}
 }
 
+func TestUpdatingATaskWithoutTimeoutKeepsTheCustomTimeout(t *testing.T) {
+	dir, _, _ := emptyTasks(t)
+	original := []byte(`{"version":1,"tasks":[{"id":"backup","name":"Backup","enabled":true,"schedule":{"every":"2h"},"exec":{"command":["true"]},"timeout":"2h"}]}`)
+	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := tasks.Sync(filepath.Dir(dir), []plugin.Plugin{{ID: "scheduled-tasks", Dir: dir, Detail: &plugin.Detail{Exec: &plugin.Exec{Command: []string{"@hostdeck", "tasks", "detail"}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	enabled := false
+	command := "echo still"
+	if err := tasks.UpdateTask(dir, "backup", tasks.TaskForm{
+		Name:    "Backup",
+		Enabled: &enabled,
+		Command: &command,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := mustRead(t, filepath.Join(dir, "tasks.json"))
+	var saved struct {
+		Tasks []struct {
+			Timeout string
+			Enabled bool
+		}
+	}
+	if err := json.Unmarshal(raw, &saved); err != nil || len(saved.Tasks) != 1 {
+		t.Fatalf("file %s %v", raw, err)
+	}
+	if saved.Tasks[0].Timeout != "2h" || saved.Tasks[0].Enabled {
+		t.Fatalf("timeout/enabled = %q/%v, want 2h kept and disabled", saved.Tasks[0].Timeout, saved.Tasks[0].Enabled)
+	}
+}
+
 func TestEditingATaskKeepsWhatTheFormDoesNotShowAndABadScheduleDoesNotWrite(t *testing.T) {
 	dir, _, _ := emptyTasks(t)
 	original := []byte(`{"version":1,"tasks":[{"id":"backup","name":"Backup","enabled":true,"schedule":{"every":"2h"},"exec":{"command":["python3","scripts/backup.py"],"windows":["py","-3","scripts/backup.py"],"dir":"work","env":{"TOKEN":"${env:BACKUP_TOKEN}"}},"timeout":"5m"},{"id":"other","name":"Other","enabled":true,"schedule":{"cron":"0 4 * * *","timezone":"UTC"},"exec":{"command":["true"]},"timeout":"5m"}]}`)
