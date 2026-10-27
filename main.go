@@ -140,14 +140,7 @@ func run(args []string) error {
 		<-ctx.Done()
 		bounded, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		lifecycle.Lock()
-		stopping = true
-		f.close()
-		if err := tasks.Close(bounded, pluginDir); err != nil {
-			log.Printf("tasks: shutdown: %v", err)
-		}
-		lifecycle.Unlock()
-		server.Shutdown(bounded)
+		stopServing(&lifecycle, &stopping, f, pluginDir, server, bounded)
 	}()
 	err = server.Serve(ln)
 	stop()
@@ -156,6 +149,19 @@ func run(args []string) error {
 		return nil
 	}
 	return err
+}
+
+// stopServing marks the process as stopping, closes proxy forwarders so their
+// ports stop listening, stops native tasks, then shuts the console down.
+func stopServing(lifecycle *sync.Mutex, stopping *bool, f *forwarders, pluginDir string, server *http.Server, bounded context.Context) {
+	lifecycle.Lock()
+	*stopping = true
+	f.close()
+	if err := tasks.Close(bounded, pluginDir); err != nil {
+		log.Printf("tasks: shutdown: %v", err)
+	}
+	lifecycle.Unlock()
+	_ = server.Shutdown(bounded)
 }
 
 // forwarders re-serve each plugin's proxied page on a port of its own, from

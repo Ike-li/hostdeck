@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"log"
 	"net"
@@ -11,7 +12,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -297,7 +301,99 @@ var (
 	forwarderListenLog = regexp.MustCompile(`svc: (http://127\.0\.0\.1:\d+)/ -> `)
 )
 
+func TestStopServingClosesForwarderPortsBeforeConsoleShutdownReturns(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "backend")
+	}))
+	t.Cleanup(backend.Close)
+
+	consoleLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	consolePort := consoleLn.Addr().(*net.TCPAddr).Port
+	var once sync.Once
+	release := make(chan struct{})
+	releaseAll := func() { once.Do(func() { close(release) }) }
+	console := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		io.WriteString(w, "console")
+	})}
+	go console.Serve(consoleLn)
+	t.Cleanup(func() {
+		releaseAll()
+		_ = console.Close()
+	})
+
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "plugins")
+	f := &forwarders{portsFile: filepath.Join(dir, "ports.json"), consolePort: consolePort, tokens: onetime.New(time.Now)}
+	served, err := f.sync([]plugin.Plugin{proxied("svc", backend.URL+"/")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fwd := served["svc"].URL
+	if got := answer(t, fwd); got != "backend" {
+		t.Fatalf("before stop, forwarder answers %q, want backend", got)
+	}
+
+	// Hold an in-flight console request so Shutdown waits; forwarders must
+	// still close in the stopping section before that wait ends.
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Get("http://127.0.0.1:" + strconv.Itoa(consolePort) + "/")
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resp.Body.Close()
+		errCh <- nil
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	var lifecycle sync.Mutex
+	stopping := false
+	bounded, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		stopServing(&lifecycle, &stopping, f, pluginDir, console, bounded)
+	}()
+
+	stopWait := time.Now().Add(2 * time.Second)
+	for {
+		if answer(t, fwd) == "" {
+			break
+		}
+		if time.Now().After(stopWait) {
+			t.Fatal("forwarder port still listening while console Shutdown is held open")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	lifecycle.Lock()
+	wasStopping := stopping
+	lifecycle.Unlock()
+	if !wasStopping {
+		t.Fatal("stopServing did not set stopping")
+	}
+	releaseAll()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stopServing did not return")
+	}
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+	}
+}
+
 func TestGracefulExitClosesForwarderPorts(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Process.Signal(SIGTERM) is not supported on Windows")
+	}
+
 	if os.Getenv("HOSTDECK_TEST_GRACEFUL_CHILD") == "1" {
 		log.SetFlags(0)
 		dir := os.Getenv("HOSTDECK_TEST_GRACEFUL_DIR")
