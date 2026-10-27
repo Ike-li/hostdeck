@@ -142,6 +142,7 @@ func run(args []string) error {
 		defer cancel()
 		lifecycle.Lock()
 		stopping = true
+		f.close()
 		if err := tasks.Close(bounded, pluginDir); err != nil {
 			log.Printf("tasks: shutdown: %v", err)
 		}
@@ -313,8 +314,9 @@ func (f *forwarders) start(id string, port int, rawTarget string, ln net.Listene
 }
 
 func (f *forwarders) close() {
-	for _, r := range f.running {
+	for id, r := range f.running {
 		r.close()
+		delete(f.running, id)
 	}
 }
 

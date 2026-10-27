@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -262,5 +267,139 @@ func TestAFailedReloadKeepsForwardersPortsAndTasksMatchingTheConsole(t *testing.
 	afterPorts, err := os.ReadFile(portsFile)
 	if err != nil || string(afterPorts) != string(initialPorts) {
 		t.Fatalf("ports.json = %q (%v), want %q", afterPorts, err, initialPorts)
+	}
+}
+
+func TestClosingForwardersReleasesTheirListeningPorts(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	f := &forwarders{portsFile: filepath.Join(t.TempDir(), "ports.json"), consolePort: ln.Addr().(*net.TCPAddr).Port, tokens: onetime.New(time.Now)}
+	target := service(t, "proxied")
+	served, err := f.sync([]plugin.Plugin{proxied("svc", target)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := served["svc"].URL
+	if got := answer(t, url); got != "proxied" {
+		t.Fatalf("%s answers %q, want proxied", url, got)
+	}
+	f.close()
+	if got := answer(t, url); got != "" {
+		t.Fatalf("after close, %s still answers %q", url, got)
+	}
+}
+
+var (
+	consoleListenLog   = regexp.MustCompile(`hostdeck: (http://127\.0\.0\.1:\d+)`)
+	forwarderListenLog = regexp.MustCompile(`svc: (http://127\.0\.0\.1:\d+)/ -> `)
+)
+
+func TestGracefulExitClosesForwarderPorts(t *testing.T) {
+	if os.Getenv("HOSTDECK_TEST_GRACEFUL_CHILD") == "1" {
+		log.SetFlags(0)
+		dir := os.Getenv("HOSTDECK_TEST_GRACEFUL_DIR")
+		if err := run([]string{"--addr", "127.0.0.1:0", "--dir", dir}); err != nil {
+			os.Stderr.WriteString(err.Error() + "\n")
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	dir := t.TempDir()
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "backend")
+	}))
+	t.Cleanup(backend.Close)
+	pluginDir := filepath.Join(dir, "plugins", "svc")
+	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := "schema: 1\nname: Service\npage:\n  proxy: " + backend.URL + "/\n"
+	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.yaml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestGracefulExitClosesForwarderPorts$", "-test.count=1")
+	cmd.Env = append(os.Environ(),
+		"HOSTDECK_TEST_GRACEFUL_CHILD=1",
+		"HOSTDECK_TEST_GRACEFUL_DIR="+dir,
+	)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	finished := make(chan error, 1)
+	go func() { finished <- cmd.Wait() }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+		}
+	})
+
+	var consoleURL, forwardURL string
+	sc := bufio.NewScanner(stderr)
+	deadline := time.Now().Add(10 * time.Second)
+	for consoleURL == "" || forwardURL == "" {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for console and forwarder listen logs")
+		}
+		if !sc.Scan() {
+			t.Fatalf("child exited before logging listen addresses: %v", sc.Err())
+		}
+		line := sc.Text()
+		if m := consoleListenLog.FindStringSubmatch(line); m != nil {
+			consoleURL = m[1]
+		}
+		if m := forwarderListenLog.FindStringSubmatch(line); m != nil {
+			forwardURL = m[1] + "/"
+		}
+	}
+	if got := answer(t, forwardURL); got != "backend" {
+		t.Fatalf("before signal, forwarder answers %q, want backend", got)
+	}
+
+	// Hold an incomplete console connection so Shutdown waits on it. Only an
+	// explicit forwarders close in the stopping path frees the proxy port
+	// before that wait ends; defer alone would leave it listening.
+	host := strings.TrimPrefix(consoleURL, "http://")
+	held, err := net.DialTimeout("tcp", host, 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+
+	released := false
+	stopWait := time.Now().Add(2 * time.Second)
+	for time.Now().Before(stopWait) {
+		if answer(t, forwardURL) == "" {
+			released = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !released {
+		t.Fatal("forwarder port still listening after SIGTERM while console Shutdown is held open")
+	}
+
+	_ = held.Close()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("child exit: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("child did not exit after SIGTERM")
 	}
 }
