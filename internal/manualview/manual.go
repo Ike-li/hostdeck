@@ -6,6 +6,7 @@ package manualview
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -249,11 +250,8 @@ func canRestart(h hit) bool {
 func commandKnown(h hit) bool { return len(h.args) > 0 || h.cmdline != "" }
 
 func launchExe(h hit) string {
-	if h.exe != "" {
+	if filepath.IsAbs(h.exe) {
 		return h.exe
-	}
-	if len(h.args) > 0 {
-		return h.args[0]
 	}
 	return ""
 }

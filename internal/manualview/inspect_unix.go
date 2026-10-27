@@ -24,9 +24,9 @@ func inspect(pid int) inspection {
 		out.Started = time.Unix(info.Proc.P_starttime.Sec, int64(info.Proc.P_starttime.Usec)*1000)
 	}
 	if buf, err := unix.SysctlRaw("kern.procargs2", pid); err == nil && len(buf) <= maxInspectArgs {
-		if args, env, ok := parseProcArgs(buf); ok {
+		if exe, args, env, ok := parseProcArgs(buf); ok {
 			out.Args, out.KnowsArgs = args, true
-			out.Exe = args[0]
+			out.Exe = exe
 			if len(env) > 0 || env != nil {
 				size := 0
 				for _, e := range env {
@@ -44,18 +44,21 @@ func inspect(pid int) inspection {
 	return out
 }
 
-func parseProcArgs(buf []byte) (args, env []string, ok bool) {
+func parseProcArgs(buf []byte) (exe string, args, env []string, ok bool) {
 	if len(buf) < 4 {
-		return nil, nil, false
+		return "", nil, nil, false
 	}
 	argc := int(binary.LittleEndian.Uint32(buf[:4]))
 	if argc <= 0 || argc > 1<<16 {
-		return nil, nil, false
+		return "", nil, nil, false
 	}
 	buf = buf[4:]
 	i := bytes.IndexByte(buf, 0)
 	if i < 0 {
-		return nil, nil, false
+		return "", nil, nil, false
+	}
+	if i > 0 && buf[0] == '/' {
+		exe = string(buf[:i])
 	}
 	buf = buf[i+1:]
 	for len(buf) > 0 && buf[0] == 0 {
@@ -65,7 +68,7 @@ func parseProcArgs(buf []byte) (args, env []string, ok bool) {
 	for n := 0; n < argc; n++ {
 		i = bytes.IndexByte(buf, 0)
 		if i < 0 {
-			return nil, nil, false
+			return "", nil, nil, false
 		}
 		args = append(args, string(buf[:i]))
 		buf = buf[i+1:]
@@ -79,7 +82,7 @@ func parseProcArgs(buf []byte) (args, env []string, ok bool) {
 		env = append(env, string(buf[:i]))
 		buf = buf[i+1:]
 	}
-	return args, env, true
+	return exe, args, env, true
 }
 
 func cwdOf(pid int) (string, bool) {

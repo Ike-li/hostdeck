@@ -27,6 +27,12 @@ func TestMain(m *testing.M) {
 		_, _ = ln.Accept()
 		return
 	}
+	if len(os.Args) > 2 && os.Args[1] == "hostdeck-manual-args" {
+		if err := os.WriteFile(os.Args[2], []byte(strings.Join(os.Args, "\x00")), 0o644); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	os.Exit(m.Run())
 }
 

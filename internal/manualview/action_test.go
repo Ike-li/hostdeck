@@ -97,6 +97,18 @@ func TestAProcessThatSurvivesTermIsKilled(t *testing.T) {
 	}
 }
 
+func TestRestartLeavesABareExecutableRunning(t *testing.T) {
+	op := readyOp(t)
+	p := op.procs[4]
+	p.Exe = "mitmweb"
+	p.Args = []string{"mitmweb", "--listen", "8081"}
+	op.procs[4] = p
+	out, err := act(context.Background(), op, "restart", "4")
+	if err != nil || len(op.signals) != 0 || len(op.spawned) != 0 {
+		t.Fatalf("out %s err %v signals %v spawned %d", out, err, op.signals, len(op.spawned))
+	}
+}
+
 func TestRestartUsesTheRecordedCommandDirectoryAndEnvironment(t *testing.T) {
 	op := readyOp(t)
 	op.dieOnTerm = true
@@ -113,7 +125,7 @@ func TestRestartUsesTheRecordedCommandDirectoryAndEnvironment(t *testing.T) {
 	}
 	gotSpawn := op.spawned[0]
 	want := spawnCall{
-		exe: "/usr/local/bin/mitmweb", args: []string{"/usr/local/bin/mitmweb", "--listen", "8081"},
+		exe: "/usr/local/bin/mitmweb", args: []string{"mitmweb", "--listen", "8081"},
 		dir: "/tmp/proxy", env: []string{},
 	}
 	if !reflect.DeepEqual(gotSpawn, want) {
@@ -166,7 +178,7 @@ func handProc(started time.Time) map[int]Proc {
 		4: {
 			PPID: 3, Name: "mitmweb", Uptime: time.Minute, Started: started,
 			Dir: "/tmp/proxy", Exe: "/usr/local/bin/mitmweb",
-			Args: []string{"/usr/local/bin/mitmweb", "--listen", "8081"},
+			Args: []string{"mitmweb", "--listen", "8081"},
 			Env:  []string{}, KnowsDir: true, KnowsArgs: true, KnowsEnv: true,
 		},
 		5: {PPID: 4, Name: "child"},

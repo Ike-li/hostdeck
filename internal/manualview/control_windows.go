@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 
 	"golang.org/x/sys/windows"
@@ -44,7 +45,7 @@ func (osOperator) Alive(pid int) bool {
 }
 
 func (osOperator) Spawn(exe string, _ []string, cmdline, dir string, env []string) error {
-	if exe == "" || cmdline == "" {
+	if !filepath.IsAbs(exe) || cmdline == "" {
 		return errors.New("no command")
 	}
 	cmd := exec.Command(exe)
