@@ -1,0 +1,132 @@
+//go:build windows
+
+package manualview
+
+import (
+	"encoding/binary"
+	"unicode/utf16"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
+
+const (
+	maxInspectArgs = 1 << 20
+	maxInspectEnv  = 256 << 10
+)
+
+func inspect(pid int) inspection {
+	var out inspection
+	if started, ok := processStarted(pid); ok {
+		out.Started = started
+	}
+	access := uint32(windows.PROCESS_QUERY_INFORMATION | windows.PROCESS_VM_READ | windows.PROCESS_QUERY_LIMITED_INFORMATION)
+	handle, err := windows.OpenProcess(access, false, uint32(pid))
+	if err != nil {
+		return out
+	}
+	defer windows.CloseHandle(handle)
+	if exe, ok := imagePath(handle); ok {
+		out.Exe = exe
+	}
+	params, ok := processParams(handle)
+	if !ok {
+		return out
+	}
+	if cmd, ok := readString(handle, params.CommandLine); ok && out.Exe != "" && len(cmd) <= maxInspectArgs {
+		out.CommandLine, out.KnowsArgs = cmd, true
+		out.Args = []string{out.Exe}
+	}
+	if dir, ok := readString(handle, params.CurrentDirectory.DosPath); ok {
+		out.Dir, out.KnowsDir = dir, true
+	}
+	if env, ok := readEnv(handle, params); ok {
+		out.Env, out.KnowsEnv = env, true
+	}
+	return out
+}
+
+func imagePath(handle windows.Handle) (string, bool) {
+	buf := make([]uint16, 32768)
+	size := uint32(len(buf))
+	if err := windows.QueryFullProcessImageName(handle, 0, &buf[0], &size); err != nil {
+		return "", false
+	}
+	return windows.UTF16ToString(buf[:size]), true
+}
+
+func processParams(handle windows.Handle) (windows.RTL_USER_PROCESS_PARAMETERS, bool) {
+	var info windows.PROCESS_BASIC_INFORMATION
+	var got uint32
+	err := windows.NtQueryInformationProcess(handle, windows.ProcessBasicInformation, unsafe.Pointer(&info), uint32(unsafe.Sizeof(info)), &got)
+	if err != nil || info.PebBaseAddress == nil {
+		return windows.RTL_USER_PROCESS_PARAMETERS{}, false
+	}
+	var peb windows.PEB
+	if !readAt(handle, uintptr(unsafe.Pointer(info.PebBaseAddress)), unsafe.Pointer(&peb), unsafe.Sizeof(peb)) || peb.ProcessParameters == nil {
+		return windows.RTL_USER_PROCESS_PARAMETERS{}, false
+	}
+	var params windows.RTL_USER_PROCESS_PARAMETERS
+	if !readAt(handle, uintptr(unsafe.Pointer(peb.ProcessParameters)), unsafe.Pointer(&params), unsafe.Sizeof(params)) {
+		return windows.RTL_USER_PROCESS_PARAMETERS{}, false
+	}
+	return params, true
+}
+
+func readString(handle windows.Handle, s windows.NTUnicodeString) (string, bool) {
+	if s.Buffer == nil || s.Length == 0 || s.Length%2 != 0 || int(s.Length) > maxInspectArgs {
+		return "", false
+	}
+	buf := make([]byte, s.Length)
+	if !readAt(handle, uintptr(unsafe.Pointer(s.Buffer)), unsafe.Pointer(&buf[0]), uintptr(len(buf))) {
+		return "", false
+	}
+	return utf16Bytes(buf), true
+}
+
+func readEnv(handle windows.Handle, params windows.RTL_USER_PROCESS_PARAMETERS) ([]string, bool) {
+	if params.Environment == nil || params.EnvironmentSize == 0 || params.EnvironmentSize > maxInspectEnv {
+		return nil, false
+	}
+	buf := make([]byte, params.EnvironmentSize)
+	if !readAt(handle, uintptr(params.Environment), unsafe.Pointer(&buf[0]), uintptr(len(buf))) {
+		return nil, false
+	}
+	units := make([]uint16, len(buf)/2)
+	for i := range units {
+		units[i] = binary.LittleEndian.Uint16(buf[i*2:])
+	}
+	var env []string
+	var cur []uint16
+	for _, c := range units {
+		if c != 0 {
+			cur = append(cur, c)
+			continue
+		}
+		if len(cur) == 0 {
+			break
+		}
+		env = append(env, string(utf16.Decode(cur)))
+		cur = nil
+	}
+	if env == nil {
+		env = []string{}
+	}
+	return env, true
+}
+
+func utf16Bytes(buf []byte) string {
+	units := make([]uint16, len(buf)/2)
+	for i := range units {
+		units[i] = binary.LittleEndian.Uint16(buf[i*2:])
+	}
+	return string(utf16.Decode(units))
+}
+
+func readAt(handle windows.Handle, addr uintptr, dst unsafe.Pointer, n uintptr) bool {
+	if addr == 0 || n == 0 {
+		return false
+	}
+	var got uintptr
+	return windows.ReadProcessMemory(handle, addr, (*byte)(dst), n, &got) == nil && got == n
+}

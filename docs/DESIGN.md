@@ -294,7 +294,8 @@ Media queries own viewport-level layout; component-level adaptation belongs to c
 | `--editor-w` | `min(560px, calc(100vw - 32px))` | The dialog |
 | `--panel-min` | 176px | An action panel's minimum width |
 | `--add-card-min-h` | 192px | The plus card's minimum height |
-| `--detail-log-max` | 240px | A detail log's maximum height before it scrolls |
+| `--detail-log-max` | 480px | A detail log's maximum height before it scrolls |
+| `--record-max` | 240px | A disk-history record list's maximum height before it scrolls |
 
 Controls are at least 44px. Why: easy to hit with a trackpad or on a touch screen laptop, and well above the 24px WCAG 2.5.8 asks.
 
@@ -588,7 +589,7 @@ Each plugin on the Pages & plugins page is a row (`.catalog-entry`, also a `.car
 | Name | 16px, 600 |
 | Main value | 24px, 600, 12px above and below. An optional label sits on the same baseline, gap 8px, in `--muted`, and wraps when the row is too narrow. The compact list does not show that label |
 | Fields | A `<dl>` grid `minmax(80px, 160px) 1fr`, gap 8px 16px, 13px, names `--muted`; one column when narrow, names above values |
-| Log | A `<details>`, 13px; its `<pre>` at most 240px tall and scrolling, padding 16px, `--bg`, a 1px `--line` edge, 6px corners |
+| Log | A `<details>`, 13px; its `<pre>` at most 480px tall and scrolling, padding 16px, `--bg`, a 1px `--line` edge, 6px corners |
 | Actions | Wrapping, gap 8px, 16px margin and 16px padding above, a 1px `--line` above; button words aligned left and wrapping |
 
 ### 3.11.1 Disk history [Shipped]
@@ -621,7 +622,7 @@ All three use the same 8px box, so the column does not move. A dot has `role="im
 
 | View | Structure |
 | --- | --- |
-| Overview | Header (`h1` left; "Reset layout" and "Refresh" right; 12px gap when it wraps, 16px below) → the card grid (the plus card last) |
+| Overview | Header (a 16px `h1` on the left; "Reset layout", "Add content" and "Refresh" on the right, Refresh the only primary; 12px gap when it wraps, 16px below; the header scrolls with the page; "Add content" opens the same add area as the plus card) → the card grid (the plus card last) |
 | Pages & plugins | Header (`h1` and "Add content") → search (from ten plugins) → Enabled → Disabled → Needs attention → Trash → Add content (the form, built-in plugins, the connection help) → the plugins folder (collapsed) |
 | Service | Toolbar (padding 12px 16px, `--panel`, an edge below; the name as a 16px `h1`; Refresh, open in a new tab, More actions) → the iframe filling the rest |
 | Detail and monitor | A list of items, see 3.11; a monitor view's card is at most 720px wide |
@@ -921,7 +922,7 @@ One item is left on purpose: tying a server error to its field (the [Reserved] n
 
 Grouped detail pages place a labelled name/ID search and wrapping counted filter buttons above their items. Search is case-insensitive, trims outer whitespace, intersects the selected group and keeps input focus. Counts reflect the search across groups. Empty data, no search matches, an empty group and a failed reading have distinct messages. Search and group choices last for the browser session, through refreshes and language changes.
 
-Compact detail lists keep the name, written runtime state and actions in one wrapping header with 44px controls. Items use 16px padding and 12px separation; fields use 13px words, a 96px label column and 4px/12px gaps. Fields stay expanded and paths wrap, while logs remain collapsed and bounded at 240px. Other detail layouts keep their larger values and separate action area.
+Compact detail lists keep the name, written runtime state and actions in one wrapping header with 44px controls. Items use 16px padding and 12px separation; fields use 13px words, a 96px label column and 4px/12px gaps. Fields stay expanded and paths wrap, while logs remain collapsed and bounded at 480px. Disk-history record lists stay bounded at 240px. Other detail layouts keep their larger values and separate action area.
 
 A compact detail state and its descriptive field values can be localized text, selected on the page just like labels. Configuration and log read failures appear as local explanatory fields instead of replacing a healthy task or removing its actions. Log previews remain read-only, collapsed by default, and use the existing scrollable disclosure.
 

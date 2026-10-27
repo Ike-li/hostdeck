@@ -15,6 +15,7 @@ export function twoClicks(btn, armedText, confirmed) {
         armed = null;
         btn.textContent = label;
         btn.classList.remove('armed');
+        btn.dispatchEvent(new Event('disarm', { bubbles: true }));
       }, ARMED_FOR);
       return;
     }

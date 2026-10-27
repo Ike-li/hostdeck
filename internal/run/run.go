@@ -44,6 +44,13 @@ func (e *ExitError) Error() string {
 // ends first, the command and every process it started are killed, and the
 // error is ctx's. Processes it leaves behind when it exits are killed too.
 func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
+	return output(ctx, dir, command, nil)
+}
+
+// output runs command. A nil env inherits the console's environment. A non-nil
+// env replaces it, which is how one detail item is named without appending a
+// second copy of the same variable: Unix returns the first value.
+func output(ctx context.Context, dir string, command, env []string) ([]byte, error) {
 	if len(command) == 0 {
 		return nil, errors.New("empty plugin command")
 	}
@@ -73,7 +80,7 @@ func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
 		}
 		return out, err
 	}
-	return external(ctx, dir, command, nil, maxOutput, false)
+	return external(ctx, dir, command, env, maxOutput, false)
 }
 
 func external(ctx context.Context, dir string, command, env []string, limit int, combined bool) ([]byte, error) {
@@ -125,7 +132,13 @@ var bom = []byte("\ufeff")
 // JSON runs command like Output and decodes what it prints into v. Fields
 // that v does not have are an error, so a typo in a plugin shows up.
 func JSON(ctx context.Context, dir string, command []string, v any) error {
-	out, err := Output(ctx, dir, command)
+	return JSONEnv(ctx, dir, command, nil, v)
+}
+
+// JSONEnv runs command like JSON with env replacing the inherited environment.
+// Native @hostdeck commands ignore env.
+func JSONEnv(ctx context.Context, dir string, command, env []string, v any) error {
+	out, err := output(ctx, dir, command, env)
 	if err != nil {
 		return err
 	}

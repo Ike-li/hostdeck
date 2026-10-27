@@ -1,6 +1,7 @@
 package examples
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -40,9 +42,38 @@ func TestJobDetailsReadConfiguredArgumentsAllLaunchRulesAndBoundedLogs(t *testin
 			t.Errorf("fields missing %q: %s", want, out)
 		}
 	}
-	tail := got.Items[0].Log
-	if !strings.Contains(tail, "last 中文 line") || strings.Count(tail, "old line") != 19 || strings.Count(tail, log) != 1 || len(tail) > 17000 {
-		t.Fatalf("unbounded or duplicate tail: %q", tail)
+	if got.Items[0].Log != "" || !got.Items[0].LogAvailable {
+		t.Fatalf("list log %q available %v, want the body left out until the log is opened", got.Items[0].Log, got.Items[0].LogAvailable)
+	}
+	p := load(t, "jobs")
+	one := detail.ReadItem(context.Background(), p, "com.example.job")
+	if one.Error != nil || len(one.Items) != 1 {
+		t.Fatalf("item %+v error %+v", one, one.Error)
+	}
+	tail := one.Items[0].Log
+	if !strings.Contains(tail, "last 中文 line") || strings.Count(tail, "old line") != 4000 || strings.Count(tail, log) != 1 {
+		t.Fatalf("opened tail lost lines or repeated the path: count %d len %d", strings.Count(tail, "old line"), len(tail))
+	}
+
+	big := filepath.Join(dir, "big.log")
+	marker := filepath.Join(dir, "must-not-run")
+	body := append([]byte("HEAD-MARKER\n"), bytes.Repeat([]byte("x"), 300000)...)
+	body = append(body, []byte("\n$(touch "+marker+")\nlast 中文 line\n")...)
+	if err := os.WriteFile(big, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	withJobInfo(t, "\tstate = running\n\tstdout path = "+big)
+	opened := detail.ReadItem(context.Background(), p, "com.example.job")
+	if opened.Error != nil || len(opened.Items) != 1 {
+		t.Fatalf("big item %+v", opened.Error)
+	}
+	encoded, _ = json.Marshal(opened.Items[0])
+	shown := string(encoded)
+	if strings.Contains(opened.Items[0].Log, "HEAD-MARKER") || !strings.Contains(opened.Items[0].Log, "last 中文 line") || !strings.Contains(shown, "Showing the last 256 KiB") || !strings.Contains(shown, "末尾 256 KiB") {
+		t.Fatalf("big log was not the tail: %s", shown[max(0, len(shown)-500):])
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("text inside the log was executed")
 	}
 }
 
@@ -62,15 +93,17 @@ func TestMissingJobConfigurationAndLogsKeepTheJobAndItsAction(t *testing.T) {
 	}
 }
 
-func TestJobLogPreviewsShareOnePageBudget(t *testing.T) {
+func TestJobLogPreviewsStayOutOfTheListUntilOneJobIsOpened(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS log reader")
 	}
 	log := filepath.Join(t.TempDir(), "large.log")
-	if err := os.WriteFile(log, []byte(strings.Repeat("中文", 6000)), 0600); err != nil {
+	if err := os.WriteFile(log, []byte("LOGBODY-中文\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	record := filepath.Join(t.TempDir(), "calls")
 	withLaunchctl(t, fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %q
 case "$2" in
 "gui/$(id -u)")
  printf '\tservices = {\n'
@@ -78,18 +111,43 @@ case "$2" in
  printf '}\n' ;;
 *) printf '\tstate = running\n\tstdout path = %%s\n' %q ;;
 esac
-`, log))
-	got := detail.Read(context.Background(), load(t, "jobs"))
+`, record, log))
+	p := load(t, "jobs")
+	got := detail.Read(context.Background(), p)
 	if got.Error != nil || len(got.Items) != 34 {
 		t.Fatalf("items %d error %+v", len(got.Items), got.Error)
 	}
-	size := 0
 	for _, it := range got.Items {
-		size += len(it.Log)
+		if it.Log != "" || !it.LogAvailable {
+			t.Fatalf("item %+v, want a log offer and no body", it)
+		}
 	}
 	out, _ := json.Marshal(got)
-	if size > 524288 || !strings.Contains(string(out), "512 KiB") {
-		t.Fatalf("budget %d bytes, no truncation notice: %s", size, out[len(out)-1000:])
+	if strings.Contains(string(out), "LOGBODY") || strings.Contains(string(out), "512 KiB") {
+		t.Fatalf("the list carried log text: %s", out[len(out)-500:])
+	}
+	uid := strconv.Itoa(os.Getuid())
+	calls, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	domain := "print gui/" + uid + "\n"
+	if strings.Count(string(calls), domain) != 1 || strings.Count(string(calls), "print gui/"+uid+"/com.example.job") != 34 {
+		t.Fatalf("launchctl calls:\n%s", calls)
+	}
+	if err := os.WriteFile(record, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	one := detail.ReadItem(context.Background(), p, "com.example.job0")
+	if one.Error != nil || len(one.Items) != 1 || !strings.Contains(one.Items[0].Log, "LOGBODY-中文") {
+		t.Fatalf("opened item %+v", one)
+	}
+	calls, err = os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(calls), domain) != 1 || strings.Count(string(calls), "print gui/"+uid+"/com.example.job") != 1 {
+		t.Fatalf("one item read launchctl more than that job:\n%s", calls)
 	}
 }
 
@@ -157,8 +215,16 @@ func TestUnreadableOptionalFilesDoNotChangeJobHealth(t *testing.T) {
 	if got.Error != nil || len(got.Items) != 1 {
 		t.Fatalf("reading %+v", got.Error)
 	}
-	encoded, _ := json.Marshal(got.Items[0].Fields)
-	if got.Items[0].Status != "ok" || len(got.Items[0].Actions) != 1 || !strings.Contains(string(encoded), "Could not read the task configuration") || !strings.Contains(string(encoded), "Could not read log") {
-		t.Fatalf("optional read changed task or hid errors: %+v %s", got.Items[0], encoded)
+	encoded, _ := json.Marshal(got.Items[0])
+	if got.Items[0].Status != "ok" || len(got.Items[0].Actions) != 1 || got.Items[0].Log != "" || !got.Items[0].LogAvailable || !strings.Contains(string(encoded), "Could not read the task configuration") || strings.Contains(string(encoded), "Could not read log") {
+		t.Fatalf("list read changed the task or opened the log: %+v %s", got.Items[0], encoded)
+	}
+	one := detail.ReadItem(context.Background(), load(t, "jobs"), "com.example.job")
+	if one.Error != nil || len(one.Items) != 1 || one.Items[0].Status != "ok" || len(one.Items[0].Actions) != 1 {
+		t.Fatalf("opened log changed the task: %+v", one)
+	}
+	opened, _ := json.Marshal(one.Items[0].Fields)
+	if !strings.Contains(string(opened), "Could not read log") || !strings.Contains(string(opened), "读不到日志") {
+		t.Fatalf("opened log hid the unreadable file: %s", opened)
 	}
 }

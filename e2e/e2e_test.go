@@ -40,6 +40,10 @@ func TestMain(m *testing.M) {
 		fakePlugin(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "manual-listen" {
+		manualListen(os.Args)
+		return
+	}
 	flag.Parse()
 	if testing.Short() {
 		os.Exit(m.Run())
@@ -598,13 +602,10 @@ func TestTheDiskExampleShowsItsStatusAndRows(t *testing.T) {
 			t.Errorf("at %dpx the disk detail does not name free space and the gigabytes used: %s", width, report)
 		}
 	}
-	// The language switch sits in the sidebar, which a 520px window keeps off-screen.
-	// Wait until the wider layout has placed the button, or the click lands on the old position.
+	// The wide layout places the button at once, and clears inert a turn later.
+	// A click in that turn does not change the language.
 	do(t, ctx, chromedp.EmulateViewport(1280, 800))
-	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(() => { const r = document.querySelector('[data-lang="en"]').getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; })()`)); err != nil {
-		t.Fatalf("English language button: %v", err)
-	}
-	do(t, ctx, chromedp.Click(chromedp.CSS(`[data-lang="en"]`)))
+	clickOnScreen(t, ctx, `[data-lang="en"]`)
 	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === "en" && document.querySelector(".detail-label")?.textContent === "free"`)); err != nil {
 		t.Fatalf("English label: %v; page says %s", err, diskDetailReport(t, ctx))
 	}
@@ -647,6 +648,29 @@ func fakePlugin(args []string) {
 		fmt.Print(jobsCard)
 	case "jobs-detail":
 		fmt.Print(jobsDetail)
+	case "jobs-log":
+		if os.Getenv("HOSTDECK_DETAIL_ITEM") == "" {
+			fmt.Print(`{"presentation":"compact","items":[{"id":"job","name":{"en":"Keyboard","zh-CN":"键盘"},"status":"error","value":{"en":"Not running, exit 78","zh-CN":"未运行，退出码 78"},"logAvailable":true,"actions":[{"id":"start","label":{"en":"Run","zh-CN":"运行"}}]}]}`)
+			break
+		}
+		fmt.Print(`{"presentation":"compact","items":[{"id":"job","name":"Keyboard","status":"error","log":"` + strings.Repeat(`line\n`, 80) + `END","logAvailable":true}]}`)
+	case "jobs-log-action":
+		fmt.Print(`{"message":{"en":"Ran. Not running, exit 78.","zh-CN":"已运行。未在运行，退出码 78。"}}`)
+	case "detail-late":
+		marker := args[1]
+		if _, err := os.Stat(marker); err == nil {
+			os.Remove(marker)
+			time.Sleep(800 * time.Millisecond)
+			os.WriteFile(marker+".done", []byte("1"), 0o644)
+			fmt.Print(`{"items":[{"id":"job","name":"After","actions":[{"id":"run","label":"Run"},{"id":"stop","label":"Stop"}]}]}`)
+			break
+		}
+		fmt.Print(`{"items":[{"id":"job","name":"Before","actions":[{"id":"run","label":"Run"},{"id":"stop","label":"Stop"}]}]}`)
+	case "action-late":
+		if len(args) >= 3 && args[2] == "run" {
+			os.WriteFile(args[1], []byte("x"), 0o644)
+		}
+		fmt.Print(`{"message":{"en":"Done","zh-CN":"完成"}}`)
 	case "detail-json":
 		fmt.Print(args[1])
 	case "detail-long":

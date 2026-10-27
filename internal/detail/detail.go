@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -40,15 +41,16 @@ type Group struct {
 }
 
 type Item struct {
-	Group   string      `json:"group,omitempty"`
-	ID      string      `json:"id"`
-	Name    plugin.Text `json:"name"`
-	Status  string      `json:"status,omitempty"`
-	Value   Value       `json:"value,omitzero"`
-	Label   plugin.Text `json:"label,omitempty"`
-	Fields  []Field     `json:"fields,omitempty"`
-	Log     string      `json:"log,omitempty"`
-	Actions []Action    `json:"actions,omitempty"`
+	Group        string      `json:"group,omitempty"`
+	ID           string      `json:"id"`
+	Name         plugin.Text `json:"name"`
+	Status       string      `json:"status,omitempty"`
+	Value        Value       `json:"value,omitzero"`
+	Label        plugin.Text `json:"label,omitempty"`
+	Fields       []Field     `json:"fields,omitempty"`
+	Log          string      `json:"log,omitempty"`
+	LogAvailable bool        `json:"logAvailable,omitempty"`
+	Actions      []Action    `json:"actions,omitempty"`
 }
 
 type Field struct {
@@ -63,6 +65,20 @@ type Action struct {
 
 // Read runs the plugin's detail command and returns the items it prints.
 func Read(ctx context.Context, p plugin.Plugin) View {
+	return read(ctx, p, "")
+}
+
+// ReadItem runs the same command for one item. The id is data passed in the
+// environment, not a path, and a newline or a very long id is refused before
+// the command starts.
+func ReadItem(ctx context.Context, p plugin.Plugin, item string) View {
+	if item == "" || len(item) > 256 || strings.ContainsAny(item, "\r\n") {
+		return View{Error: &card.Error{Code: "bad_request", Detail: "item"}}
+	}
+	return read(ctx, p, item)
+}
+
+func read(ctx context.Context, p plugin.Plugin, item string) View {
 	ctx, cancel := context.WithTimeout(ctx, ReadTimeout)
 	defer cancel()
 	var printed struct {
@@ -72,7 +88,13 @@ func Read(ctx context.Context, p plugin.Plugin) View {
 		Note         plugin.Text `json:"note"`
 		Error        plugin.Text `json:"error"`
 	}
-	if err := run.JSON(ctx, p.Dir, p.Detail.Exec.Args(), &printed); err != nil {
+	var err error
+	if item == "" {
+		err = run.JSON(ctx, p.Dir, p.Detail.Exec.Args(), &printed)
+	} else {
+		err = run.JSONEnv(ctx, p.Dir, p.Detail.Exec.Args(), detailEnv(item), &printed)
+	}
+	if err != nil {
 		return View{Error: card.CommandError(ctx, err)}
 	}
 	if !printed.Error.IsZero() {
@@ -86,6 +108,19 @@ func Read(ctx context.Context, p plugin.Plugin) View {
 		return View{Error: &card.Error{Code: "command_output", Detail: err.Error()}}
 	}
 	return v
+}
+
+// detailEnv copies the console environment and replaces any HOSTDECK_DETAIL_ITEM.
+// Unix getenv returns the first value, so appending a second copy would be ignored.
+func detailEnv(item string) []string {
+	const key = "HOSTDECK_DETAIL_ITEM="
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, key) {
+			env = append(env, e)
+		}
+	}
+	return append(env, key+item)
 }
 
 func (v View) checkGroups() error {

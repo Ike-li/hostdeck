@@ -145,3 +145,16 @@ func processUptime(pid int) (time.Duration, bool) {
 	}
 	return up, true
 }
+
+func processStarted(pid int) (time.Time, bool) {
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return time.Time{}, false
+	}
+	defer windows.CloseHandle(handle)
+	var created, exit, kernel, user windows.Filetime
+	if err = windows.GetProcessTimes(handle, &created, &exit, &kernel, &user); err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(0, created.Nanoseconds()), true
+}

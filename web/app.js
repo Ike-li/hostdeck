@@ -97,9 +97,11 @@ async function init() {
   $('service-clear').addEventListener('click', onClearClick);
   wireCatalog();
   wireDragAndDrop();
-  $('empty-add').addEventListener('click', (e) => {
-    if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) state.catalogAddRequested = true;
-  });
+  for (const id of ['empty-add', 'overview-add']) {
+    $(id).addEventListener('click', (e) => {
+      if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) state.catalogAddRequested = true;
+    });
+  }
   $('layout-undo').addEventListener('click', undoLayout);
   for (const event of ['pointerenter', 'focusin']) {
     $('layout-note').addEventListener(event, pauseLayoutNote);

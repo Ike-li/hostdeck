@@ -187,11 +187,19 @@ func TestWindowsJobDetailsKeepServiceIdentityAndBoundedMatchingEvents(t *testing
 		t.Skip("Windows service reader")
 	}
 	services := []map[string]any{{"Name": "service-id", "DisplayName": "服务名称", "PathName": `C:\Tools\run.exe --flag`, "State": "Running", "StartMode": "Auto", "StartName": `LocalSystem`, "ProcessId": 4242, "AcceptStop": true}}
-	eventScript := `if ($MaxEvents -ne 200) { throw 'unbounded event query' }
- [pscustomobject]@{TimeCreated='2026-10-26T00:00:00Z';Id=7036;Message='matched event 中文';Properties=@([pscustomobject]@{Value='service-id'})}
- [pscustomobject]@{TimeCreated='2026-10-26T00:00:00Z';Id=7036;Message='unrelated service-id message';Properties=@([pscustomobject]@{Value='another-service'})}`
-	out := windowsJobsServicesAndEventsOutput(t, "detail.ps1", false, services, eventScript)
+	out := windowsJobsServicesAndEventsOutput(t, "detail.ps1", false, services, `throw 'list queried events'`)
 	var view detail.View
+	if err := run.Decode(out, &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Items) != 1 || view.Items[0].Log != "" || !view.Items[0].LogAvailable || strings.Contains(string(out), "list queried events") {
+		t.Fatalf("list read queried events or hid the log offer: %s", out)
+	}
+	t.Setenv("HOSTDECK_DETAIL_ITEM", "service-id")
+	eventScript := `if ($MaxEvents -ne 400) { throw 'unbounded event query' }
+ 1..25 | ForEach-Object { [pscustomobject]@{TimeCreated='2026-10-26T00:00:00Z';Id=7036;Message=("marker-$_ 中文");Properties=@([pscustomobject]@{Value='service-id'})} }
+ [pscustomobject]@{TimeCreated='2026-10-26T00:00:00Z';Id=7036;Message='unrelated service-id message';Properties=@([pscustomobject]@{Value='another-service'})}`
+	out = windowsJobsServicesAndEventsOutput(t, "detail.ps1", false, services, eventScript)
 	if err := run.Decode(out, &view); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +208,7 @@ func TestWindowsJobDetailsKeepServiceIdentityAndBoundedMatchingEvents(t *testing
 	}
 	encoded, _ := json.Marshal(view.Items[0])
 	all := string(encoded)
-	for _, want := range []string{"service-id", "4242", "LocalSystem", "--flag", "matched event 中文"} {
+	for _, want := range []string{"service-id", "4242", "LocalSystem", "--flag", "marker-1", "marker-25"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q: %s", want, all)
 		}

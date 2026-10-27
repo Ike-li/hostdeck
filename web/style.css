@@ -114,7 +114,8 @@
   --cards-per-row: 4;
   --card-min-catalog: 280px;
   --panel-min: 176px;
-  --detail-log-max: 240px;
+  --detail-log-max: 480px;
+  --record-max: 240px;
   --disk-content-w: 960px;
 }
 
@@ -465,6 +466,8 @@ main {
 }
 
 .overview-head h1 { margin: 0; }
+
+#overview h1 { font-size: var(--text-lg); }
 
 .overview-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 
@@ -1262,7 +1265,7 @@ body:has(.page-editor[open]) main { overflow: hidden; }
 .disk-directory-name { color: var(--text); border-color: transparent; padding: var(--space-2) 0; text-align: left; justify-content: flex-start; width: 100%; overflow-wrap: anywhere; }
 .disk-directory td .disk-meta { display: block; }
 .disk-records > summary { cursor: pointer; min-height: var(--control-h); font-weight: var(--weight-semibold); }
-.disk-record-scroll { max-height: var(--detail-log-max); overflow: auto; margin-top: var(--space-3); }
+.disk-record-scroll { max-height: var(--record-max); overflow: auto; margin-top: var(--space-3); }
 .disk-note { max-width: var(--disk-content-w); margin: 0 auto var(--space-3); }
 .disk-load-error { max-width: var(--disk-content-w); margin: 0 auto var(--space-3); }
 @container (max-width: 460px) {
