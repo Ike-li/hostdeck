@@ -337,7 +337,7 @@ func TestADetailRowShowsTheDirectoryAndTheCommand(t *testing.T) {
 		map[int]Proc{
 			4: {
 				PPID: 3, Name: "mitmweb", Uptime: 30 * time.Minute, Started: started,
-				Dir: "/Users/raylee/proxy", Exe: "/usr/local/bin/mitmweb",
+				Dir: "/Users/raylee/proxy", Exe: recordedProgram(),
 				Args: []string{"/usr/local/bin/mitmweb", "--listen", "8081"},
 				Env:  []string{"SECRET_TOKEN=hunter2"}, KnowsDir: true, KnowsArgs: true, KnowsEnv: true,
 			},
@@ -407,7 +407,7 @@ func TestAProcessRestartedFromTheConsoleSaysClosingTheTerminalWillNotStopIt(t *t
 		with(terminal(), map[int]Proc{
 			9: {
 				PPID: 50, Name: "mitmweb", Uptime: time.Minute, Started: time.Unix(10, 0),
-				Dir: "/tmp/proxy", Exe: "/usr/local/bin/mitmweb", Args: []string{"/usr/local/bin/mitmweb"},
+				Dir: "/tmp/proxy", Exe: recordedProgram(), Args: []string{"/usr/local/bin/mitmweb"},
 				Env: []string{}, KnowsDir: true, KnowsArgs: true, KnowsEnv: true,
 			},
 			50: {PPID: 78071, Name: "hostdeck"},

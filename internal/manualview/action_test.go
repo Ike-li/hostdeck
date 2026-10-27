@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -125,7 +126,7 @@ func TestRestartUsesTheRecordedCommandDirectoryAndEnvironment(t *testing.T) {
 	}
 	gotSpawn := op.spawned[0]
 	want := spawnCall{
-		exe: "/usr/local/bin/mitmweb", args: []string{"mitmweb", "--listen", "8081"},
+		exe: recordedProgram(), args: []string{"mitmweb", "--listen", "8081"},
 		dir: "/tmp/proxy", env: []string{},
 	}
 	if !reflect.DeepEqual(gotSpawn, want) {
@@ -173,11 +174,20 @@ func TestRestartDoesNotStopAProcessWhoseEnvironmentWasNotRead(t *testing.T) {
 	}
 }
 
+// filepath.IsAbs follows the OS this test runs on. A Unix path is not
+// absolute to the Windows build, so the fixture uses one that is.
+func recordedProgram() string {
+	if runtime.GOOS == "windows" {
+		return `C:\Program Files\mitmweb\mitmweb.exe`
+	}
+	return "/usr/local/bin/mitmweb"
+}
+
 func handProc(started time.Time) map[int]Proc {
 	return map[int]Proc{
 		4: {
 			PPID: 3, Name: "mitmweb", Uptime: time.Minute, Started: started,
-			Dir: "/tmp/proxy", Exe: "/usr/local/bin/mitmweb",
+			Dir: "/tmp/proxy", Exe: recordedProgram(),
 			Args: []string{"mitmweb", "--listen", "8081"},
 			Env:  []string{}, KnowsDir: true, KnowsArgs: true, KnowsEnv: true,
 		},
