@@ -2,6 +2,7 @@ package card
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -132,12 +133,35 @@ func TestAnExecCardShowsWhatItsCommandPrints(t *testing.T) {
 		ID: "disk", Name: p.Name, Status: "warn", Value: "42",
 		Label: plugin.Text{ByLang: map[string]string{"en": "GB free", "zh-CN": "GB 可用"}},
 		Rows: []Row{
-			{Name: plugin.Text{ByLang: map[string]string{"en": "Used", "zh-CN": "已用"}}, Value: "81%", Status: "warn"},
-			{Name: plugin.Text{All: "Total"}, Value: "512"},
+			{Name: plugin.Text{ByLang: map[string]string{"en": "Used", "zh-CN": "已用"}}, Value: plugin.Text{All: "81%"}, Status: "warn"},
+			{Name: plugin.Text{All: "Total"}, Value: plugin.Text{All: "512"}},
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestACardRowMayNameItsValueInEachLanguage(t *testing.T) {
+	printed := `{"value":"1","rows":[
+		{"name":"Count","value":3},
+		{"name":"Note","value":"plain"},
+		{"name":"Where","value":{"en":"Terminal · up 1 min","zh-CN":"终端 · 已运行 1 分"}}
+	]}`
+	got := Fetch(context.Background(), execCard(t, "print", printed))
+	if got.Error != nil {
+		t.Fatal(got.Error)
+	}
+	if got.Rows[0].Value.All != "3" || got.Rows[1].Value.All != "plain" || got.Rows[2].Value.ByLang["zh-CN"] != "终端 · 已运行 1 分" {
+		t.Fatalf("rows %+v", got.Rows)
+	}
+	raw, err := json.Marshal(got.Rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := string(raw)
+	if !strings.Contains(wire, `"value":"3"`) || !strings.Contains(wire, `"value":"plain"`) || !strings.Contains(wire, `"zh-CN":"终端 · 已运行 1 分"`) || strings.Contains(wire, `"value":3`) {
+		t.Fatalf("wire %s", wire)
 	}
 }
 
@@ -207,8 +231,8 @@ func TestThresholdsColourTheCardAndItsRows(t *testing.T) {
 		t.Errorf("card %q %q, want warn 85", got.Status, got.Value)
 	}
 	want := []Row{
-		{Name: plugin.Text{All: "Database"}, Value: "down", Status: "error"},
-		{Name: plugin.Text{All: "Replicas"}, Value: "2", Status: "ok"},
+		{Name: plugin.Text{All: "Database"}, Value: plugin.Text{All: "down"}, Status: "error"},
+		{Name: plugin.Text{All: "Replicas"}, Value: plugin.Text{All: "2"}, Status: "ok"},
 	}
 	if !reflect.DeepEqual(got.Rows, want) {
 		t.Errorf("rows %+v, want %+v", got.Rows, want)

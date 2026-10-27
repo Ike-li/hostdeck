@@ -141,8 +141,8 @@ func TestAgentPromptsClarifyPageIDsExecKeysOptionalFieldsAndVerification(t *test
 // from an example; docs/PLUGINS.md gives them in full.
 func TestTheAgentPromptSaysWhatMakesAPluginProgramFail(t *testing.T) {
 	for path, subs := range map[string][]string{
-		"i18n/en.json":    {"exactly one JSON value", "unknown field", "exit code other than 0", "30 seconds", `{"error":"Reason"} with exit code 0`, "id is required and unique; name is required and must contain nonblank text"},
-		"i18n/zh-CN.json": {"恰好一个 JSON 值", "不认识的字段", "退出码不为 0", "30 秒", `{"error":"失败原因"}，退出码仍为 0`, "id 必填且各不相同；name 必填且须含非空白文字"},
+		"i18n/en.json":    {"exactly one JSON value", "unknown field", "exit code other than 0", "30 seconds", `{"error":"Reason"} with exit code 0`, "id is required and unique; name is required and must contain nonblank text", "localized text"},
+		"i18n/zh-CN.json": {"恰好一个 JSON 值", "不认识的字段", "退出码不为 0", "30 秒", `{"error":"失败原因"}，退出码仍为 0`, "id 必填且各不相同；name 必填且须含非空白文字", "本地化文字"},
 	} {
 		contract := dict(t, path)["help.agent.contract"]
 		for _, sub := range subs {

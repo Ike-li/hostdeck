@@ -56,6 +56,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/run` | Runs a plugin program in its folder with a deadline, caps its output, and kills everything it started: a process group on macOS, a Job Object on Windows. Decodes the JSON it prints strictly. |
 | `internal/dockerview` | Native Docker monitoring through a bounded CLI runner, local endpoint pinning and selected inspect fields. |
 | `internal/diskhistory` | Native disk-history operations, bounded rooted filesystem traversal, atomic JSON history, process-held writer locks, cancellable scans and opt-in hourly tracking. |
+| `internal/manualview` | TCP listeners started from a shell: a card and a compact detail, with no actions. |
 | `internal/console` | The console's HTTP handler: the page from `web/`, the API, and the checks every request passes. |
 | `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache and notifications addresses itself. |
 | `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |
@@ -179,6 +180,7 @@ Everything rests on hostdeck being reachable from this machine only.
 - The jobs plugin's restart and run actions are that plugin's own programs, as the disk plugin's open action is. They do not give a web page a new way to write a command. An action runs only when the detail, read again at that moment, still offers it, and only for a label or service name made of letters, digits, dots, underscores and hyphens. The whole name must match, including any trailing newline. Windows restart is offered only for a running or paused service that accepts Stop and can be started; disabled services and transition states offer no action. The deadline ends `launchctl` or `sc.exe`. The service itself is not in that process tree, so it is not ended with them.
 
 - Docker's native start/restart uses the existing Origin-checked action endpoint. It can change only the selected local container's runtime state, after offered-action revalidation, endpoint fingerprint checking and fresh full-ID inspection. It accepts only start/restart, never arbitrary CLI arguments, names or shortened IDs. It writes no hostdeck or Docker configuration.
+- The manual-services reading only reads processes visible to the current user and the TCP listen table. It writes nothing and offers no action. It is not the port view: a listener is listed only when a shell is among its ancestors.
 
 Plugins themselves are trusted: they are folders you put there, and they run with your rights.
 

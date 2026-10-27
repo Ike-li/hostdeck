@@ -113,7 +113,7 @@ func TestDiskHistoryRecordsChangesAndRetainsHistoryAfterReload(t *testing.T) {
 		t.Fatalf("second scan %+v", v.Items[0])
 	}
 	c := card.Fetch(context.Background(), p)
-	if c.Error != nil || c.Value != "+4.10 KB" || len(c.Rows) != 1 || !strings.Contains(c.Rows[0].Value, "+4.10 KB") {
+	if c.Error != nil || c.Value != "+4.10 KB" || len(c.Rows) != 1 || !strings.Contains(c.Rows[0].Value.All, "+4.10 KB") {
 		t.Fatalf("change card %+v", c)
 	}
 	diskhistory.Sync(filepath.Dir(p.Dir), nil)

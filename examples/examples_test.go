@@ -70,7 +70,7 @@ func TestTheDiskExampleShowsTheFreeSpaceOfThisMachine(t *testing.T) {
 	if zh := v.Label.ByLang["zh-CN"]; !strings.HasPrefix(zh, "可用") {
 		t.Errorf("Chinese label %q, want it to start with 可用", zh)
 	}
-	if len(v.Rows) == 0 || v.Rows[0].Name.IsZero() || !strings.HasSuffix(v.Rows[0].Value, "%") {
+	if len(v.Rows) == 0 || v.Rows[0].Name.IsZero() || !strings.HasSuffix(v.Rows[0].Value.All, "%") {
 		t.Errorf("rows %+v, want the home folder's disk first, saying how much is used", v.Rows)
 	}
 }
@@ -152,7 +152,7 @@ func TestTheDiskCardHasARowForEachVolume(t *testing.T) {
 	}
 	var got []string
 	for _, r := range v.Rows {
-		got = append(got, r.Name.All+" "+r.Value+" "+r.Status)
+		got = append(got, r.Name.All+" "+r.Value.All+" "+r.Status)
 	}
 	want := []string{
 		"Macintosh HD 195 GB · 55% ok",
@@ -354,7 +354,7 @@ func TestEveryBuiltInExampleDescribesItself(t *testing.T) {
 			t.Errorf("%s: name %+v, description %+v; want a name and a description in en and zh-CN", e.ID, e.Name, e.Description)
 		}
 	}
-	if want := []string{"disk", "disk-history", "docker", "grafana", "jobs", "ollama", "scheduled-tasks", "syncthing"}; !slices.Equal(ids, want) {
+	if want := []string{"disk", "disk-history", "docker", "grafana", "jobs", "manual", "ollama", "scheduled-tasks", "syncthing"}; !slices.Equal(ids, want) {
 		t.Errorf("built in: %v, want %v", ids, want)
 	}
 	fs.WalkDir(Files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -418,7 +418,7 @@ esac
 	if v.Label.ByLang["en"] != "need attention" || v.Label.ByLang["zh-CN"] != "需要处理" {
 		t.Errorf("label %+v", v.Label)
 	}
-	if len(v.Rows) != 1 || v.Rows[0].Name.All != "com.example.failed" || v.Rows[0].Status != "error" || v.Rows[0].Value != "not running · exit 1" {
+	if len(v.Rows) != 1 || v.Rows[0].Name.All != "com.example.failed" || v.Rows[0].Status != "error" || v.Rows[0].Value.All != "not running · exit 1" {
 		t.Errorf("rows %+v, want only the job that exited 1", v.Rows)
 	}
 }
@@ -440,7 +440,7 @@ esac
 	if v.Error != nil {
 		t.Fatalf("error card: %+v", v.Error)
 	}
-	if v.Status != "error" || v.Value != "1" || len(v.Rows) != 1 || v.Rows[0].Value != "spawn scheduled" {
+	if v.Status != "error" || v.Value != "1" || len(v.Rows) != 1 || v.Rows[0].Value.All != "spawn scheduled" {
 		t.Errorf("status %q, value %q, rows %+v; want the stuck job even though its last exit was 0", v.Status, v.Value, v.Rows)
 	}
 }
@@ -463,7 +463,7 @@ esac
 	if v.Error != nil {
 		t.Fatalf("error card: %+v", v.Error)
 	}
-	if v.Status != "error" || v.Value != "1" || len(v.Rows) != 1 || v.Rows[0].Name.All != "com.example.failed" || v.Rows[0].Value != "not running · exit 2" {
+	if v.Status != "error" || v.Value != "1" || len(v.Rows) != 1 || v.Rows[0].Name.All != "com.example.failed" || v.Rows[0].Value.All != "not running · exit 2" {
 		t.Errorf("status %q, value %q, rows %+v; want the user-domain job", v.Status, v.Value, v.Rows)
 	}
 }

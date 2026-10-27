@@ -1,0 +1,13 @@
+schema: 1
+name: {en: Services started by hand, zh-CN: 手动启动的服务}
+icon: 🖐️
+description:
+  en: TCP listeners started from a terminal or a session. They stop when that terminal or session closes. launchd jobs, Windows services and ports an app opens for itself are not listed. There is no restart.
+  zh-CN: 从终端或会话里启动、正在监听 TCP 的进程。关掉那个终端或会话，它们就会停。launchd 任务、Windows 服务和应用自己开的端口不在这里。不能重启。
+card:
+  interval: 1m
+  exec:
+    command: ['@hostdeck', manual, card]
+detail:
+  exec:
+    command: ['@hostdeck', manual, detail]

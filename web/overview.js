@@ -89,7 +89,7 @@ export function cardElement(c, standalone = false) {
     for (const r of c.rows) {
       const li = el('li', 'row');
       if (r.status) li.dataset.status = r.status;
-      li.append(el('span', 'row-dot'), el('span', 'row-name', pick(r.name)), el('span', 'row-value', r.value));
+      li.append(el('span', 'row-dot'), el('span', 'row-name', pick(r.name)), el('span', 'row-value', pick(r.value)));
       rows.append(li);
     }
     card.append(rows);

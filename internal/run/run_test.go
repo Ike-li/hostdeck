@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ func TestMain(m *testing.M) {
 	case "environment":
 		fmt.Fprint(os.Stdout, os.Getenv("HOSTDECK_CHILD_VALUE"))
 	case "fail":
+		fmt.Fprint(os.Stdout, "partial\n")
 		fmt.Fprint(os.Stderr, "first line\nthe actual problem\n")
 		os.Exit(3)
 	case "hang":
@@ -63,10 +65,41 @@ func TestOutputIsWhatTheCommandPrints(t *testing.T) {
 }
 
 func TestAFailingCommandGivesItsExitCodeAndLastErrorLine(t *testing.T) {
-	_, err := Output(context.Background(), t.TempDir(), fake(t, "fail"))
+	out, err := Output(context.Background(), t.TempDir(), fake(t, "fail"))
 	var exit *ExitError
-	if !errors.As(err, &exit) || exit.Code != 3 || exit.LastLine != "the actual problem" {
-		t.Errorf("got %v, want exit code 3 and the last line of stderr", err)
+	if !errors.As(err, &exit) || exit.Code != 3 || exit.LastLine != "the actual problem" || string(out) != "partial\n" {
+		t.Errorf("got %q, %v; want stdout kept, exit code 3 and the last line of stderr", out, err)
+	}
+}
+
+func TestTheManualCardReadsThisMachineWithoutBecomingDiskHistory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads this machine's listening ports")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := Output(ctx, t.TempDir(), []string{"@hostdeck", "manual", "card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "Disk history") || strings.Contains(string(out), "磁盘变化") || strings.Contains(string(out), "unknown native plugin command") {
+		t.Fatalf("fell through to disk history: %s", out)
+	}
+	var got struct {
+		Value string            `json:"value"`
+		Error map[string]string `json:"error"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("output %s: %v", out, err)
+	}
+	if got.Error != nil {
+		if got.Error["en"] == "" || got.Error["zh-CN"] == "" {
+			t.Fatalf("error %+v", got.Error)
+		}
+		return
+	}
+	if _, err := strconv.Atoi(got.Value); err != nil {
+		t.Fatalf("value %q, want a count or a bilingual error", got.Value)
 	}
 }
 

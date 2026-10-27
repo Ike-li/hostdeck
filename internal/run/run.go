@@ -15,6 +15,7 @@ import (
 
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
 	"github.com/Ike-li/hostdeck/internal/dockerview"
+	"github.com/Ike-li/hostdeck/internal/manualview"
 	"github.com/Ike-li/hostdeck/internal/process"
 	"github.com/Ike-li/hostdeck/internal/tasks"
 )
@@ -54,6 +55,15 @@ func Output(ctx context.Context, dir string, command []string) ([]byte, error) {
 		} else if len(command) > 1 && command[1] == "docker" {
 			out, err = dockerview.Execute(ctx, command[1:], func(ctx context.Context, c dockerview.Command) ([]byte, error) {
 				return external(ctx, dir, c.Args, c.Env, c.Limit, c.Combined)
+			})
+		} else if len(command) > 1 && command[1] == "manual" {
+			out, err = manualview.Execute(ctx, command[1:], func(ctx context.Context, argv []string) ([]byte, int, error) {
+				got, runErr := external(ctx, dir, argv, nil, maxOutput, false)
+				var exit *ExitError
+				if errors.As(runErr, &exit) {
+					return got, exit.Code, nil
+				}
+				return got, 0, runErr
 			})
 		} else {
 			out, err = diskhistory.Execute(ctx, dir, command[1:])
@@ -99,7 +109,7 @@ func external(ctx context.Context, dir string, command, env []string, limit int,
 	case err == nil, errors.Is(err, exec.ErrWaitDelay):
 		return stdout.Bytes(), nil
 	case errors.As(err, &exitErr):
-		return nil, &ExitError{Code: exitErr.ExitCode(), LastLine: lastLine(stderr.String())}
+		return stdout.Bytes(), &ExitError{Code: exitErr.ExitCode(), LastLine: lastLine(stderr.String())}
 	}
 	return nil, err
 }

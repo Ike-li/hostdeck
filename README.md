@@ -243,6 +243,10 @@ Job details use expanded compact fields with the runtime state and action beside
 
 The built-in **Docker containers** plugin provides a compact searchable container list, counted state filters and overview counts. It shows selected metadata and bounded recent stdout/stderr logs using the installed Docker CLI. The engine must already be running on this computer; remote endpoints are refused, and installation does not start Docker or a container. Local Unix sockets, named pipes and literal loopback TCP endpoints are supported. Confirmed actions start stopped or newly created containers and restart running ones. Paused and transition states offer no action; all actions recheck the full container ID and current connection.
 
+## Services started by hand
+
+Add **Services started by hand** under Pages & plugins → Add content. It lists TCP listeners started from a terminal or a session, such as a program left running in Terminal, iTerm, Windows Terminal, VS Code or a Claude session. They stop when that terminal or session closes. launchd jobs, Windows services and ports an app opens for itself are not listed, and there is no restart. The card names each process and the ports it holds; the page groups them by where they were started. This is not yet the view of every process listening on a port.
+
 ## Scheduled script tasks
 
 The built-in `scheduled-tasks` plugin installs an empty `tasks.json`; commands are authored locally. Confirmed manual Run and Stop, timeouts, results, the last ten run summaries and bounded logs are available; Cron and fixed-rate scheduling run while hostdeck is running. Pause/Resume controls future starts; Stop selects one run. Schedules never catch up downtime or automatically retry. Configuration is loaded at startup or explicit `plugin reload`. A refused configuration retains the last valid definition and current runs while reporting the problem. Reads start no script; script output need not be JSON. Nonzero exits and timeouts are distinct results. Execution writes only the plugin's own `data/`, and known referenced secrets are redacted from logs. See [TASKS.md](docs/TASKS.md) for fields and rules.

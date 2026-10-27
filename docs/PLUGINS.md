@@ -107,11 +107,13 @@ A card program prints the whole card:
 | `value` | string or number | The card's value |
 | `label` | text | Shown with the value |
 | `rows[].name` | text | A row's name |
-| `rows[].value` | string or number | A row's value |
+| `rows[].value` | string, number or text | A row's value |
 | `rows[].status` | `ok`, `warn`, `error`, or left out | A row's colour |
 | `error` | text | When given, the card shows these words as the plugin's own error, and nothing else |
 
 Any other status is an error.
+
+A row's `value` may be text: one string, or `{en, zh-CN}`. A string or a number still reaches the page as a string, so a plugin that already prints one needs no change. The page shows the console's language.
 
 ### Detail programs
 
@@ -166,6 +168,12 @@ Recent logs combine stdout and stderr, request the last 20 lines without followi
 Docker actions use `['@hostdeck', docker, action] <action-id> <item-id>`. `start` is offered only for created/exited containers, `restart` only for running ones, including unhealthy running containers. Paused, restarting, removing, dead and unknown states offer neither. As for other detail actions, a second click and a successful re-read are required. The native program additionally validates the opaque endpoint-bound item ID and re-inspects that full 64-character container ID before invoking exactly one start/restart command. It never falls back to a name or a shortened ID.
 
 The command honors Docker's configured stop timeout. The console's 30-second deadline still ends the CLI process tree, but an operation already accepted by the Docker engine may continue. A CLI timeout therefore reports an uncertain result and tells the user to refresh, rather than claiming success or cancellation. These operations add no manifest keys or saved files and require a newer binary that supports the Docker action program.
+
+## Services started by hand
+
+The built-in `manual` plugin uses `['@hostdeck', manual, card]` and `['@hostdeck', manual, detail]`. It lists TCP listeners that have a shell among their ancestors: `zsh`, `bash`, `sh`, `fish`, `dash`, `cmd`, `powershell` or `pwsh`, after a leading `-` and a trailing `.exe` are ignored. The listener's own name is not an ancestor, so a shell listening by itself is listed only when a parent is a shell. launchd jobs, Windows services and ports an app opens with no shell in the chain are left out. One row per process shows the process name, its ports and where it was started. It does not show arguments. There is no action, and the reading writes nothing. A process that disappears between the listen-table read and the process read is omitted. This is not the view of every process listening on a port.
+
+On macOS the read uses `/usr/sbin/lsof` and `/bin/ps`. `lsof` exiting 1 with no stdout is an empty list; other output is parsed even when the exit is not 0. Any non-zero `ps` exit is a failure. On Windows the read uses the TCP owner tables and the process snapshot, and does not start PowerShell. A failure is bilingual `{"error": …}` with exit code 0, so the card shows the words instead of a healthy zero.
 
 ## Scheduled script tasks
 

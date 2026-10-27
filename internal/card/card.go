@@ -2,6 +2,7 @@
 package card
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -39,7 +40,7 @@ type View struct {
 
 type Row struct {
 	Name   plugin.Text `json:"name"`
-	Value  string      `json:"value"`
+	Value  plugin.Text `json:"value"`
 	Status string      `json:"status,omitempty"`
 }
 
@@ -90,7 +91,7 @@ func Fetch(ctx context.Context, p plugin.Plugin) View {
 		if err != nil {
 			return View{ID: p.ID, Name: p.Name, Icon: p.Icon, Error: &Error{Code: "threshold", Detail: fmt.Sprintf("%s: %v", r.Value, err)}}
 		}
-		v.Rows = append(v.Rows, Row{Name: r.Name, Value: value, Status: status})
+		v.Rows = append(v.Rows, Row{Name: r.Name, Value: plugin.Text{All: value}, Status: status})
 	}
 	return v
 }
@@ -220,11 +221,30 @@ type printed struct {
 	Value  plugin.Scalar `json:"value"`
 	Label  plugin.Text   `json:"label"`
 	Rows   []struct {
-		Name   plugin.Text   `json:"name"`
-		Value  plugin.Scalar `json:"value"`
-		Status string        `json:"status"`
+		Name   plugin.Text  `json:"name"`
+		Value  printedValue `json:"value"`
+		Status string       `json:"status"`
 	} `json:"rows"`
 	Error plugin.Text `json:"error"`
+}
+
+// printedValue is a row value a card program may print: a string, a number,
+// or localized text. A number is kept as its digits. Strings and numbers
+// leave the API as strings; only localized text leaves as an object.
+type printedValue struct{ plugin.Text }
+
+func (v *printedValue) UnmarshalJSON(data []byte) error {
+	v.Text = plugin.Text{}
+	data = bytes.TrimSpace(data)
+	if len(data) > 0 && data[0] == '{' {
+		return v.Text.UnmarshalJSON(data)
+	}
+	var scalar plugin.Scalar
+	if err := scalar.UnmarshalJSON(data); err != nil {
+		return err
+	}
+	v.All = string(scalar)
+	return nil
 }
 
 var statuses = []string{"", "ok", "warn", "error"}
@@ -266,7 +286,7 @@ func runCard(ctx context.Context, p plugin.Plugin) View {
 	}
 	v.Status, v.Value, v.Label = pr.Status, string(pr.Value), pr.Label
 	for _, r := range pr.Rows {
-		v.Rows = append(v.Rows, Row{Name: r.Name, Value: string(r.Value), Status: r.Status})
+		v.Rows = append(v.Rows, Row{Name: r.Name, Value: r.Value.Text, Status: r.Status})
 	}
 	return v
 }
