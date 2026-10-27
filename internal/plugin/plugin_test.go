@@ -298,6 +298,8 @@ func TestInvalidManifestsAreRejectedNamingTheProblem(t *testing.T) {
 		{"schema: 1\nname: Demo\npage: {}\n", "page.proxy or page.link"},
 		{"schema: 1\nname: Demo\npage: {proxy: 'http://127.0.0.1:3000/', link: 'http://127.0.0.1:3000/'}\n", "page.proxy or page.link"},
 		{"schema: 1\nname: Demo\npage: {proxy: '127.0.0.1:3000'}\n", "page.proxy"},
+		{"schema: 1\nname: Demo\npage: {proxy: 'http://8.8.8.8/'}\n", "local network"},
+		{"schema: 1\nname: Demo\npage: {proxy: 'http://93.184.215.14/'}\n", "local network"},
 		{"schema: 1\nname: Demo\npage: {link: 'ftp://files.example/'}\n", "page.link"},
 		{"schema: 1\nname: Demo\ncard: {value: status}\n", "card.http or card.exec"},
 		{"schema: 1\nname: Demo\ncard: {http: {url: 'http://127.0.0.1:3000/'}, exec: {command: [sh]}, value: v}\n", "card.http or card.exec"},

@@ -56,7 +56,7 @@ How the parts go together:
 ### Values
 
 - **text**: one string for every language, or one per language, as in `{en: Status, zh-CN: 状态}`. The languages are `en` and `zh-CN`; any other key is an error. The page shows the console's language, else English, else the first one given.
-- **URL**: `http` or `https`, with a host. A `page.proxy` host must resolve only to loopback, private or link-local addresses: the proxy checks that each time it connects, because the service is sent the browser's Host, `127.0.0.1:<forwarding port>`, which a site on the internet would not answer to.
+- **URL**: `http` or `https`, with a host. A `page.proxy` host must resolve only to loopback, private or link-local addresses: load refuses any other host, and the proxy checks again each time it connects, because the service is sent the browser's Host, `127.0.0.1:<forwarding port>`, which a site on the internet would not answer to.
 - **duration**: as Go writes durations, such as `30s`, `5m` or `1h30m`, and more than zero.
 - **gjson path**: a path into the JSON response in [gjson syntax](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). The value is the text gjson gives for what the path finds, so a number keeps its digits and an object is its JSON.
 - **threshold**: exactly one of these keys:

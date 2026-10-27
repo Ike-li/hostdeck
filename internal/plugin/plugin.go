@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+
+	"github.com/Ike-li/hostdeck/internal/local"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -442,7 +444,14 @@ func (pg *Page) validate() error {
 	case (pg.Proxy == "") == (pg.Link == ""):
 		return errors.New("page needs exactly one of page.proxy or page.link")
 	case pg.Proxy != "":
-		return checkURL("page.proxy", pg.Proxy)
+		if err := checkURL("page.proxy", pg.Proxy); err != nil {
+			return err
+		}
+		u, _ := url.Parse(pg.Proxy)
+		if err := local.CheckHost(u.Hostname()); err != nil {
+			return fmt.Errorf("page.proxy: %w", err)
+		}
+		return nil
 	default:
 		return checkURL("page.link", pg.Link)
 	}
