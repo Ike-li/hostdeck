@@ -88,7 +88,7 @@
 ### 程序怎么运行
 
 - 运行 `command`；在 Windows 上，写了 `windows` 就运行它。程序在插件的文件夹里、带着 hostdeck 的环境运行。卡片程序和详情程序不带参数；操作程序多带两个，见[操作程序](#操作程序)。展开一条日志时，hostdeck 会再运行一次详情程序，并把环境变量 `HOSTDECK_DETAIL_ITEM` 设为该条目的 id；列表读取不设置这个变量。id 是数据，不是路径。带换行或长过 256 字节的 id 会在程序运行前被拒绝。
-- 每次运行有 30 秒。到时间后，程序和它启动的所有进程都会被结束：macOS 上用进程组，Windows 上用 Job Object。程序退出时留下还在运行的进程也会被结束；程序退出后，hostdeck 最多再等一秒读它的输出。
+- 每次运行有 30 秒。到时间后，程序和它启动的所有进程都会被结束：Unix 上用进程组（`Setpgid`，再对该组 `kill`），子进程若调用 `setsid` 或以其它方式 daemonize 则可离开该组；Windows 上用 Job Object，会保住整棵进程树。程序退出时留下还在运行的进程也会被结束；程序退出后，hostdeck 最多再等一秒读它的输出。
 - stdout 里恰好是一个 JSON 值，开头可以有 UTF-8 的 BOM；后面除了空白不能再有别的。这里没写到的字段算错误，所以拼错的字段会暴露出来。stdout 只保留前 4 MiB，stderr 只保留前 64 KiB。
 - 退出码 0 表示成功。其他退出码都算错误，显示退出码和 stderr 的最后一行，stdout 不读。所以诊断信息写到 stderr；要给人看的失败原因用 `{"error": …}` 打印，退出码仍然是 0。
 - Windows PowerShell 5.1 读没有 BOM 的脚本时按系统代码页解码，所以脚本要存成带 BOM 的 UTF-8，并让它输出 UTF-8：示例里写的是 `[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false`。它第一次启动可能要好几秒，所以卡片有时会显示成还在读取。
