@@ -71,8 +71,9 @@ func Execute(ctx context.Context, dir string, args []string) ([]byte, error) {
 		return json.Marshal(map[string]any{"status": "warn", "value": fmt.Sprint(len(c.Tasks)), "label": stage})
 	}
 	items := []item{}
+	var note any
 	if len(c.Tasks) == 0 {
-		items = append(items, setup(dir))
+		note = emptyNote(dir)
 	}
 	for _, t := range c.Tasks {
 		schedule := ""
@@ -89,7 +90,11 @@ func Execute(ctx context.Context, dir string, args []string) ([]byte, error) {
 		}
 		items = append(items, item{ID: t.ID, Name: t.Name, Group: g, Value: enabled, Fields: []field{{text("Schedule", "计划"), schedule}, {text("Command", "命令"), strings.Join(t.Exec.Command, " ")}, {text("Working directory", "工作目录"), t.Exec.Dir}, {text("Timeout", "超时"), t.Timeout}, {text("Availability", "可用性"), stage}}})
 	}
-	return json.Marshal(map[string]any{"presentation": "compact", "groups": []group{{"ready", text("Enabled", "已启用")}, {"disabled", text("Disabled", "已停用")}}, "items": items})
+	body := map[string]any{"presentation": "compact", "groups": []group{{"ready", text("Enabled", "已启用")}, {"disabled", text("Disabled", "已停用")}}, "items": items}
+	if note != nil {
+		body["note"] = note
+	}
+	return json.Marshal(body)
 }
 
 func (e *entry) viewLocked(op string) ([]byte, error) {
@@ -100,8 +105,9 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 		return json.Marshal(map[string]any{"error": text("Task configuration could not be read: "+fmt.Sprint(e.configErr), "无法读取任务配置："+fmt.Sprint(e.configErr))})
 	}
 	items := []item{}
+	var note any
 	if len(e.cfg.Tasks) == 0 {
-		items = append(items, setup(e.dir))
+		note = emptyNote(e.dir)
 	}
 	runningCount, attention, paused := 0, 0, 0
 	budget := 512 << 10
@@ -270,7 +276,11 @@ func (e *entry) viewLocked(op string) ([]byte, error) {
 		}
 		return json.Marshal(map[string]any{"status": status, "value": fmt.Sprint(len(e.cfg.Tasks)), "label": text(fmt.Sprintf("%d running · %d need attention", runningCount, attention), fmt.Sprintf("%d 个运行中 · %d 个需要处理", runningCount, attention)), "rows": []map[string]any{{"name": text("Paused", "已暂停"), "value": paused}}})
 	}
-	return json.Marshal(map[string]any{"presentation": "compact", "groups": []group{{"running", text("Running", "运行中")}, {"attention", text("Needs attention", "需要处理")}, {"ready", text("Ready", "就绪")}, {"paused", text("Paused", "已暂停")}, {"disabled", text("Disabled", "已停用")}}, "items": items})
+	body := map[string]any{"presentation": "compact", "groups": []group{{"running", text("Running", "运行中")}, {"attention", text("Needs attention", "需要处理")}, {"ready", text("Ready", "就绪")}, {"paused", text("Paused", "已暂停")}, {"disabled", text("Disabled", "已停用")}}, "items": items}
+	if note != nil {
+		body["note"] = note
+	}
+	return json.Marshal(body)
 }
 
 func runStatus(s string) plugin.Text {
@@ -307,13 +317,13 @@ func (e *entry) preview(path string) string {
 	return strings.Join(lines, "\n")
 }
 
-func setup(dir string) item {
-	return item{ID: "_setup", Name: text("Configure your first task", "配置第一个任务"), Group: "ready", Value: text("No tasks configured", "尚未配置任务"), Fields: []field{
-		{text("Configuration file", "配置文件"), filepath.Join(dir, "tasks.json")},
-		{text("Disabled example", "停用的示例"), filepath.Join(dir, "tasks.example.json")},
-		{text("Local setup", "本地设置"), text("Copy the example into tasks.json locally, use an existing script and interpreter, and enable only the tasks you want. Back up an existing configuration before editing.", "在本地将示例复制到 tasks.json，改为已存在的脚本与解释器，仅启用需要的任务。编辑前备份原配置。")},
-		{text("Apply changes", "应用变更"), text("Use plugin reload against this console. A successful reload schedules only future occurrences. Commands are never edited on this page.", "针对当前控制台执行 plugin reload。成功重载后仅调度未来的触发。此页面不编辑命令。")},
-	}}
+func emptyNote(dir string) plugin.Text {
+	config := filepath.Join(dir, "tasks.json")
+	example := filepath.Join(dir, "tasks.example.json")
+	return text(
+		fmt.Sprintf("No tasks yet. Use Scripts to add a script file. To add a task, edit the configuration and reload this console. Configuration file: %s. Disabled example: %s.", config, example),
+		fmt.Sprintf("还没有任务。可以先在「脚本」里写一个脚本。添加任务仍是编辑配置文件后重载。配置文件：%s。停用的示例：%s。", config, example),
+	)
 }
 func runReason(reason string) plugin.Text {
 	words := map[string][2]string{"exit": {"Nonzero exit", "非零退出"}, "start": {"Could not start", "无法启动"}, "environment": {"Missing environment reference", "缺少环境引用"}, "log_io": {"Log storage failed", "日志存储失败"}, "timeout": {"Deadline reached", "超过期限"}, "stop": {"Stopped by request", "已请求停止"}, "task_removed": {"Task removed", "任务已移除"}, "plugin_disabled": {"Plugin disabled", "插件已停用"}, "shutdown": {"Console stopped", "控制台已退出"}, "recovery": {"Uncertain outcome", "结果未确认"}, "cleanup": {"Process cleanup unconfirmed", "进程清理未确认"}, "overlap": {"Previous run still active", "上次运行尚未结束"}, "capacity": {"Four execution slots occupied", "四个执行名额已占用"}}

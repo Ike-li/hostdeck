@@ -295,7 +295,7 @@ func jsonFields(t reflect.Type, prefix string) []string {
 }
 
 func TestThePluginReferenceNamesEveryFieldADetailProgramPrints(t *testing.T) {
-	fields := append(jsonFields(reflect.TypeFor[Item](), "items[]."), "presentation", "groups[].id", "groups[].label")
+	fields := append(jsonFields(reflect.TypeFor[Item](), "items[]."), "presentation", "note", "groups[].id", "groups[].label")
 	for _, doc := range []string{"PLUGINS.md", "PLUGINS.zh-CN.md"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "docs", doc))
 		if err != nil {

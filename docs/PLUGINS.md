@@ -126,6 +126,7 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": â€
 | Field | Type | What it is |
 | --- | --- | --- |
 | `presentation` | `compact` or omitted | Optional compact list layout; omission keeps the existing layout |
+| `note` | text | Optional. Shown in place of the empty list when there are no items and groups are present. Ignored when any item is present |
 | `groups[].id` | string | Optional unique, nonblank group ID; `all` is reserved |
 | `groups[].label` | text | Nonblank group label, in display order |
 | `items[].group` | string | A declared group ID, required on every item when groups are given; groups enable session-only name/ID search and counted filters |
@@ -178,7 +179,7 @@ On macOS the read uses `/usr/sbin/lsof` and `/bin/ps`. `lsof` exiting 1 with no 
 
 ## Scheduled script tasks
 
-The built-in `scheduled-tasks` uses `@hostdeck tasks card|detail|action` and separate `tasks.json`. [TASKS.md](TASKS.md) owns its fields, state, execution and scheduling rules. Installation creates an empty task list; reads start no scripts. Commands are authored locally, and scripts print ordinary logs rather than plugin JSON. Existing plugins and files need no migration; there are no new manifest fields or public CLI commands.
+The built-in `scheduled-tasks` uses `@hostdeck tasks card|detail|action` and separate `tasks.json`. [TASKS.md](TASKS.md) owns its fields, state, execution and scheduling rules. Installation creates an empty task list; reads start no scripts. Commands are authored locally, and scripts print ordinary logs rather than plugin JSON. The console can also save a UTF-8 text file under the installed plugin's `scripts/` directory. That write is not a manifest field and does not run the file. Existing plugins and files need no migration; there are no new manifest fields or public CLI commands.
 
 Startup and explicit reload validate the whole configuration. Refusal retains valid definitions and active runs, with diagnostics feeding the existing reload failure result. A one-second timer checks cron or fixed-rate intervals using embedded timezone data. Anchors, cursors, pause preferences and missed counts are durable; restart/reload/resume never catch up, and clock rewinds never replay. Each task is exclusive, with four total slots, no queue and no automatic retry. Manual and scheduled triggers share the runner; Pause blocks future starts, while Stop binds a run without pausing its future schedule.
 

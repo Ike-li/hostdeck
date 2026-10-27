@@ -3,6 +3,7 @@ import { getJSON, postJSON } from './api.js';
 import { t, pick, explain } from './i18n.js';
 import { twoClicks } from './confirm.js';
 import { cardElement } from './overview.js';
+import { scheduledTaskTools } from './tasks.js';
 import { PENDING_AGAIN, state } from './state.js';
 
 let monitorTimer = null;
@@ -52,6 +53,7 @@ export async function loadDetail(p, view) {
 }
 
 export function renderDetail(p, view) {
+  view.scriptFiles = null;
   view.lang = state.lang;
   view.classList.toggle('detail-compact', view.data.presentation === 'compact');
   const { items, error, groups = [] } = view.data;
@@ -91,7 +93,15 @@ function renderDetailTools(p, view) {
   filters.setAttribute('aria-label', t('detail.filter'));
   tools.append(form, filters);
   view.querySelector('.detail-list').before(tools);
-  const update = () => {
+  let update = () => {};
+  const tasksUI = scheduledTaskTools(p, view, tools, choice, () => update());
+  update = () => {
+    if (tasksUI && choice.segment === 'scripts') {
+      tasksUI.mark('scripts');
+      return tasksUI.paint();
+    }
+    if (tasksUI) tasksUI.mark('tasks');
+    filters.hidden = false;
     const items = view.data.items || [];
     const groups = [{ id: 'all', label: t('detail.all') }, ...view.data.groups];
     if (!groups.some(g => g.id === choice.group)) choice.group = 'all';
@@ -116,7 +126,7 @@ function renderDetailTools(p, view) {
     clear.disabled = !choice.search;
     const list = view.querySelector('.detail-list');
     if (selected.length) list.replaceChildren(...selected.map(it => detailItem(p, it, view)));
-    else list.replaceChildren(el('p', 'empty', t(!items.length ? 'detail.empty' : query ? 'detail.noMatches' : 'detail.groupEmpty')));
+    else list.replaceChildren(el('p', 'empty', !items.length ? (view.data.note ? pick(view.data.note) : t('detail.empty')) : t(query ? 'detail.noMatches' : 'detail.groupEmpty')));
     if (state.current?.id === p.id) announce(t('detail.matches', { count: selected.length, total: items.length }));
   };
   input.addEventListener('input', () => { choice.search = input.value; update(); });

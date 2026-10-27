@@ -30,6 +30,7 @@ type View struct {
 	Items        []Item      `json:"items,omitempty"`
 	Presentation string      `json:"presentation,omitempty"`
 	Groups       []Group     `json:"groups,omitempty"`
+	Note         plugin.Text `json:"note,omitempty"`
 	Error        *card.Error `json:"error,omitempty"`
 }
 
@@ -68,6 +69,7 @@ func Read(ctx context.Context, p plugin.Plugin) View {
 		Items        []Item      `json:"items"`
 		Presentation string      `json:"presentation"`
 		Groups       []Group     `json:"groups"`
+		Note         plugin.Text `json:"note"`
 		Error        plugin.Text `json:"error"`
 	}
 	if err := run.JSON(ctx, p.Dir, p.Detail.Exec.Args(), &printed); err != nil {
@@ -79,7 +81,7 @@ func Read(ctx context.Context, p plugin.Plugin) View {
 	if err := check(printed.Items); err != nil {
 		return View{Error: &card.Error{Code: "command_output", Detail: err.Error()}}
 	}
-	v := View{Items: printed.Items, Presentation: printed.Presentation, Groups: printed.Groups}
+	v := View{Items: printed.Items, Presentation: printed.Presentation, Groups: printed.Groups, Note: printed.Note}
 	if err := v.checkGroups(); err != nil {
 		return View{Error: &card.Error{Code: "command_output", Detail: err.Error()}}
 	}
