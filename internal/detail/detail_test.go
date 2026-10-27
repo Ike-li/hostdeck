@@ -35,6 +35,16 @@ func TestMain(m *testing.M) {
 		os.WriteFile(args[1]+".started", nil, 0o644)
 		time.Sleep(time.Second)
 		os.WriteFile(args[1], []byte(args[3]+" "+args[4]), 0o644)
+	case "act-until":
+		os.WriteFile(args[1]+".started", nil, 0o644)
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(args[1] + ".release"); err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		os.WriteFile(args[1], []byte(args[3]+" "+args[4]), 0o644)
 	case "act":
 		os.WriteFile(args[1], []byte(args[3]+" "+args[4]), 0o644)
 		fmt.Print(args[2])
@@ -322,6 +332,82 @@ func TestConcurrentActionsWaitAndReReadBeforeRunning(t *testing.T) {
 	}
 	if secondErr == nil || secondErr.Code != "not_offered" {
 		t.Errorf("second action error = %+v, want not_offered after first action changed state", secondErr)
+	}
+}
+
+func TestAnActionOnOnePluginDoesNotWaitForAnotherPlugin(t *testing.T) {
+	first, firstRan := fakePlugin(t, items, "")
+	first.ID = "first"
+	first.Actions.Exec.Command[1] = "act-until"
+
+	second, secondRan := fakePlugin(t, items, "")
+	second.ID = "second"
+
+	firstDone := make(chan *string, 1)
+	go func() {
+		_, err := Act(context.Background(), first, "svc", "restart")
+		if err != nil {
+			s := err.Code
+			firstDone <- &s
+			return
+		}
+		firstDone <- nil
+	}()
+	t.Cleanup(func() {
+		_ = os.WriteFile(firstRan+".release", nil, 0o644)
+		select {
+		case <-firstDone:
+		case <-time.After(10 * time.Second):
+		}
+	})
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(firstRan + ".started"); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the first plugin's action did not start within 10s")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	secondDone := make(chan *string, 1)
+	go func() {
+		_, err := Act(context.Background(), second, "svc", "restart")
+		if err != nil {
+			s := err.Code
+			secondDone <- &s
+			return
+		}
+		secondDone <- nil
+	}()
+	select {
+	case got := <-secondDone:
+		if got != nil {
+			t.Fatalf("second plugin action error = %v, want nil", *got)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the second plugin's action waited for the first plugin's action")
+	}
+	if got, err := os.ReadFile(secondRan); err != nil || string(got) != "restart svc" {
+		t.Fatalf("second plugin action wrote %q (%v), want restart svc", got, err)
+	}
+	select {
+	case <-firstDone:
+		t.Fatal("the first plugin's action finished before it was released")
+	default:
+	}
+
+	if err := os.WriteFile(firstRan+".release", nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-firstDone:
+		if got != nil {
+			t.Fatalf("first plugin action error = %v, want nil", *got)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first plugin's action did not finish within 10s")
 	}
 }
 

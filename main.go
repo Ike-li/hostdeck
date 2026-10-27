@@ -172,7 +172,13 @@ type forwarder struct {
 	port   int
 	target string // the manifest's page.proxy
 	url    string // where the browser finds it
+	ln     net.Listener
 	server *http.Server
+}
+
+func (r *forwarder) close() {
+	_ = r.server.Close()
+	_ = r.ln.Close()
 }
 
 func (f *forwarders) reload(pluginDir string) (console.Loaded, error) {
@@ -237,7 +243,7 @@ func (f *forwarders) sync(plugins []plugin.Plugin) (map[string]console.Served, e
 	stopped := map[string]*forwarder{}
 	for id, r := range f.running {
 		if want[id] != "" && want[id] != r.target {
-			r.server.Close()
+			r.close()
 			delete(f.running, id)
 			stopped[id] = r
 			log.Printf("%s: %s stopped", id, r.url)
@@ -257,7 +263,7 @@ func (f *forwarders) sync(plugins []plugin.Plugin) (map[string]console.Served, e
 	}
 	for id, r := range f.running {
 		if want[id] == "" {
-			r.server.Close()
+			r.close()
 			delete(f.running, id)
 			log.Printf("%s: %s stopped", id, r.url)
 		}
@@ -293,6 +299,7 @@ func (f *forwarders) start(id string, port int, rawTarget string, ln net.Listene
 		port:   port,
 		target: rawTarget,
 		url:    fmt.Sprintf("http://127.0.0.1:%d%s", port, target.RequestURI()),
+		ln:     ln,
 		server: &http.Server{Handler: proxy.New(target, consoleOrigin, redeem)},
 	}
 	f.running[id] = r
@@ -307,7 +314,7 @@ func (f *forwarders) start(id string, port int, rawTarget string, ln net.Listene
 
 func (f *forwarders) close() {
 	for _, r := range f.running {
-		r.server.Close()
+		r.close()
 	}
 }
 

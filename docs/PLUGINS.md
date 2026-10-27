@@ -144,7 +144,7 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": �
 
 ### Action programs
 
-An action's button needs a second click. hostdeck then runs the detail program again, without `HOSTDECK_DETAIL_ITEM`, and runs the action only if that item still offers it; otherwise the page says so and reads the list again. One action runs at a time, across every plugin. The action program runs as `<command…> <action id> <item id>`, and runs to its end or its deadline even if the page that asked for it is closed, so that a restart is never stopped halfway. The two IDs are ones your detail program printed a moment before; treat them as data, never as code.
+An action's button needs a second click. hostdeck then runs the detail program again, without `HOSTDECK_DETAIL_ITEM`, and runs the action only if that item still offers it; otherwise the page says so and reads the list again. One action runs at a time per plugin. The action program runs as `<command…> <action id> <item id>`, and runs to its end or its deadline even if the page that asked for it is closed, so that a restart is never stopped halfway. The two IDs are ones your detail program printed a moment before; treat them as data, never as code.
 
 The program may print nothing, `{"message": …}`, which the page shows as the result, or `{"error": …}`; both are text. With nothing printed, the page says the action is done. The page reads the detail again immediately and shows that message.
 

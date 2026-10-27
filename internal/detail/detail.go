@@ -16,7 +16,25 @@ import (
 	"github.com/Ike-li/hostdeck/internal/run"
 )
 
-var actMu sync.Mutex
+var (
+	actLocksMu sync.Mutex
+	actLocks   = make(map[string]*sync.Mutex)
+)
+
+func actLock(p plugin.Plugin) *sync.Mutex {
+	key := p.ID
+	if key == "" {
+		key = p.Dir
+	}
+	actLocksMu.Lock()
+	defer actLocksMu.Unlock()
+	mu := actLocks[key]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		actLocks[key] = mu
+	}
+	return mu
+}
 
 // ReadTimeout bounds the detail command. Windows PowerShell can take many
 // seconds to start for the first time.
@@ -187,8 +205,9 @@ func (v View) offers(item, action string) bool {
 // action on that item. The page asking for it may be old. What the action
 // prints, if anything, is a message or an error of its own.
 func Act(ctx context.Context, p plugin.Plugin, item, action string) (plugin.Text, *card.Error) {
-	actMu.Lock()
-	defer actMu.Unlock()
+	mu := actLock(p)
+	mu.Lock()
+	defer mu.Unlock()
 	v := Read(ctx, p)
 	switch {
 	case v.Error != nil:
