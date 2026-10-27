@@ -16,6 +16,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/catalog"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 func TestScheduledTaskConfigurationIsReadableInBothLanguagesAndNarrowWindows(t *testing.T) {
@@ -249,6 +250,16 @@ func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *tes
 			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="scripts"]`)))
 			poll(`!!document.querySelector('.detail-item[data-script="hello.py"]')`)
 			do(t, ctx, chromedp.Click(chromedp.CSS(`.script-edit`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
+			// When editing, the name field is disabled and focus starts on the textarea.
+			// Tab from Save must wrap to the textarea, not skip it for Cancel.
+			do(t, ctx, chromedp.Focus(chromedp.CSS(`#page-editor button[type="submit"]`)), chromedp.KeyEvent(kb.Tab))
+			if ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.activeElement.matches('#page-editor textarea[name="content"]')`)); err != nil || !ok {
+				t.Fatalf("Tab from Save should wrap to the script textarea: %v %v", ok, err)
+			}
+			do(t, ctx, chromedp.KeyEvent(kb.Tab, chromedp.KeyModifiers(chromedp.ModifierShift)))
+			if ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.activeElement.matches('#page-editor button[type="submit"]')`)); err != nil || !ok {
+				t.Fatalf("Shift+Tab from the script textarea should wrap to Save: %v %v", ok, err)
+			}
 			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.content.value = "print(2)\n"; form.requestSubmit(); })()`))
 			poll(`!document.querySelector('#page-editor').open`)
 			scriptPath := filepath.Join(dir, "plugins", "scheduled-tasks", "scripts", "hello.py")

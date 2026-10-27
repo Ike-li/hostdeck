@@ -480,7 +480,7 @@ There is one dialog element, a native `<dialog>` opened with `showModal()`. It h
 | Foot | Aligned right, 8px between buttons, padding 16px 24px, a 1px `--line` above; "Cancel" (secondary) then "Save" (primary) |
 | Appearing | Fades in over 200ms |
 
-**Behaviour**: focus stays inside; Escape and Cancel close it, except Escape while saving; closing returns focus to the button that opened it. A refused save keeps the draft and shows the error inside; a successful save closes it and announces the result on the row that changed. `main` does not scroll while it is open. The task form, the script form and the notifications dialog keep that foot inside a 640px-tall window at 1280 and 520px wide; the task form scrolls its body there. `TestAShortWindowKeepsDialogActionsInView`.
+**Behaviour**: focus stays inside — Tab and Shift+Tab cycle through enabled `input`, `select`, `textarea` and `button` controls; Escape and Cancel close it, except Escape while saving; closing returns focus to the button that opened it. A refused save keeps the draft and shows the error inside; a successful save closes it and announces the result on the row that changed. `main` does not scroll while it is open. The task form, the script form and the notifications dialog keep that foot inside a 640px-tall window at 1280 and 520px wide; the task form scrolls its body there. `TestAShortWindowKeepsDialogActionsInView`.
 
 **Use**:
 

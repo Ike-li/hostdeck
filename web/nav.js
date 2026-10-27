@@ -23,7 +23,7 @@ export function onInterfaceKey(e) {
   const editor = $('page-editor');
   if (editor.open) {
     if (e.key === 'Tab') {
-      const controls = [...editor.querySelectorAll('input, select, button')].filter((node) => !node.disabled && !node.closest('fieldset:disabled'));
+      const controls = [...editor.querySelectorAll('input, select, textarea, button')].filter((node) => !node.disabled && !node.closest('fieldset:disabled'));
       const first = controls[0], last = controls.at(-1);
       if (!first) e.preventDefault();
       else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
