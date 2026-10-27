@@ -457,3 +457,48 @@ func TestAShortWindowKeepsDialogActionsInView(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskViewFollowsNativeCommandInAnyFolderAndLeavesGenericDetailsAlone(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "plugins")
+	if err := os.Mkdir(pluginDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	src, err := catalog.Add(examples.Files, pluginDir, "scheduled-tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, filepath.Join(pluginDir, "nightly-jobs")); err != nil {
+		t.Fatal(err)
+	}
+	writePlugin(t, dir, "scheduled-tasks", fmt.Sprintf(fakeDetailPlugin, exe))
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	poll := func(js string) {
+		t.Helper()
+		if _, err := chromedp.Run(ctx, chromedp.Poll[bool](js, chromedp.WithPollingTimeout(10*time.Second))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	do(t, ctx, chromedp.Navigate(url+"#/scheduled-tasks"), chromedp.WaitVisible(chromedp.CSS(`.detail-view:not([hidden]) .detail-item`)))
+	poll(`document.querySelector('.detail-view:not([hidden]) .detail-name')?.textContent==='Service' && !document.querySelector('.detail-view:not([hidden]) .task-switch') && !document.querySelector('.detail-view:not([hidden]) .task-edit') && !document.querySelector('.detail-view:not([hidden]) .task-delete')`)
+
+	do(t, ctx, chromedp.Navigate(url+"#/nightly-jobs"), chromedp.WaitVisible(chromedp.CSS(`.detail-view:not([hidden]) .task-switch`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-view:not([hidden]) .task-switch [data-segment="scripts"]`)), chromedp.WaitVisible(chromedp.CSS(`.detail-view:not([hidden]) .task-script-add`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-view:not([hidden]) .task-script-add`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
+	do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.name.value = 'job.py'; form.elements.content.value = "print('ok')\\n"; form.requestSubmit(); })()`))
+	poll(`!!document.querySelector('.detail-view:not([hidden]) .detail-item[data-script="job.py"]') && !document.querySelector('#page-editor').open`)
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-view:not([hidden]) .detail-item[data-script="job.py"] .script-delete`)), chromedp.Click(chromedp.CSS(`.detail-view:not([hidden]) .detail-item[data-script="job.py"] .script-delete`)))
+	poll(`!document.querySelector('.detail-view:not([hidden]) .detail-item[data-script="job.py"]') && !!document.querySelector('.detail-view:not([hidden]) .detail-list [data-empty="scripts"]')`)
+
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-view:not([hidden]) .task-switch [data-segment="tasks"]`)), chromedp.WaitVisible(chromedp.CSS(`.detail-view:not([hidden]) .task-add`)))
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-view:not([hidden]) .task-add`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] input`)))
+	do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.name.value = 'Custom folder task'; form.querySelector('[data-schedule="every"]').click(); form.elements.every.value = '24h'; form.elements.command.value = 'echo hi'; form.requestSubmit(); })()`))
+	poll(`document.querySelector('.detail-view:not([hidden]) .detail-item[data-id="custom-folder-task"] .detail-name')?.textContent==='Custom folder task' && !!document.querySelector('.detail-view:not([hidden]) .detail-item[data-id="custom-folder-task"] .task-edit') && !!document.querySelector('.detail-view:not([hidden]) .detail-item[data-id="custom-folder-task"] .task-delete')`)
+	do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-view:not([hidden]) .detail-item[data-id="custom-folder-task"] .task-delete`)), chromedp.Click(chromedp.CSS(`.detail-view:not([hidden]) .detail-item[data-id="custom-folder-task"] .task-delete`)))
+	poll(`document.querySelectorAll('.detail-view:not([hidden]) .detail-item').length===0 && document.querySelector('.detail-view:not([hidden])').textContent.includes('tasks.example.json')`)
+}

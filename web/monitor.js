@@ -3,7 +3,7 @@ import { getJSON, postJSON } from './api.js';
 import { t, pick, explain } from './i18n.js';
 import { twoClicks } from './confirm.js';
 import { cardElement } from './overview.js';
-import { scheduledTaskTools, taskRowControls } from './tasks.js';
+import { scheduledTaskTools } from './tasks.js';
 import { PENDING_AGAIN, state } from './state.js';
 
 let monitorTimer = null;
@@ -143,7 +143,11 @@ function renderDetailTools(p, view) {
     }
     clear.disabled = !choice.search;
     const list = view.querySelector('.detail-list');
-    if (selected.length) list.replaceChildren(...selected.map(it => detailItem(p, it, view)));
+    if (selected.length) list.replaceChildren(...selected.map((it) => {
+      const row = detailItem(p, it, view);
+      tasksUI?.decorate(row, it);
+      return row;
+    }));
     else list.replaceChildren(el('p', 'empty', !items.length ? (view.data.note ? pick(view.data.note) : t('detail.empty')) : t(query ? 'detail.noMatches' : 'detail.groupEmpty')));
     if (state.current?.id === p.id) announce(t('detail.matches', { count: selected.length, total: items.length }));
   };
@@ -173,19 +177,10 @@ function detailItem(p, item, view) {
     section.append(fields);
   }
   if (item.log || item.logAvailable) section.append(detailLog(p, item, view));
-  let actions = null;
   if (item.actions?.length) {
-    actions = el('div', 'detail-actions');
+    const actions = el('div', 'detail-actions');
     actions.append(...item.actions.map((action) => actionButton(p, item, action, view)));
     (compact ? head : section).append(actions);
-  }
-  if (p.id === 'scheduled-tasks' && item.id && !String(item.id).startsWith('_')) {
-    section.dataset.id = item.id;
-    if (!actions) {
-      actions = el('div', 'detail-actions');
-      (compact ? head : section).append(actions);
-    }
-    actions.append(...taskRowControls(item, view, () => loadDetail(p, view)));
   }
   return section;
 }

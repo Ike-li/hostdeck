@@ -12,10 +12,10 @@ async function readJSON(url) {
   return parsed;
 }
 
-// scheduledTaskTools adds the Tasks | Scripts switch on the scheduled-tasks
-// detail. Other detail pages are unchanged. Script rows are not task items.
+// scheduledTaskTools adds the Tasks | Scripts switch on a tasks detail view.
+// Other detail pages are unchanged. Script rows are not task items.
 export function scheduledTaskTools(p, view, tools, choice, onChange, reload) {
-  if (p.id !== 'scheduled-tasks') return null;
+  if (p.view !== 'tasks') return null;
   choice.segment = choice.segment || 'tasks';
   const bar = el('div', 'lang task-switch');
   bar.setAttribute('role', 'group');
@@ -32,10 +32,10 @@ export function scheduledTaskTools(p, view, tools, choice, onChange, reload) {
   }
   const addTask = el('button', 'btn primary task-add', t('tasks.addTask'));
   addTask.type = 'button';
-  addTask.addEventListener('click', () => openTaskEditor(view, null, addTask, reload));
+  addTask.addEventListener('click', () => openTaskEditor(p, view, null, addTask, reload));
   const add = el('button', 'btn primary task-script-add', t('tasks.addScript'));
   add.type = 'button';
-  add.addEventListener('click', () => openScriptEditor(view, null, add, onChange));
+  add.addEventListener('click', () => openScriptEditor(p, view, null, add, onChange));
   tools.prepend(bar, addTask, add);
   return {
     mark(segment) {
@@ -43,20 +43,31 @@ export function scheduledTaskTools(p, view, tools, choice, onChange, reload) {
       addTask.hidden = segment !== 'tasks';
       add.hidden = segment !== 'scripts';
     },
-    paint() { return paintScripts(view, choice, onChange, reload); },
+    decorate(row, item) {
+      if (!item.id || item.id === '_diagnostic') return;
+      row.dataset.id = item.id;
+      let actions = row.querySelector('.detail-actions');
+      if (!actions) {
+        actions = el('div', 'detail-actions');
+        (view.data.presentation === 'compact' ? row.querySelector('.detail-head') : row).append(actions);
+      }
+      actions.append(...taskRowControls(p, item, view, reload));
+    },
+    paint() { return paintScripts(p, view, choice, onChange, reload); },
   };
 }
 
 // taskRowControls adds Edit and Delete beside a task's existing actions.
-export function taskRowControls(item, view, reload) {
+function taskRowControls(p, item, view, reload) {
+  const base = `/api/plugins/${encodeURIComponent(p.id)}/tasks/${encodeURIComponent(item.id)}`;
   const name = pick(item.name);
   const edit = el('button', 'btn task-edit', t('tasks.editScript'));
   edit.type = 'button';
   edit.addEventListener('click', async () => {
     edit.disabled = true;
     try {
-      const body = await readJSON(`/api/plugins/scheduled-tasks/tasks/${encodeURIComponent(item.id)}`);
-      openTaskEditor(view, body, edit, reload);
+      const body = await readJSON(base);
+      openTaskEditor(p, view, body, edit, reload);
     } catch (err) {
       announce(err.code ? explain(err) : err.message);
     } finally {
@@ -68,7 +79,7 @@ export function taskRowControls(item, view, reload) {
   twoClicks(remove, t('tasks.confirmDelete', { name }), async () => {
     remove.disabled = true;
     try {
-      await postJSON(`/api/plugins/scheduled-tasks/tasks/${encodeURIComponent(item.id)}/delete`);
+      await postJSON(`${base}/delete`);
       announce(t('tasks.taskDeleted', { name }));
       await reload();
     } catch (err) {
@@ -79,10 +90,10 @@ export function taskRowControls(item, view, reload) {
   return [edit, remove];
 }
 
-async function paintScripts(view, choice, onChange, reload, quiet) {
+async function paintScripts(p, view, choice, onChange, reload, quiet) {
   if (choice.segment !== 'scripts') return;
   if (view.querySelector('.detail-list .armed')) {
-    watchScripts(view, () => paintScripts(view, choice, onChange, reload, true));
+    watchScripts(view, () => paintScripts(p, view, choice, onChange, reload, true));
     return;
   }
   const token = (view.scriptToken || 0) + 1;
@@ -92,7 +103,7 @@ async function paintScripts(view, choice, onChange, reload, quiet) {
   if (!view.scriptFiles) {
     list.replaceChildren(el('p', 'empty', t('loading')));
     try {
-      const body = await readJSON('/api/plugins/scheduled-tasks/scripts');
+      const body = await readJSON(`/api/plugins/${encodeURIComponent(p.id)}/scripts`);
       if (view.scriptToken !== token || choice.segment !== 'scripts') return;
       view.scriptFiles = body.files || [];
     } catch (err) {
@@ -105,7 +116,7 @@ async function paintScripts(view, choice, onChange, reload, quiet) {
   }
   if (view.scriptToken !== token || choice.segment !== 'scripts') return;
   if (view.querySelector('.detail-list .armed')) {
-    watchScripts(view, () => paintScripts(view, choice, onChange, reload, true));
+    watchScripts(view, () => paintScripts(p, view, choice, onChange, reload, true));
     return;
   }
   const query = choice.search.trim().toLocaleLowerCase();
@@ -117,9 +128,9 @@ async function paintScripts(view, choice, onChange, reload, quiet) {
     list.replaceChildren(empty);
   }
   else if (!matched.length) list.replaceChildren(el('p', 'empty', t('detail.noMatches')));
-  else list.replaceChildren(...matched.map((file) => scriptRow(view, file, onChange, reload)));
-  if (!quiet && state.current?.id === 'scheduled-tasks') announce(t('detail.matches', { count: matched.length, total: view.scriptFiles.length }));
-  watchScripts(view, () => paintScripts(view, choice, onChange, reload, true));
+  else list.replaceChildren(...matched.map((file) => scriptRow(p, view, file, onChange, reload)));
+  if (!quiet && state.current?.id === p.id) announce(t('detail.matches', { count: matched.length, total: view.scriptFiles.length }));
+  watchScripts(view, () => paintScripts(p, view, choice, onChange, reload, true));
 }
 
 // watchScripts refreshes a running script without replacing a button that is
@@ -139,7 +150,8 @@ function watchScripts(view, refresh) {
   }, delay);
 }
 
-function scriptRow(view, file, onChange, reload) {
+function scriptRow(p, view, file, onChange, reload) {
+  const base = `/api/plugins/${encodeURIComponent(p.id)}/scripts/${encodeURIComponent(file.name)}`;
   const section = el('section', 'detail-item');
   section.dataset.script = file.name;
   const head = el('header', 'detail-head');
@@ -150,8 +162,8 @@ function scriptRow(view, file, onChange, reload) {
   edit.addEventListener('click', async () => {
     edit.disabled = true;
     try {
-      const body = await readJSON(`/api/plugins/scheduled-tasks/scripts/${encodeURIComponent(file.name)}`);
-      openScriptEditor(view, body, edit, onChange);
+      const body = await readJSON(base);
+      openScriptEditor(p, view, body, edit, onChange);
     } catch (err) {
       announce(err.code ? explain(err) : err.message);
     } finally {
@@ -160,13 +172,13 @@ function scriptRow(view, file, onChange, reload) {
   });
   const schedule = el('button', 'btn script-schedule', t('tasks.scheduleScript'));
   schedule.type = 'button';
-  schedule.addEventListener('click', () => openTaskEditor(view, { name: file.name, command: file.command || '' }, schedule, reload));
+  schedule.addEventListener('click', () => openTaskEditor(p, view, { name: file.name, command: file.command || '' }, schedule, reload));
   const remove = el('button', 'btn script-delete', t('tasks.deleteScript'));
   remove.type = 'button';
   twoClicks(remove, t('tasks.confirmDelete', { name: file.name }), async () => {
     remove.disabled = true;
     try {
-      await postJSON(`/api/plugins/scheduled-tasks/scripts/${encodeURIComponent(file.name)}/delete`);
+      await postJSON(`${base}/delete`);
       view.scriptFiles = null;
       announce(t('tasks.scriptDeleted', { name: file.name }));
       onChange();
@@ -182,7 +194,7 @@ function scriptRow(view, file, onChange, reload) {
     twoClicks(run, t('tasks.confirmRun', { name: file.name }), async () => {
       run.disabled = true;
       try {
-        await postJSON(`/api/plugins/scheduled-tasks/scripts/${encodeURIComponent(file.name)}/run`);
+        await postJSON(`${base}/run`);
         view.scriptFiles = null;
         announce(t('tasks.scriptStarted', { name: file.name }));
         onChange();
@@ -220,7 +232,8 @@ function labeled(name, label, value, multiline) {
 }
 
 // openScriptEditor uses the page's one dialog. A script saved here is not a task.
-function openScriptEditor(view, file, opener, onChange) {
+function openScriptEditor(p, view, file, opener, onChange) {
+  const base = `/api/plugins/${encodeURIComponent(p.id)}/scripts`;
   const editor = $('page-editor');
   const creating = !file;
   const head = el('header', 'editor-head');
@@ -267,8 +280,8 @@ function openScriptEditor(view, file, opener, onChange) {
     save.disabled = cancel.disabled = fields.disabled = true;
     feedback(note, t('page.saving'));
     try {
-      if (creating) await postJSON('/api/plugins/scheduled-tasks/scripts', { name: filename, content: body.querySelector('textarea').value });
-      else await postJSON(`/api/plugins/scheduled-tasks/scripts/${encodeURIComponent(file.name)}`, { content: body.querySelector('textarea').value });
+      if (creating) await postJSON(base, { name: filename, content: body.querySelector('textarea').value });
+      else await postJSON(`${base}/${encodeURIComponent(file.name)}`, { content: body.querySelector('textarea').value });
       saved = true;
       view.scriptFiles = null;
       const kept = creating ? filename : file.name;
@@ -297,7 +310,8 @@ const cronFields = [['minute', 'tasks.minute'], ['hour', 'tasks.hour'], ['day', 
 
 // openTaskEditor writes tasks.json through the same dialog as a script.
 // Saving refreshes the schedule; it does not run the command.
-function openTaskEditor(view, task, opener, reload) {
+function openTaskEditor(p, view, task, opener, reload) {
+  const base = `/api/plugins/${encodeURIComponent(p.id)}/tasks`;
   const editor = $('page-editor');
   const creating = !task?.id;
   const head = el('header', 'editor-head');
@@ -389,8 +403,8 @@ function openTaskEditor(view, task, opener, reload) {
     feedback(note, t('page.saving'));
     try {
       const body = creating
-        ? await postJSON('/api/plugins/scheduled-tasks/tasks', payload)
-        : await postJSON(`/api/plugins/scheduled-tasks/tasks/${encodeURIComponent(task.id)}`, payload);
+        ? await postJSON(base, payload)
+        : await postJSON(`${base}/${encodeURIComponent(task.id)}`, payload);
       saved = true;
       const kept = creating ? body.id : task.id;
       const keptName = payload.name;

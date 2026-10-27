@@ -120,17 +120,17 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/trash/{folder}/restore", s.serveTrashEntry(catalog.Restore))
 	mux.HandleFunc("POST /api/trash/{folder}/purge", s.serveTrashEntry(catalog.Purge))
 	mux.HandleFunc("POST /api/plugins/{id}/page", s.serveEditPage)
-	mux.HandleFunc("GET /api/plugins/scheduled-tasks/scripts", s.serveScriptList)
-	mux.HandleFunc("POST /api/plugins/scheduled-tasks/scripts", s.serveScriptCreate)
-	mux.HandleFunc("GET /api/plugins/scheduled-tasks/scripts/{name}", s.serveScriptRead)
-	mux.HandleFunc("POST /api/plugins/scheduled-tasks/scripts/{name}", s.serveScriptUpdate)
-	mux.HandleFunc("POST /api/plugins/scheduled-tasks/scripts/{name}/delete", s.serveScriptDelete)
-	mux.HandleFunc("POST /api/plugins/scheduled-tasks/scripts/{name}/run", s.serveScriptRun)
-	mux.HandleFunc("GET /api/plugins/scheduled-tasks/tasks", s.serveTaskList)
-	mux.HandleFunc("POST /api/plugins/scheduled-tasks/tasks", s.serveTaskCreate)
-	mux.HandleFunc("GET /api/plugins/scheduled-tasks/tasks/{id}", s.serveTaskRead)
-	mux.HandleFunc("POST /api/plugins/scheduled-tasks/tasks/{id}", s.serveTaskUpdate)
-	mux.HandleFunc("POST /api/plugins/scheduled-tasks/tasks/{id}/delete", s.serveTaskDelete)
+	mux.HandleFunc("GET /api/plugins/{id}/scripts", s.serveScriptList)
+	mux.HandleFunc("POST /api/plugins/{id}/scripts", s.serveScriptCreate)
+	mux.HandleFunc("GET /api/plugins/{id}/scripts/{name}", s.serveScriptRead)
+	mux.HandleFunc("POST /api/plugins/{id}/scripts/{name}", s.serveScriptUpdate)
+	mux.HandleFunc("POST /api/plugins/{id}/scripts/{name}/delete", s.serveScriptDelete)
+	mux.HandleFunc("POST /api/plugins/{id}/scripts/{name}/run", s.serveScriptRun)
+	mux.HandleFunc("GET /api/plugins/{id}/tasks", s.serveTaskList)
+	mux.HandleFunc("POST /api/plugins/{id}/tasks", s.serveTaskCreate)
+	mux.HandleFunc("GET /api/plugins/{id}/tasks/{task}", s.serveTaskRead)
+	mux.HandleFunc("POST /api/plugins/{id}/tasks/{task}", s.serveTaskUpdate)
+	mux.HandleFunc("POST /api/plugins/{id}/tasks/{task}/delete", s.serveTaskDelete)
 	mux.HandleFunc("GET /api/layout", s.serveLayoutGet)
 	mux.HandleFunc("POST /api/layout", s.serveLayout)
 	return local.Only(sameOriginAPI(noFraming(mux)))
@@ -158,6 +158,8 @@ func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
 			e.Type = "detail"
 			if diskhistory.IsNative(p) {
 				e.View = "disk-history"
+			} else if tasks.IsNative(p) {
+				e.View = "tasks"
 			}
 			entries = append(entries, e)
 			continue

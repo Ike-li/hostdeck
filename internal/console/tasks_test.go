@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,5 +91,84 @@ func TestTheScheduledTaskPageCanCreateEditAndDeleteATask(t *testing.T) {
 	absent := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: t.TempDir(), Reload: func() (Loaded, error) { return Loaded{}, nil }})
 	if resp := postJSON(absent, "http://127.0.0.1:4678/api/plugins/scheduled-tasks/tasks", body, fromConsole); resp.StatusCode != http.StatusNotFound || errorCode(t, resp) != "not_installed" {
 		t.Fatalf("absent plugin HTTP %d", resp.StatusCode)
+	}
+}
+
+func TestTaskAndScriptRoutesFollowNativeTasksViewInsteadOfFolderName(t *testing.T) {
+	pluginDir := t.TempDir()
+	src, err := catalog.Add(examples.Files, pluginDir, "scheduled-tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	customDir := filepath.Join(pluginDir, "nightly-jobs")
+	if err := os.Rename(src, customDir); err != nil {
+		t.Fatal(err)
+	}
+	otherDir := filepath.Join(pluginDir, "plain-detail")
+	if err := os.Mkdir(otherDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "plugin.yaml"), []byte("name: Plain\ndetail:\n  exec:\n    command: [echo, '{}']\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reload := func() (Loaded, error) {
+		plugins, broken, err := plugin.Load(pluginDir)
+		if err != nil {
+			return Loaded{}, err
+		}
+		if err := tasks.Sync(pluginDir, plugins); err != nil {
+			return Loaded{}, err
+		}
+		return Loaded{Plugins: plugins, Broken: broken}, nil
+	}
+	loaded, err := reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tasks.Close(context.Background(), pluginDir) })
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: pluginDir, BuiltIn: examples.Files, Plugins: loaded.Plugins, Reload: reload})
+
+	pluginsResp := get(h, "http://127.0.0.1:4678/api/plugins", nil)
+	var entries []struct {
+		ID   string `json:"id"`
+		View string `json:"view"`
+	}
+	if pluginsResp.StatusCode != http.StatusOK || json.NewDecoder(pluginsResp.Body).Decode(&entries) != nil {
+		t.Fatalf("plugins HTTP %d", pluginsResp.StatusCode)
+	}
+	views := map[string]string{}
+	for _, e := range entries {
+		views[e.ID] = e.View
+	}
+	if views["nightly-jobs"] != "tasks" || views["plain-detail"] != "" {
+		t.Fatalf("unexpected views: %+v", views)
+	}
+
+	if resp := get(h, "http://127.0.0.1:4678/api/plugins/plain-detail/tasks", nil); resp.StatusCode != http.StatusNotFound || errorCode(t, resp) != "not_installed" {
+		t.Fatalf("non-tasks plugin tasks HTTP %d", resp.StatusCode)
+	}
+	if resp := get(h, "http://127.0.0.1:4678/api/plugins/plain-detail/scripts", nil); resp.StatusCode != http.StatusNotFound || errorCode(t, resp) != "not_installed" {
+		t.Fatalf("non-tasks plugin scripts HTTP %d", resp.StatusCode)
+	}
+
+	if resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/nightly-jobs/scripts", `{"name":"hello.sh","content":"echo hi\n"}`, fromConsole); resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create script HTTP %d %s", resp.StatusCode, b)
+	}
+	if resp := get(h, "http://127.0.0.1:4678/api/plugins/nightly-jobs/scripts/hello.sh", nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("read script HTTP %d", resp.StatusCode)
+	}
+	if resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/nightly-jobs/tasks", `{"name":"Nightly","enabled":true,"schedule":{"every":"24h"},"command":"sh scripts/hello.sh"}`, fromConsole); resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create task HTTP %d %s", resp.StatusCode, b)
+	}
+	if resp := get(h, "http://127.0.0.1:4678/api/plugins/nightly-jobs/tasks/nightly", nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("read task HTTP %d", resp.StatusCode)
+	}
+	if resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/nightly-jobs/tasks/nightly/delete", ``, fromConsole); resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete task HTTP %d", resp.StatusCode)
+	}
+	if resp := postJSON(h, "http://127.0.0.1:4678/api/plugins/nightly-jobs/scripts/hello.sh/delete", ``, fromConsole); resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete script HTTP %d", resp.StatusCode)
 	}
 }
