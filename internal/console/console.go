@@ -351,6 +351,10 @@ func (s *server) serveDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, &card.Error{Code: "no_detail"})
 		return
 	}
+	if item := r.URL.Query().Get("item"); item != "" {
+		writeJSON(w, detail.ReadItem(r.Context(), p, item))
+		return
+	}
 	writeJSON(w, detail.Read(r.Context(), p))
 }
 

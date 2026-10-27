@@ -48,7 +48,7 @@ func TestCompactDetailsKeepStateAndActionsTogetherWithoutChangingOtherDetails(t 
 				}
 			}
 			do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-log summary`)))
-			ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`getComputedStyle(document.querySelector('.detail-log pre')).maxHeight==='240px'`))
+			ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`getComputedStyle(document.querySelector('.detail-log pre')).maxHeight==='480px'`))
 			if err != nil || !ok {
 				t.Fatalf("bounded log: %v %v", ok, err)
 			}

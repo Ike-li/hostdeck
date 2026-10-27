@@ -68,31 +68,31 @@ jobs_config() {
  add_text_field 'When it runs' "何时运行" "$rule_en" "$rule_zh"
 }
 
+# jobs_log_file appends the tail of one regular file. Each file keeps at most
+# its last 256 KiB. A longer file says so, and the partial first line is dropped
+# when a whole line remains. The file is only read, never executed.
 jobs_log_file() {
  [ -n "$1" ] || return 0
- if [ "$logs_remaining" -le 0 ]; then
-  add_text_field "Log reading" "日志读取" "Log preview truncated at the 512 KiB page limit." "日志预览已达到单页 512 KiB 上限，后续内容已截断。"
-  return
- fi
  if [ ! -f "$1" ] || [ ! -r "$1" ]; then
   add_text_field 'Log reading' "日志读取" "Could not read log: $1" "读不到日志：$1"
   return
  fi
- if ! chunk=$(tail -c 16384 -- "$1" 2>/dev/null); then
+ size=$(wc -c < "$1" | tr -d '[:space:]' || true)
+ if ! chunk=$(tail -c 262144 -- "$1" 2>/dev/null); then
   add_text_field 'Log reading' "日志读取" "Could not read log: $1" "读不到日志：$1"
   return
  fi
- chunk=$(printf '%s\n' "$chunk" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null | tail -n 20)
- [ -n "$chunk" ] || return 0
- # Include the path and separators in the shared 512 KiB page budget.
+ chunk=$(printf '%s\n' "$chunk" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null || true)
+ if [ -n "$size" ] && [ "$size" -gt 262144 ]; then
+  rest=$(printf '%s\n' "$chunk" | tail -n +2)
+  if [ -n "$rest" ]; then chunk=$rest; fi
+  add_text_field 'Log reading' "日志读取" "Showing the last 256 KiB of this log." "只显示这段日志的末尾 256 KiB。"
+ fi
+ if [ -z "$chunk" ]; then
+  add_text_field 'Log reading' "日志读取" "The log is empty." "日志是空的。"
+  return
+ fi
  chunk=$(printf '%s%s\n%s\n' "${jobs_log:+
 }" "$1" "$chunk")
- bytes=$(printf '%s' "$chunk" | wc -c | tr -d ' ')
- if [ "$bytes" -gt "$logs_remaining" ]; then
-  chunk=$(printf '%s' "$chunk" | head -c "$logs_remaining" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null || true)
-  bytes=$logs_remaining
-  add_text_field 'Log reading' "日志读取" 'Log preview truncated at the 512 KiB page limit.' '日志预览已达到单页 512 KiB 上限，后续内容已截断。'
- fi
- logs_remaining=$((logs_remaining - bytes))
- if [ -n "$chunk" ]; then jobs_log="$jobs_log$chunk"; fi
+ jobs_log="$jobs_log$chunk"
 }

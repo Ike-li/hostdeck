@@ -647,6 +647,14 @@ func fakePlugin(args []string) {
 		fmt.Print(jobsCard)
 	case "jobs-detail":
 		fmt.Print(jobsDetail)
+	case "jobs-log":
+		if os.Getenv("HOSTDECK_DETAIL_ITEM") == "" {
+			fmt.Print(`{"presentation":"compact","items":[{"id":"job","name":{"en":"Keyboard","zh-CN":"键盘"},"status":"error","value":{"en":"Not running, exit 78","zh-CN":"未运行，退出码 78"},"logAvailable":true,"actions":[{"id":"start","label":{"en":"Run","zh-CN":"运行"}}]}]}`)
+			break
+		}
+		fmt.Print(`{"presentation":"compact","items":[{"id":"job","name":"Keyboard","status":"error","log":"` + strings.Repeat(`line\n`, 80) + `END","logAvailable":true}]}`)
+	case "jobs-log-action":
+		fmt.Print(`{"message":{"en":"Ran. Not running, exit 78.","zh-CN":"已运行。未在运行，退出码 78。"}}`)
 	case "detail-json":
 		fmt.Print(args[1])
 	case "detail-long":

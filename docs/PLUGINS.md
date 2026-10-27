@@ -136,7 +136,8 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": �
 | `items[].label` | text | Optional. Shown with the main value. The compact list does not show it |
 | `items[].fields[].name` | text | A field's name |
 | `items[].fields[].value` | string, number or localized text | A field's value |
-| `items[].log` | string | Shown under Last lines of the log, in a box of its own that scrolls; print the last lines, not a whole file |
+| `items[].log` | string | Shown under Log, in a box of its own that scrolls. Print the part to show; the page does not follow the file |
+| `items[].logAvailable` | boolean | Optional. True means a log can be loaded for that item. The page asks for it with the item id when the log is opened |
 | `items[].actions[].id` | string | Required; the action program is given it |
 | `items[].actions[].label` | text | The action's button |
 
@@ -144,7 +145,7 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": �
 
 An action's button needs a second click. hostdeck then runs the detail program again, and runs the action only if that item still offers it; otherwise the page says so and reads the list again. One action runs at a time, across every plugin. The action program runs as `<command…> <action id> <item id>`, and runs to its end or its deadline even if the page that asked for it is closed, so that a restart is never stopped halfway. The two IDs are ones your detail program printed a moment before; treat them as data, never as code.
 
-The program may print nothing, `{"message": …}`, which the page shows as the result, or `{"error": …}`; both are text. With nothing printed, the page says the action is done. The page reads the detail again a moment later.
+The program may print nothing, `{"message": …}`, which the page shows as the result, or `{"error": …}`; both are text. With nothing printed, the page says the action is done. The page reads the detail again immediately and shows that message.
 
 ## Compatibility
 
@@ -154,7 +155,7 @@ Until the first release, `schema: 1` may still change, and the commit that chang
 
 Plugins are trusted: they are folders you put there, and their programs run with your rights. The console's web page cannot write a program into a manifest; the security model in [ARCHITECTURE.md](ARCHITECTURE.md#security-model) says what each change from the page can write. Copy a plugin only from a source you trust.
 
-Background jobs use compact grouped details. macOS reads configuration with system plutil and shows PID, configured arguments, launch rules, configuration and log paths. Log tails read at most 16 KiB and 20 lines per distinct file within one item. Windows shows service identity, PID, start mode, account and full command, and matches structured properties in the latest 200 Service Control Manager events, up to 20 per service. All previews share a 512 KiB page budget. Missing configuration, inaccessible logs, no matching events and truncation are local field messages; they do not change job health or action permissions. Existing string/number detail values keep their behavior; localized values use the same en/zh-CN text objects as labels and require a newer hostdeck.
+Background jobs use compact grouped details. macOS reads configuration with system plutil and shows PID, configured arguments, launch rules, configuration and log paths. The list does not include log text. A job with a stdout or stderr path sets `logAvailable`, and opening that log reads the last 256 KiB of each distinct regular file, dropping a partial first line when a whole line remains. Windows shows service identity, PID, start mode, account and full command. The list does not query events. Opening one service matches structured properties in the latest 400 Service Control Manager events, up to 100, and keeps at most 256 KiB. An empty, unreadable or truncated log is a local field message; it does not change job health or action permissions. Run and Restart print a message naming the state read afterwards. Existing string/number detail values keep their behavior; localized values use the same en/zh-CN text objects as labels and require a newer hostdeck.
 
 ## Native Docker monitoring
 

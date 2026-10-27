@@ -15,14 +15,34 @@ jobs_domain() {
 	return 1
 }
 
-jobs_labels() {
-	listing=$(launchctl print "$1" 2>/dev/null) || return 1
-	printf '%s\n' "$listing" | awk '
+# jobs_parse_labels reads one launchctl domain listing on stdin.
+jobs_parse_labels() {
+	awk '
 		/services = \{/ { inside = 1; next }
 		inside && /^[[:space:]]*\}/ { closed = 1; exit }
 		inside && NF >= 1 { print $NF }
 		END { if (!closed) exit 1 }
 	'
+}
+
+jobs_labels() {
+	listing=$(launchctl print "$1" 2>/dev/null) || return 1
+	printf '%s\n' "$listing" | jobs_parse_labels
+}
+
+# jobs_open prints the domain once and keeps it in jobs_listing. The name is
+# jobs_domain_name. A second print of the same domain is what made the page wait.
+jobs_open() {
+	uid=$(id -u)
+	if jobs_listing=$(launchctl print "gui/$uid" 2>/dev/null); then
+		jobs_domain_name="gui/$uid"
+		return 0
+	fi
+	if jobs_listing=$(launchctl print "user/$uid" 2>/dev/null); then
+		jobs_domain_name="user/$uid"
+		return 0
+	fi
+	return 1
 }
 
 jobs_error() {
@@ -47,20 +67,27 @@ jobs_escape() {
 	'
 }
 
-# jobs_read sets jobs_state, jobs_code, jobs_signal, jobs_program, jobs_runs and jobs_stdout.
+# jobs_apply reads one launchctl job listing already in $1.
+# It sets jobs_state, jobs_code, jobs_signal, jobs_program, jobs_runs,
+# jobs_path, jobs_pid, jobs_stdout and jobs_stderr.
+jobs_apply() {
+	jobs_path=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*path = //p' | head -n 1)
+	jobs_pid=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*pid = //p' | head -n 1)
+	jobs_stderr=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*stderr path = //p' | head -n 1)
+	jobs_state=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*state = //p' | head -n 1)
+	jobs_code=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*last exit code = //p' | head -n 1)
+	jobs_signal=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*last terminating signal = //p' | head -n 1)
+	jobs_program=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*program = //p' | head -n 1)
+	jobs_runs=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*runs = //p' | head -n 1)
+	jobs_stdout=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*stdout path = //p' | head -n 1)
+}
+
+# jobs_read sets the same variables as jobs_apply, or stops with an error.
 jobs_read() {
 	if ! info=$(launchctl print "$1/$2" 2>/dev/null); then
 		jobs_error "Could not read launchd job: $2" "读不到这条 launchd 任务：$2"
 	fi
-	jobs_path=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*path = //p' | head -n 1)
-	jobs_pid=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*pid = //p' | head -n 1)
-	jobs_stderr=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*stderr path = //p' | head -n 1)
-	jobs_state=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*state = //p' | head -n 1)
-	jobs_code=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*last exit code = //p' | head -n 1)
-	jobs_signal=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*last terminating signal = //p' | head -n 1)
-	jobs_program=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*program = //p' | head -n 1)
-	jobs_runs=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*runs = //p' | head -n 1)
-	jobs_stdout=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*stdout path = //p' | head -n 1)
+	jobs_apply "$info"
 }
 
 # jobs_classify sets jobs_status and jobs_value from the last jobs_read.

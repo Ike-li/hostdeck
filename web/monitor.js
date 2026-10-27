@@ -38,6 +38,7 @@ export async function loadMonitor(p, view, refresh = false) {
 // is rebuilt only when it is loaded or the language changes, so that a
 // periodic render does not reset an action button waiting for its second click.
 export async function loadDetail(p, view) {
+  if (!view.openLogs) view.openLogs = new Set();
   view.setAttribute('aria-busy', 'true');
   if (state.current?.id === p.id) $('service-reload').disabled = true;
   try {
@@ -144,20 +145,81 @@ function detailItem(p, item, view) {
     for (const f of item.fields) fields.append(el('dt', null, pick(f.name)), el('dd', null, pick(f.value)));
     section.append(fields);
   }
-  if (item.log) {
-    const log = el('details', 'detail-log');
-    const content = el('pre', null, item.log);
-    content.tabIndex = 0;
-    content.setAttribute('aria-label', t('detail.log'));
-    log.append(el('summary', null, t('detail.log')), content);
-    section.append(log);
-  }
+  if (item.log || item.logAvailable) section.append(detailLog(p, item, view));
   if (item.actions?.length) {
     const actions = el('div', 'detail-actions');
     actions.append(...item.actions.map((action) => actionButton(p, item, action, view)));
     (compact ? head : section).append(actions);
   }
   return section;
+}
+
+function detailLog(p, item, view) {
+  const log = el('details', 'detail-log');
+  const content = el('pre', null, item.log || '');
+  content.tabIndex = 0;
+  content.setAttribute('aria-label', t('detail.log'));
+  log.append(el('summary', null, t('detail.log')), content);
+  log.addEventListener('toggle', () => {
+    if (!view.openLogs) view.openLogs = new Set();
+    if (log.open) {
+      view.openLogs.add(item.id);
+      ensureLog(p, item, log, view);
+    } else view.openLogs.delete(item.id);
+  });
+  if (view.openLogs?.has(item.id)) {
+    log.open = true;
+    ensureLog(p, item, log, view);
+  }
+  return log;
+}
+
+// ensureLog fills a log that the list left out. A failed read stays in this
+// box, so it cannot replace the list the page is already showing.
+async function ensureLog(p, item, log, view) {
+  if (log.dataset.loaded === 'yes' || log.dataset.loaded === 'pending') return;
+  const pre = log.querySelector('pre');
+  if (item.log) {
+    pre.textContent = item.log;
+    log.dataset.loaded = 'yes';
+    requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; });
+    return;
+  }
+  log.dataset.loaded = 'pending';
+  pre.textContent = t('loading');
+  try {
+    const data = await getJSON(`/api/detail/${encodeURIComponent(p.id)}?item=${encodeURIComponent(item.id)}`);
+    if (!log.isConnected) return;
+    if (data.error) throw data.error;
+    const fresh = (data.items || []).find((it) => it.id === item.id);
+    if (!fresh) throw { code: 'command_output' };
+    const stored = (view.data.items || []).find((it) => it.id === item.id);
+    if (stored) {
+      stored.log = fresh.log || '';
+      if (fresh.fields) stored.fields = fresh.fields;
+      replaceFields(log.closest('.detail-item'), stored);
+    }
+    pre.textContent = fresh.log || t('detail.logEmpty');
+    log.dataset.loaded = 'yes';
+    requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; });
+  } catch (err) {
+    if (!log.isConnected) return;
+    delete log.dataset.loaded;
+    pre.textContent = err instanceof Error ? t('detail.logFailed') : explain(err);
+  }
+}
+
+function replaceFields(section, item) {
+  if (!section) return;
+  const fields = el('dl', 'detail-fields');
+  for (const f of item.fields || []) fields.append(el('dt', null, pick(f.name)), el('dd', null, pick(f.value)));
+  const old = section.querySelector('.detail-fields');
+  if (!item.fields?.length) {
+    old?.remove();
+    return;
+  }
+  if (old) old.replaceWith(fields);
+  else section.querySelector('.detail-log')?.before(fields);
 }
 
 export function actionButton(p, item, action, view) {
@@ -177,7 +239,11 @@ export function actionButton(p, item, action, view) {
       failed = true;
     }
     showNote(view, note, failed);
-    setTimeout(() => loadDetail(p, view), 1500);
+    if (!failed) {
+      if (!view.openLogs) view.openLogs = new Set();
+      view.openLogs.add(item.id);
+    }
+    await loadDetail(p, view);
   });
   return btn;
 }

@@ -57,6 +57,35 @@ if ($action -eq 'restart') {
 		Start-Sleep -Milliseconds 200
 	} while ($true)
 	Invoke-Sc @('start', $name) | Out-Null
+	$leadEn = 'Restarted. '
+	$leadZh = '已重启。'
+	$failEn = 'Restarted, but the service could not be read again.'
+	$failZh = '已重启，但没能再读到这个服务。'
 } else {
 	Invoke-Sc @('start', $name) | Out-Null
+	$leadEn = 'Ran. '
+	$leadZh = '已运行。'
+	$failEn = 'Ran, but the service could not be read again.'
+	$failZh = '已运行，但没能再读到这个服务。'
 }
+
+# A failed follow-up query must not hide the start or restart that succeeded.
+$outcomeLog = Join-Path $env:TEMP ("hostdeck-jobs-" + [guid]::NewGuid().ToString() + '.txt')
+& sc.exe query $name > $outcomeLog 2>&1
+$outcomeCode = $LASTEXITCODE
+$outcome = ''
+if (Test-Path $outcomeLog) {
+	$outcome = [IO.File]::ReadAllText($outcomeLog)
+	Remove-Item $outcomeLog -ErrorAction SilentlyContinue
+}
+if ($outcomeCode -ne 0) {
+	$en = $failEn
+	$zh = $failZh
+} elseif ($outcome -match 'RUNNING') {
+	$en = $leadEn + 'Running.'
+	$zh = $leadZh + '正在运行。'
+} else {
+	$en = $leadEn + 'Not running.'
+	$zh = $leadZh + '未在运行。'
+}
+[ordered]@{ message = [ordered]@{ en = $en; 'zh-CN' = $zh } } | ConvertTo-Json -Compress

@@ -643,8 +643,8 @@ func TestTheJobsRestartKicksTheRunningJob(t *testing.T) {
 
 	msg, err := detail.Act(context.Background(), load(t, "jobs"), "com.example.running", "restart")
 
-	if err != nil || !msg.IsZero() {
-		t.Fatalf("message %+v, error %+v; want a quiet success", msg, err)
+	if err != nil || msg.ByLang["en"] != "Restarted. Running." || msg.ByLang["zh-CN"] != "已重启。正在运行。" {
+		t.Fatalf("message %+v, error %+v; want the job's state after the restart", msg, err)
 	}
 	got, readErr := os.ReadFile(record)
 	if readErr != nil {
@@ -665,8 +665,8 @@ func TestTheJobsStartRunsAnIdleJobWithoutKillingIt(t *testing.T) {
 
 	msg, err := detail.Act(context.Background(), load(t, "jobs"), "com.example.idle", "start")
 
-	if err != nil || !msg.IsZero() {
-		t.Fatalf("message %+v, error %+v; want a quiet success", msg, err)
+	if err != nil || msg.ByLang["en"] != "Ran. Not running." || msg.ByLang["zh-CN"] != "已运行。未在运行。" {
+		t.Fatalf("message %+v, error %+v; want the job's state after it was run", msg, err)
 	}
 	got, readErr := os.ReadFile(record)
 	if readErr != nil {
@@ -675,6 +675,31 @@ func TestTheJobsStartRunsAnIdleJobWithoutKillingIt(t *testing.T) {
 	uid := strconv.Itoa(os.Getuid())
 	if !strings.Contains(string(got), "kickstart gui/"+uid+"/com.example.idle\n") || strings.Contains(string(got), "kickstart -k") {
 		t.Errorf("launchctl calls:\n%s\nwant kickstart without -k", got)
+	}
+}
+
+func TestTheJobsActionSaysWhenTheJobCannotBeReadAgain(t *testing.T) {
+	seen := filepath.Join(t.TempDir(), "printed")
+	withLaunchctl(t, fmt.Sprintf(`#!/bin/sh
+uid=$(id -u)
+case "$1" in
+kickstart) exit 0 ;;
+esac
+case "$2" in
+"gui/$uid")
+	printf '%%s\n' '	services = {' '		10       - 	com.example.running' '	}' ;;
+"gui/$uid/com.example.running")
+	if [ -f %q ]; then exit 1; fi
+	touch %q
+	printf '%%s\n' '	state = running' ;;
+*) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+`, seen, seen))
+
+	msg, err := detail.Act(context.Background(), load(t, "jobs"), "com.example.running", "restart")
+
+	if err != nil || msg.ByLang["en"] != "Restarted, but the job could not be read again." || msg.ByLang["zh-CN"] != "已重启，但没能再读到这条任务。" {
+		t.Fatalf("message %+v, error %+v", msg, err)
 	}
 }
 
@@ -777,14 +802,14 @@ func TestTheJobsRestartOnWindowsStopsThenStartsTheService(t *testing.T) {
 		return run.Output(ctx, p.Dir, append(p.Actions.Exec.Args(), action, name))
 	}
 	out, err := runAction("restart", "ExampleService")
-	if err != nil || len(bytesTrim(out)) != 0 {
-		t.Fatalf("output %q, error %v; want a quiet success", out, err)
+	if err != nil || !strings.Contains(string(out), "Restarted") || !strings.Contains(string(out), "已重启") {
+		t.Fatalf("output %q, error %v; want the service's state after the restart", out, err)
 	}
 	got, readErr := os.ReadFile(record)
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	if string(got) != "stop ExampleService\nquery ExampleService\nstart ExampleService\n" {
+	if string(got) != "stop ExampleService\nquery ExampleService\nstart ExampleService\nquery ExampleService\n" {
 		t.Errorf("sc.exe calls:\n%s", got)
 	}
 
@@ -792,14 +817,14 @@ func TestTheJobsRestartOnWindowsStopsThenStartsTheService(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, err = runAction("start", "ExampleService")
-	if err != nil || len(bytesTrim(out)) != 0 {
+	if err != nil || !strings.Contains(string(out), "Ran") || !strings.Contains(string(out), "已运行") {
 		t.Fatalf("start output %q, error %v", out, err)
 	}
 	got, readErr = os.ReadFile(record)
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	if string(got) != "start ExampleService\n" {
+	if string(got) != "start ExampleService\nquery ExampleService\n" {
 		t.Errorf("sc.exe calls:\n%s", got)
 	}
 	for _, action := range []string{"start", "restart"} {
@@ -850,8 +875,6 @@ func TestTheJobsRestartOnWindowsStopsThenStartsTheService(t *testing.T) {
 		t.Fatalf("timeout output %s, error %v", out, err)
 	}
 }
-
-func bytesTrim(b []byte) []byte { return []byte(strings.TrimSpace(string(b))) }
 
 // windowsSC is a stand-in for sc.exe. It records its arguments and answers a
 // query with STOPPED so a restart does not wait.

@@ -43,6 +43,15 @@ func TestMain(m *testing.M) {
 		os.Exit(2)
 	case "hang":
 		time.Sleep(time.Hour)
+	case "show-item":
+		value := os.Getenv("HOSTDECK_DETAIL_ITEM")
+		if value == "" {
+			value = "unset"
+		}
+		if err := os.WriteFile(args[1], []byte(value), 0o644); err != nil {
+			os.Exit(1)
+		}
+		fmt.Print(`{"items":[{"id":"a","name":"A","status":"ok"}]}`)
 	}
 	os.Exit(0)
 }
@@ -67,6 +76,44 @@ func fakePlugin(t *testing.T, detail, printed string) (plugin.Plugin, string) {
 		Detail:  &plugin.Detail{Exec: &plugin.Exec{Command: []string{bin, "print", detail}}},
 		Actions: &plugin.Actions{Exec: &plugin.Exec{Command: []string{bin, "act", ran, printed}}},
 	}, ran
+}
+
+func TestReadItemPassesTheItemOnlyAsData(t *testing.T) {
+	t.Setenv("HOSTDECK_FAKE_DETAIL", "1")
+	seen := filepath.Join(t.TempDir(), "seen")
+	p := plugin.Plugin{
+		ID:     "svc",
+		Dir:    t.TempDir(),
+		Detail: &plugin.Detail{Exec: &plugin.Exec{Command: []string{os.Args[0], "show-item", seen}}},
+	}
+
+	if got := Read(context.Background(), p); got.Error != nil {
+		t.Fatal(got.Error)
+	}
+	if body, err := os.ReadFile(seen); err != nil || string(body) != "unset" {
+		t.Fatalf("list read saw %q (%v), want the item variable unset", body, err)
+	}
+	t.Setenv("HOSTDECK_DETAIL_ITEM", "stale")
+	if err := os.Remove(seen); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadItem(context.Background(), p, "fresh"); got.Error != nil {
+		t.Fatal(got.Error)
+	}
+	if body, err := os.ReadFile(seen); err != nil || string(body) != "fresh" {
+		t.Fatalf("item read saw %q (%v), want the requested id to replace a stale one", body, err)
+	}
+	if err := os.Remove(seen); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"has\nline", "has\rline", strings.Repeat("a", 257)} {
+		if got := ReadItem(context.Background(), p, id); got.Error == nil || got.Error.Code != "bad_request" {
+			t.Fatalf("item %q: %+v, want bad_request", id, got.Error)
+		}
+		if _, err := os.Stat(seen); !os.IsNotExist(err) {
+			t.Fatalf("rejected item %q ran the command", id)
+		}
+	}
 }
 
 func TestADetailListsTheItemsItsCommandPrints(t *testing.T) {
