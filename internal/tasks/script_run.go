@@ -156,8 +156,7 @@ func (e *entry) executeScript(name string, command, secrets []string, r *running
 	defer r.cancel()
 	stdout, stderr := newLog(out, secrets), newLog(errout, secrets)
 	result := process.Outcome{Clean: true}
-	executable, exeErr := os.Executable()
-	if exeErr == nil {
+	if executable, exeErr := os.Executable(); exeErr == nil {
 		result = process.Run(r.ctx, executable, process.Spec{Command: command, Dir: e.dir, Env: os.Environ(), Token: r.id}, process.Hooks{
 			Stdout: stdout,
 			Stderr: stderr,
@@ -183,75 +182,7 @@ func (e *entry) executeScript(name string, command, secrets []string, r *running
 	} else {
 		result.Error = exeErr
 	}
-	logErr := errors.Join(stdout.Close(), stderr.Close())
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	defer close(r.done)
-	record := e.scriptRecord(r.id)
-	if record == nil {
-		if current := e.scriptRunning[name]; current != nil && current.id == r.id {
-			delete(e.scriptRunning, name)
-		}
-		return
-	}
-	now := e.now()
-	record.FinishedAt = &now
-	record.ExitCode = result.Code
-	record.Status = "succeeded"
-	record.Logs.StdoutTruncated = stdout.Truncated
-	record.Logs.StderrTruncated = stderr.Truncated
-	var streamError *logIOError
-	switch {
-	case !result.Clean:
-		record.Status = "interrupted"
-		record.Reason = str("cleanup")
-	case errors.Is(result.Error, context.DeadlineExceeded):
-		record.Status = "timed_out"
-		record.Reason = str("timeout")
-	case r.reason != "":
-		record.Status = "cancelled"
-		record.Reason = str(r.reason)
-	case logErr != nil || errors.As(result.Error, &streamError):
-		record.Status = "failed"
-		record.Reason = str("log_io")
-	case result.Uncertain:
-		record.Status = "interrupted"
-		record.Reason = str("recovery")
-	case result.Error != nil:
-		record.Status = "failed"
-		record.Reason = str("start")
-		var ioErr *logIOError
-		if errors.As(result.Error, &ioErr) {
-			record.Reason = str("log_io")
-		} else if result.Code != nil {
-			record.Reason = str("exit")
-		}
-	}
-	if result.Error != nil {
-		record.Diagnostic = redact(result.Error.Error(), secrets)
-	}
-	if logErr != nil {
-		record.Diagnostic = redact(logErr.Error(), secrets)
-	}
-	if len(record.Diagnostic) > 1024 {
-		record.Diagnostic = record.Diagnostic[:1024]
-	}
-	if result.Clean {
-		delete(e.state.Active, r.id)
-	}
-	if current := e.scriptRunning[name]; current != nil && current.id == r.id {
-		delete(e.scriptRunning, name)
-	}
-	if err := e.pruneLocked(0); err != nil {
-		e.stateErr = err
-	}
-	if err := e.saveLocked(); err != nil {
-		e.stateErr = err
-		if record = e.scriptRecord(r.id); record != nil {
-			record.Status = "interrupted"
-			record.Reason = str("recovery")
-		}
-	}
+	e.finish(r, stdout, stderr, secrets, result, finishTarget{running: e.scriptRunning, key: name})
 }
 
 func (e *entry) scriptLog(r *ScriptRun) string {

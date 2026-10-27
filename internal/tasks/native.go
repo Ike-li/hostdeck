@@ -541,6 +541,8 @@ func (e *entry) startLocked(t Task, trigger string, due *time.Time) (string, err
 	return id, nil
 }
 
+type envError struct{ error }
+
 func environment(t Task) ([]string, []string, error) {
 	env := os.Environ()
 	secrets := []string{}
@@ -548,7 +550,7 @@ func environment(t Task) ([]string, []string, error) {
 		match := envRef.FindStringSubmatch(reference)
 		value, ok := os.LookupEnv(match[1])
 		if !ok {
-			return nil, secrets, fmt.Errorf("environment reference %s is missing", match[1])
+			return nil, secrets, &envError{fmt.Errorf("environment reference %s is missing", match[1])}
 		}
 		filtered := env[:0]
 		for _, entry := range env {
@@ -575,101 +577,143 @@ func (e *entry) execute(t Task, r *running, out, errout *os.File) {
 	env, secrets, envErr := environment(t)
 	stdout, stderr := newLog(out, secrets), newLog(errout, secrets)
 	result := process.Outcome{Error: envErr, Clean: true}
-	executable, exeErr := os.Executable()
-	if envErr == nil && exeErr == nil {
-		command := t.Exec.Command
-		if runtime.GOOS == "windows" && t.Exec.Windows != nil {
-			command = t.Exec.Windows
+	if envErr == nil {
+		if executable, exeErr := os.Executable(); exeErr == nil {
+			command := t.Exec.Command
+			if runtime.GOOS == "windows" && t.Exec.Windows != nil {
+				command = t.Exec.Windows
+			}
+			result = process.Run(r.ctx, executable, process.Spec{Command: command, Dir: localDir(e.dir, t.Exec.Dir), Env: env, Token: r.id}, process.Hooks{Stdout: stdout, Stderr: stderr, Prepared: func(identity process.Identity) error {
+				e.mu.Lock()
+				defer e.mu.Unlock()
+				e.state.Active[r.id] = identity
+				return e.saveLocked()
+			}, Started: func(pid int) error {
+				e.mu.Lock()
+				defer e.mu.Unlock()
+				record := e.record(r.id)
+				now := e.now()
+				record.StartedAt = &now
+				record.Status = "running"
+				return e.saveLocked()
+			}})
+		} else {
+			result.Error = exeErr
 		}
-		result = process.Run(r.ctx, executable, process.Spec{Command: command, Dir: localDir(e.dir, t.Exec.Dir), Env: env, Token: r.id}, process.Hooks{Stdout: stdout, Stderr: stderr, Prepared: func(identity process.Identity) error {
-			e.mu.Lock()
-			defer e.mu.Unlock()
-			e.state.Active[r.id] = identity
-			return e.saveLocked()
-		}, Started: func(pid int) error {
-			e.mu.Lock()
-			defer e.mu.Unlock()
-			record := e.record(r.id)
-			now := e.now()
-			record.StartedAt = &now
-			record.Status = "running"
-			return e.saveLocked()
-		}})
-	} else if exeErr != nil {
-		result.Error = exeErr
 	}
+	e.finish(r, stdout, stderr, secrets, result, finishTarget{running: e.running, key: t.ID, pauseTask: t.ID})
+}
+
+type finishTarget struct {
+	running   map[string]*running
+	key       string
+	pauseTask string
+}
+
+type runOutcome struct {
+	finishedAt **time.Time
+	status     *string
+	exitCode   **int
+	reason     **string
+	logs       *logs
+	diagnostic *string
+}
+
+func (e *entry) outcomeTarget(id string) (runOutcome, bool) {
+	if r := e.record(id); r != nil {
+		return runOutcome{&r.FinishedAt, &r.Status, &r.ExitCode, &r.Reason, &r.Logs, &r.Diagnostic}, true
+	}
+	if r := e.scriptRecord(id); r != nil {
+		return runOutcome{&r.FinishedAt, &r.Status, &r.ExitCode, &r.Reason, &r.Logs, &r.Diagnostic}, true
+	}
+	return runOutcome{}, false
+}
+
+func (e *entry) pauseTaskLocked(id string) {
+	if id == "" {
+		return
+	}
+	ts := e.state.Tasks[id]
+	ts.Paused = true
+	e.state.Tasks[id] = ts
+}
+
+func (e *entry) finish(r *running, stdout, stderr *logWriter, secrets []string, result process.Outcome, target finishTarget) {
 	logErr := errors.Join(stdout.Close(), stderr.Close())
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	defer close(r.done)
-	record := e.record(r.id)
+	record, ok := e.outcomeTarget(r.id)
+	if !ok {
+		if current := target.running[target.key]; current != nil && current.id == r.id {
+			delete(target.running, target.key)
+		}
+		return
+	}
 	now := e.now()
-	record.FinishedAt = &now
-	record.ExitCode = result.Code
-	record.Status = "succeeded"
-	record.Logs.StdoutTruncated = stdout.Truncated
-	record.Logs.StderrTruncated = stderr.Truncated
-	var streamError *logIOError
+	*record.finishedAt = &now
+	*record.exitCode = result.Code
+	*record.status = "succeeded"
+	*record.reason = nil
+	record.logs.StdoutTruncated = stdout.Truncated
+	record.logs.StderrTruncated = stderr.Truncated
+	var (
+		envErr      *envError
+		streamError *logIOError
+	)
 	switch {
 	case !result.Clean:
-		record.Status = "interrupted"
-		record.Reason = str("cleanup")
-		ts := e.state.Tasks[t.ID]
-		ts.Paused = true
-		e.state.Tasks[t.ID] = ts
+		*record.status = "interrupted"
+		*record.reason = str("cleanup")
+		e.pauseTaskLocked(target.pauseTask)
 	case errors.Is(result.Error, context.DeadlineExceeded):
-		record.Status = "timed_out"
-		record.Reason = str("timeout")
+		*record.status = "timed_out"
+		*record.reason = str("timeout")
 	case r.reason != "":
-		record.Status = "cancelled"
-		record.Reason = str(r.reason)
-	case envErr != nil:
-		record.Status = "failed"
-		record.Reason = str("environment")
+		*record.status = "cancelled"
+		*record.reason = str(r.reason)
+	case errors.As(result.Error, &envErr):
+		*record.status = "failed"
+		*record.reason = str("environment")
 	case logErr != nil || errors.As(result.Error, &streamError):
-		record.Status = "failed"
-		record.Reason = str("log_io")
+		*record.status = "failed"
+		*record.reason = str("log_io")
 	case result.Uncertain:
-		record.Status = "interrupted"
-		record.Reason = str("recovery")
-		ts := e.state.Tasks[t.ID]
-		ts.Paused = true
-		e.state.Tasks[t.ID] = ts
+		*record.status = "interrupted"
+		*record.reason = str("recovery")
+		e.pauseTaskLocked(target.pauseTask)
 	case result.Error != nil:
-		record.Status = "failed"
-		record.Reason = str("start")
-		var ioErr *logIOError
-		if errors.As(result.Error, &ioErr) {
-			record.Reason = str("log_io")
-		} else if result.Code != nil {
-			record.Reason = str("exit")
+		*record.status = "failed"
+		*record.reason = str("start")
+		if result.Code != nil {
+			*record.reason = str("exit")
 		}
 	}
 	if result.Error != nil {
-		record.Diagnostic = redact(result.Error.Error(), secrets)
+		*record.diagnostic = redact(result.Error.Error(), secrets)
 	}
 	if logErr != nil {
-		record.Diagnostic = redact(logErr.Error(), secrets)
+		*record.diagnostic = redact(logErr.Error(), secrets)
 	}
-	if len(record.Diagnostic) > 1024 {
-		record.Diagnostic = record.Diagnostic[:1024]
+	if len(*record.diagnostic) > 1024 {
+		*record.diagnostic = (*record.diagnostic)[:1024]
 	}
 	if result.Clean {
 		delete(e.state.Active, r.id)
 	}
-	delete(e.running, t.ID)
+	if current := target.running[target.key]; current != nil && current.id == r.id {
+		delete(target.running, target.key)
+	}
 	if err := e.pruneLocked(0); err != nil {
 		e.stateErr = err
 	}
 	if err := e.saveLocked(); err != nil {
 		e.stateErr = err
-		if record = e.record(r.id); record != nil {
-			record.Status = "interrupted"
-			record.Reason = str("recovery")
+		if record, ok = e.outcomeTarget(r.id); ok {
+			*record.status = "interrupted"
+			*record.reason = str("recovery")
 		}
-		ts := e.state.Tasks[t.ID]
-		ts.Paused = true
-		e.state.Tasks[t.ID] = ts
+		e.pauseTaskLocked(target.pauseTask)
 	}
 }
 
