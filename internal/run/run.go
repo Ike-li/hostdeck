@@ -11,14 +11,38 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/Ike-li/hostdeck/internal/diskhistory"
-	"github.com/Ike-li/hostdeck/internal/dockerview"
-	"github.com/Ike-li/hostdeck/internal/manualview"
 	"github.com/Ike-li/hostdeck/internal/process"
-	"github.com/Ike-li/hostdeck/internal/tasks"
 )
+
+// Command describes an external process started by a Runner.
+type Command struct {
+	Dir      string
+	Args     []string
+	Env      []string
+	Limit    int
+	Combined bool
+}
+
+// Runner starts an external command with process-tree cleanup and bounded output.
+type Runner func(context.Context, Command) ([]byte, error)
+
+// NativeFunc is a compiled @hostdeck command.
+type NativeFunc func(ctx context.Context, dir string, args []string, run Runner) ([]byte, error)
+
+var (
+	nativeMu sync.RWMutex
+	natives  = map[string]NativeFunc{}
+)
+
+// Register binds a compiled @hostdeck command to name.
+func Register(name string, fn NativeFunc) {
+	nativeMu.Lock()
+	natives[name] = fn
+	nativeMu.Unlock()
+}
 
 // WaitDelay bounds the wait for a command's output after it exits or is
 // killed: a grandchild that holds stdout open is cut off then.
@@ -55,44 +79,38 @@ func output(ctx context.Context, dir string, command, env []string) ([]byte, err
 		return nil, errors.New("empty plugin command")
 	}
 	if command[0] == "@hostdeck" {
-		var out []byte
-		var err error
-		if len(command) > 1 && command[1] == "tasks" {
-			out, err = tasks.Execute(ctx, dir, command[1:])
-		} else if len(command) > 1 && command[1] == "docker" {
-			out, err = dockerview.Execute(ctx, command[1:], func(ctx context.Context, c dockerview.Command) ([]byte, error) {
-				return external(ctx, dir, c.Args, c.Env, c.Limit, c.Combined)
-			})
-		} else if len(command) > 1 && command[1] == "manual" {
-			out, err = manualview.Execute(ctx, command[1:], func(ctx context.Context, argv []string) ([]byte, int, error) {
-				got, runErr := external(ctx, dir, argv, nil, maxOutput, false)
-				var exit *ExitError
-				if errors.As(runErr, &exit) {
-					return got, exit.Code, nil
-				}
-				return got, 0, runErr
-			})
-		} else {
-			out, err = diskhistory.Execute(ctx, dir, command[1:])
+		var fn NativeFunc
+		if len(command) > 1 {
+			nativeMu.RLock()
+			fn = natives[command[1]]
+			nativeMu.RUnlock()
 		}
+		if fn == nil {
+			return nil, errors.New("unknown native plugin command")
+		}
+		out, err := fn(ctx, dir, command[1:], external)
 		if err == nil && len(out) > maxOutput {
 			return nil, &OutputError{errors.New("native plugin output exceeds 4 MiB")}
 		}
 		return out, err
 	}
-	return external(ctx, dir, command, env, maxOutput, false)
+	return external(ctx, Command{Dir: dir, Args: command, Env: env})
 }
 
-func external(ctx context.Context, dir string, command, env []string, limit int, combined bool) ([]byte, error) {
+func external(ctx context.Context, c Command) ([]byte, error) {
+	if len(c.Args) == 0 {
+		return nil, errors.New("empty plugin command")
+	}
+	limit := c.Limit
 	if limit <= 0 || limit > maxOutput {
 		limit = maxOutput
 	}
-	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-	cmd.Dir = dir
-	cmd.Env = env
+	cmd := exec.CommandContext(ctx, c.Args[0], c.Args[1:]...)
+	cmd.Dir = c.Dir
+	cmd.Env = c.Env
 	stdout, stderr := &capped{limit: limit}, &capped{limit: 64 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	if combined {
+	if c.Combined {
 		cmd.Stderr = stdout
 	}
 	cmd.WaitDelay = WaitDelay

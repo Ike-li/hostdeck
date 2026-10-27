@@ -25,9 +25,20 @@ import (
 	"github.com/Ike-li/hostdeck/internal/card"
 	"github.com/Ike-li/hostdeck/internal/catalog"
 	"github.com/Ike-li/hostdeck/internal/detail"
+	"github.com/Ike-li/hostdeck/internal/diskhistory"
+	"github.com/Ike-li/hostdeck/internal/dockerview"
+	"github.com/Ike-li/hostdeck/internal/manualview"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/run"
+	"github.com/Ike-li/hostdeck/internal/tasks"
 )
+
+func init() {
+	run.Register("tasks", tasks.Execute)
+	run.Register("disk-history", diskhistory.Execute)
+	run.Register("docker", dockerview.Execute)
+	run.Register("manual", manualview.Execute)
+}
 
 const apiKey = "key-from-the-syncthing-settings"
 

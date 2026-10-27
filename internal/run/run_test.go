@@ -2,14 +2,11 @@ package run
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -72,34 +69,31 @@ func TestAFailingCommandGivesItsExitCodeAndLastErrorLine(t *testing.T) {
 	}
 }
 
-func TestTheManualCardReadsThisMachineWithoutBecomingDiskHistory(t *testing.T) {
-	if testing.Short() {
-		t.Skip("reads this machine's listening ports")
+func TestHostdeckDispatchesByRegisteredNameAndRejectsUnknownCommands(t *testing.T) {
+	dir := t.TempDir()
+	var gotDir string
+	var gotArgs []string
+	var hasRunner bool
+	Register("test-native", func(_ context.Context, d string, args []string, r Runner) ([]byte, error) {
+		gotDir = d
+		gotArgs = append([]string(nil), args...)
+		hasRunner = r != nil
+		return []byte(`{"value":"ok"}`), nil
+	})
+	out, err := Output(context.Background(), dir, []string{"@hostdeck", "test-native", "card"})
+	if err != nil || string(out) != `{"value":"ok"}` {
+		t.Fatalf("Output(@hostdeck test-native card) = %q, %v", out, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	out, err := Output(ctx, t.TempDir(), []string{"@hostdeck", "manual", "card"})
-	if err != nil {
-		t.Fatal(err)
+	if gotDir != dir || len(gotArgs) != 2 || gotArgs[0] != "test-native" || gotArgs[1] != "card" || !hasRunner {
+		t.Fatalf("dispatched dir=%q args=%v hasRunner=%v", gotDir, gotArgs, hasRunner)
 	}
-	if strings.Contains(string(out), "Disk history") || strings.Contains(string(out), "磁盘变化") || strings.Contains(string(out), "unknown native plugin command") {
-		t.Fatalf("fell through to disk history: %s", out)
-	}
-	var got struct {
-		Value string            `json:"value"`
-		Error map[string]string `json:"error"`
-	}
-	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatalf("output %s: %v", out, err)
-	}
-	if got.Error != nil {
-		if got.Error["en"] == "" || got.Error["zh-CN"] == "" {
-			t.Fatalf("error %+v", got.Error)
+	for _, argv := range [][]string{
+		{"@hostdeck", "unknown", "card"},
+		{"@hostdeck"},
+	} {
+		if out, err := Output(context.Background(), dir, argv); err == nil {
+			t.Fatalf("Output(%v) succeeded with %s; want dispatch error", argv, out)
 		}
-		return
-	}
-	if _, err := strconv.Atoi(got.Value); err != nil {
-		t.Fatalf("value %q, want a count or a bilingual error", got.Value)
 	}
 }
 
@@ -166,11 +160,11 @@ func TestDecodeRejectsTrailingOutput(t *testing.T) {
 
 func TestDockerCommandOptionsMergeBothLogStreamsAndKeepEnvironmentScoped(t *testing.T) {
 	command := fake(t, "mixed")
-	out, err := external(context.Background(), t.TempDir(), command, nil, 10, true)
+	out, err := external(context.Background(), Command{Dir: t.TempDir(), Args: command, Limit: 10, Combined: true})
 	if err != nil || len(out) != 10 || string(out) != "stdout lin" {
 		t.Fatalf("bounded combined log %q %v", out, err)
 	}
-	out, err = external(context.Background(), t.TempDir(), command, nil, 1024, true)
+	out, err = external(context.Background(), Command{Dir: t.TempDir(), Args: command, Limit: 1024, Combined: true})
 	if err != nil || !strings.Contains(string(out), "stdout line") || !strings.Contains(string(out), "stderr line") {
 		t.Fatalf("combined log %q %v", out, err)
 	}
@@ -183,46 +177,8 @@ func TestDockerCommandOptionsMergeBothLogStreamsAndKeepEnvironmentScoped(t *test
 		}
 	}
 	env = append(env, "HOSTDECK_CHILD_VALUE=child")
-	out, err = external(context.Background(), t.TempDir(), command, env, 1024, false)
+	out, err = external(context.Background(), Command{Dir: t.TempDir(), Args: command, Env: env, Limit: 1024})
 	if err != nil || string(out) != "child" || os.Getenv("HOSTDECK_CHILD_VALUE") != "parent" {
 		t.Fatalf("scoped environment %q %v", out, err)
-	}
-}
-
-func TestNativeDockerErrorsSayTheLastDiagnosticOnlyOnce(t *testing.T) {
-	dir := t.TempDir()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile(exe)
-	if err != nil {
-		t.Fatal(err)
-	}
-	name := "docker"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	if err := os.WriteFile(filepath.Join(dir, name), body, 0755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("DOCKER_CONTEXT", "")
-	t.Setenv("DOCKER_HOST", "unix:///fixture.sock")
-	t.Setenv("HOSTDECK_FAKE", "fail")
-	out, err := Output(context.Background(), dir, []string{"@hostdeck", "docker", "detail"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var reply struct {
-		Error map[string]string `json:"error"`
-	}
-	if err := json.Unmarshal(out, &reply); err != nil {
-		t.Fatal(err)
-	}
-	for _, lang := range []string{"en", "zh-CN"} {
-		if strings.Count(reply.Error[lang], "the actual problem") != 1 {
-			t.Fatalf("%s repeats or loses the diagnostic: %s", lang, reply.Error[lang])
-		}
 	}
 }

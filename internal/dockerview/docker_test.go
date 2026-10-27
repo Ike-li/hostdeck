@@ -49,7 +49,7 @@ func executeFixture(t *testing.T, op string, rows []map[string]any) map[string]a
 	t.Helper()
 	t.Setenv("DOCKER_CONTEXT", "")
 	t.Setenv("DOCKER_HOST", "unix:///local/docker.sock")
-	out, err := Execute(context.Background(), []string{"docker", op}, fixture(t, rows))
+	out, err := Execute(context.Background(), "", []string{"docker", op}, fixture(t, rows))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestDockerFailuresNeverInventAnEmptyHealthyReading(t *testing.T) {
 	t.Setenv("DOCKER_CONTEXT", "")
 	t.Setenv("DOCKER_HOST", "unix:///local/docker.sock")
 	for _, problem := range []error{exec.ErrNotFound, errors.New("fixture daemon unavailable")} {
-		out, err := Execute(context.Background(), []string{"docker", "detail"}, func(context.Context, Command) ([]byte, error) { return nil, problem })
+		out, err := Execute(context.Background(), "", []string{"docker", "detail"}, func(context.Context, Command) ([]byte, error) { return nil, problem })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,7 +109,7 @@ func TestDockerRefusesRemoteEndpointsBeforeAnyDaemonCommand(t *testing.T) {
 	for _, host := range []string{"ssh://host", "tcp://192.168.1.5:2375", "tcp://example.test:2375", "npipe:////server/pipe/docker_engine", "unix://remote/path", "tcp://user:secret@127.0.0.1:2375"} {
 		t.Setenv("DOCKER_HOST", host)
 		calls := 0
-		out, err := Execute(context.Background(), []string{"docker", "detail"}, func(context.Context, Command) ([]byte, error) { calls++; return nil, nil })
+		out, err := Execute(context.Background(), "", []string{"docker", "detail"}, func(context.Context, Command) ([]byte, error) { calls++; return nil, nil })
 		if err != nil || calls != 0 || !strings.Contains(string(out), `"error"`) {
 			t.Errorf("host %q: %s, %v, calls %d", host, out, err, calls)
 		}
@@ -123,7 +123,10 @@ func TestDockerPinsTheValidatedEndpointAndStripsContextOverrides(t *testing.T) {
 	t.Setenv("DOCKER_CONTEXT", "local-desktop")
 	t.Setenv("DOCKER_HOST", "ssh://ignored")
 	var calls []Command
-	out, err := Execute(context.Background(), []string{"docker", "detail"}, func(ctx context.Context, c Command) ([]byte, error) {
+	out, err := Execute(context.Background(), "plugin-dir", []string{"docker", "detail"}, func(ctx context.Context, c Command) ([]byte, error) {
+		if c.Dir != "plugin-dir" {
+			t.Fatalf("command dir = %q, want plugin-dir", c.Dir)
+		}
 		calls = append(calls, c)
 		if slices.Contains(c.Args, "context") {
 			return []byte(`"npipe:////./pipe/docker_engine"`), nil
@@ -148,7 +151,7 @@ func TestDockerRejectsMalformedOrIncompleteReadings(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "unix:///local/docker.sock")
 	id := fmt.Sprintf("%064x", 1)
 	for _, tc := range []struct{ list, inspect string }{{"not-an-id", ""}, {id + "\n" + id, ""}, {id, `{broken`}, {id, ``}, {id, `{"id":"` + id + `","name":"","status":"running"}`}} {
-		out, err := Execute(context.Background(), []string{"docker", "detail"}, func(ctx context.Context, c Command) ([]byte, error) {
+		out, err := Execute(context.Background(), "", []string{"docker", "detail"}, func(ctx context.Context, c Command) ([]byte, error) {
 			if slices.Contains(c.Args, "ls") {
 				return []byte(tc.list), nil
 			}
@@ -182,7 +185,7 @@ func TestDockerLogLimitsKeepUTF8ValidAndOptionalFailuresKeepContainers(t *testin
 		rows = append(rows, containerRow(i, "running", "", 0))
 	}
 	base := fixture(t, rows)
-	out, err := Execute(context.Background(), []string{"docker", "detail"}, func(ctx context.Context, c Command) ([]byte, error) {
+	out, err := Execute(context.Background(), "", []string{"docker", "detail"}, func(ctx context.Context, c Command) ([]byte, error) {
 		if slices.Contains(c.Args, "logs") {
 			if !c.Combined || c.Limit > logLimit+1 || !slices.Contains(c.Args, "20") {
 				t.Fatalf("unbounded or incomplete log request %+v", c)
@@ -211,7 +214,7 @@ func TestDockerLogLimitsKeepUTF8ValidAndOptionalFailuresKeepContainers(t *testin
 	if bytes > pageLogLimit {
 		t.Fatalf("page log bytes %d", bytes)
 	}
-	out, err = Execute(context.Background(), []string{"docker", "detail"}, func(ctx context.Context, c Command) ([]byte, error) {
+	out, err = Execute(context.Background(), "", []string{"docker", "detail"}, func(ctx context.Context, c Command) ([]byte, error) {
 		if slices.Contains(c.Args, "logs") {
 			return nil, errors.New("fixture logs unavailable")
 		}
@@ -226,7 +229,7 @@ func TestCancelledDockerReadsDoNotStartCommands(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	calls := 0
-	_, err := Execute(ctx, []string{"docker", "detail"}, func(context.Context, Command) ([]byte, error) { calls++; return nil, nil })
+	_, err := Execute(ctx, "", []string{"docker", "detail"}, func(context.Context, Command) ([]byte, error) { calls++; return nil, nil })
 	if !errors.Is(err, context.Canceled) || calls != 0 {
 		t.Fatalf("cancelled read started %d commands, error %v", calls, err)
 	}

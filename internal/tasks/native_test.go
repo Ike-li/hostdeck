@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 		if err := tasks.Sync(filepath.Dir(dir), []plugin.Plugin{p}); err != nil {
 			os.Exit(2)
 		}
-		b, err := tasks.Execute(context.Background(), dir, []string{"tasks", "action", "run", "sample"})
+		b, err := tasks.Execute(context.Background(), dir, []string{"tasks", "action", "run", "sample"}, nil)
 		if err != nil || strings.Contains(string(b), `"error"`) {
 			os.Exit(3)
 		}
@@ -588,7 +588,7 @@ func fixture(t *testing.T, mode, timeout string, options ...tasks.Option) (strin
 
 func operation(t *testing.T, dir string, args ...string) map[string]any {
 	t.Helper()
-	b, err := tasks.Execute(context.Background(), dir, append([]string{"tasks"}, args...))
+	b, err := tasks.Execute(context.Background(), dir, append([]string{"tasks"}, args...), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

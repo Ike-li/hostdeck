@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+
+	"github.com/Ike-li/hostdeck/internal/run"
 )
 
 // commandRunner runs one absolute command. Exit is the code when the program
@@ -13,9 +15,17 @@ type commandRunner func(context.Context, []string) ([]byte, int, error)
 
 // Execute runs the manual card or detail program. A reading failure is JSON
 // the card can show; a cancelled context and an unknown operation are errors.
-func Execute(ctx context.Context, args []string, run commandRunner) ([]byte, error) {
+func Execute(ctx context.Context, dir string, args []string, r run.Runner) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	runCmd := func(ctx context.Context, argv []string) ([]byte, int, error) {
+		got, runErr := r(ctx, run.Command{Dir: dir, Args: argv})
+		var exit *run.ExitError
+		if errors.As(runErr, &exit) {
+			return got, exit.Code, nil
+		}
+		return got, 0, runErr
 	}
 	if len(args) < 2 || args[0] != "manual" {
 		return nil, errors.New("unknown manual command")
@@ -29,11 +39,11 @@ func Execute(ctx context.Context, args []string, run commandRunner) ([]byte, err
 		if len(args) != 4 {
 			return nil, errors.New("unknown manual command")
 		}
-		return act(ctx, osOperator{run: run}, args[2], args[3])
+		return act(ctx, osOperator{run: runCmd}, args[2], args[3])
 	default:
 		return nil, errors.New("unknown manual command")
 	}
-	listeners, procs, err := readPlatform(ctx, run)
+	listeners, procs, err := readPlatform(ctx, runCmd)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

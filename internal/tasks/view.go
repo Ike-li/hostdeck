@@ -13,6 +13,7 @@ import (
 
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/process"
+	"github.com/Ike-li/hostdeck/internal/run"
 )
 
 func text(en, zh string) plugin.Text {
@@ -42,7 +43,7 @@ type group struct {
 	Label plugin.Text `json:"label"`
 }
 
-func Execute(ctx context.Context, dir string, args []string) ([]byte, error) {
+func Execute(ctx context.Context, dir string, args []string, _ run.Runner) ([]byte, error) {
 	if len(args) == 4 && args[0] == "tasks" && args[1] == "action" {
 		e := lookup(dir)
 		if e == nil {

@@ -22,17 +22,13 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/Ike-li/hostdeck/internal/run"
 )
 
 // Command describes one bounded Docker CLI invocation, never a shell string.
-type Command struct {
-	Args     []string
-	Env      []string
-	Limit    int
-	Combined bool
-}
-
-type Runner func(context.Context, Command) ([]byte, error)
+type Command = run.Command
+type Runner = run.Runner
 type text map[string]string
 
 func words(en, zh string) text { return text{"en": en, "zh-CN": zh} }
@@ -102,12 +98,13 @@ const pageLogLimit = 512 << 10
 const inspectFormat = `{"id":{{json .Id}},"name":{{json .Name}},"status":{{json .State.Status}},"health":{{if index .State "Health"}}{{json .State.Health.Status}}{{else}}""{{end}},"exitCode":{{json .State.ExitCode}},"oomKilled":{{json .State.OOMKilled}},"error":{{json .State.Error}},"image":{{json .Config.Image}},"created":{{json .Created}},"started":{{json .State.StartedAt}},"finished":{{json .State.FinishedAt}},"restartCount":{{json .RestartCount}},"restartPolicy":{{json .HostConfig.RestartPolicy}},"ports":{{json .NetworkSettings.Ports}},"networks":{{json .NetworkSettings.Networks}},"mounts":{{json .Mounts}},"path":{{json .Path}},"args":{{json .Args}}}`
 
 type client struct {
+	dir      string
 	endpoint string
 	env      []string
 	run      Runner
 }
 
-func Execute(ctx context.Context, args []string, run Runner) ([]byte, error) {
+func Execute(ctx context.Context, dir string, args []string, run Runner) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -128,7 +125,7 @@ func Execute(ctx context.Context, args []string, run Runner) ([]byte, error) {
 	if act && !validTarget(args[3]) {
 		return json.Marshal(map[string]any{"error": words("Invalid container action target.", "容器操作目标无效。")})
 	}
-	c, err := connect(ctx, run)
+	c, err := connect(ctx, dir, run)
 	if err != nil {
 		return fail(err)
 	}
@@ -150,12 +147,12 @@ func Execute(ctx context.Context, args []string, run Runner) ([]byte, error) {
 	return json.Marshal(v)
 }
 
-func connect(ctx context.Context, run Runner) (client, error) {
+func connect(ctx context.Context, dir string, run Runner) (client, error) {
 	endpoint := os.Getenv("DOCKER_HOST")
 	selected := os.Getenv("DOCKER_CONTEXT")
 	if selected != "" || endpoint == "" {
 		if selected == "" {
-			out, err := run(ctx, Command{Args: []string{"docker", "context", "show"}, Limit: 4096})
+			out, err := run(ctx, Command{Dir: dir, Args: []string{"docker", "context", "show"}, Limit: 4096})
 			if err != nil {
 				return client{}, err
 			}
@@ -164,7 +161,7 @@ func connect(ctx context.Context, run Runner) (client, error) {
 				return client{}, errors.New("Docker returned an invalid context name")
 			}
 		}
-		out, err := run(ctx, Command{Args: []string{"docker", "context", "inspect", "--format", "{{json .Endpoints.docker.Host}}", "--", selected}, Limit: 4096})
+		out, err := run(ctx, Command{Dir: dir, Args: []string{"docker", "context", "inspect", "--format", "{{json .Endpoints.docker.Host}}", "--", selected}, Limit: 4096})
 		if err != nil {
 			return client{}, err
 		}
@@ -182,7 +179,7 @@ func connect(ctx context.Context, run Runner) (client, error) {
 			env = append(env, entry)
 		}
 	}
-	return client{endpoint, env, run}, nil
+	return client{dir, endpoint, env, run}, nil
 }
 
 func localEndpoint(endpoint string) bool {
@@ -207,7 +204,7 @@ func localEndpoint(endpoint string) bool {
 
 func (c client) command(ctx context.Context, limit int, combined bool, args ...string) ([]byte, error) {
 	argv := append([]string{"docker", "--host", c.endpoint}, args...)
-	out, err := c.run(ctx, Command{Args: argv, Env: c.env, Limit: limit + 1, Combined: combined})
+	out, err := c.run(ctx, Command{Dir: c.dir, Args: argv, Env: c.env, Limit: limit + 1, Combined: combined})
 	if err == nil && len(out) > limit && !combined {
 		return nil, errors.New("Docker metadata exceeds its size limit")
 	}

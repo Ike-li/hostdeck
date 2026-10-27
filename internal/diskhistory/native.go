@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/run"
 )
 
 type entry struct {
@@ -192,12 +193,12 @@ func id(root string) string {
 
 // Execute returns the same JSON as an external plugin program. The reserved
 // @hostdeck command selects only these compiled operations, never a shell.
-func Execute(ctx context.Context, dir string, args []string) ([]byte, error) {
+func Execute(ctx context.Context, dir string, args []string, _ run.Runner) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if len(args) < 2 || args[0] != "disk-history" {
-		return nil, errors.New("unknown native plugin command")
+		return nil, errors.New("unknown native disk-history command")
 	}
 	e := get(dir)
 	e.mu.Lock()

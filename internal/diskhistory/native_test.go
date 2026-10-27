@@ -30,7 +30,7 @@ func nativeFixture(t *testing.T) (string, string) {
 
 func nativeCall(t *testing.T, dir string, args ...string) map[string]json.RawMessage {
 	t.Helper()
-	out, err := Execute(context.Background(), dir, append([]string{"disk-history"}, args...))
+	out, err := Execute(context.Background(), dir, append([]string{"disk-history"}, args...), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

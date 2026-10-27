@@ -23,14 +23,24 @@ import (
 	"github.com/Ike-li/hostdeck/internal/cli"
 	"github.com/Ike-li/hostdeck/internal/console"
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
+	"github.com/Ike-li/hostdeck/internal/dockerview"
 	"github.com/Ike-li/hostdeck/internal/layout"
+	"github.com/Ike-li/hostdeck/internal/manualview"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/ports"
 	"github.com/Ike-li/hostdeck/internal/process"
 	"github.com/Ike-li/hostdeck/internal/proxy"
+	runpkg "github.com/Ike-li/hostdeck/internal/run"
 	"github.com/Ike-li/hostdeck/internal/tasks"
 )
+
+func init() {
+	runpkg.Register("tasks", tasks.Execute)
+	runpkg.Register("disk-history", diskhistory.Execute)
+	runpkg.Register("docker", dockerview.Execute)
+	runpkg.Register("manual", manualview.Execute)
+}
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--internal-task-worker" {

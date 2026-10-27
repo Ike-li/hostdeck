@@ -43,7 +43,7 @@ func TestContainerActionsReinspectTheBoundFullIDBeforeChangingIt(t *testing.T) {
 			id, rows := actionTarget(t, tc.state)
 			base := fixture(t, rows)
 			var calls []Command
-			out, err := Execute(context.Background(), []string{"docker", "action", tc.action, id}, func(ctx context.Context, c Command) ([]byte, error) {
+			out, err := Execute(context.Background(), "", []string{"docker", "action", tc.action, id}, func(ctx context.Context, c Command) ([]byte, error) {
 				calls = append(calls, c)
 				if slices.Contains(c.Args, tc.action) {
 					return []byte(rows[0]["id"].(string)), nil
@@ -69,7 +69,7 @@ func TestStaleContainerActionsAndChangedContextsNeverMutateAnything(t *testing.T
 		rows[0]["status"] = tc.after
 		base := fixture(t, rows)
 		mutations := 0
-		out, err := Execute(context.Background(), []string{"docker", "action", tc.action, id}, func(ctx context.Context, c Command) ([]byte, error) {
+		out, err := Execute(context.Background(), "", []string{"docker", "action", tc.action, id}, func(ctx context.Context, c Command) ([]byte, error) {
 			if slices.Contains(c.Args, "start") || slices.Contains(c.Args, "restart") {
 				mutations++
 				return nil, nil
@@ -83,7 +83,7 @@ func TestStaleContainerActionsAndChangedContextsNeverMutateAnything(t *testing.T
 	id, _ := actionTarget(t, "running")
 	t.Setenv("DOCKER_HOST", "unix:///another/docker.sock")
 	calls := 0
-	out, err := Execute(context.Background(), []string{"docker", "action", "restart", id}, func(context.Context, Command) ([]byte, error) { calls++; return nil, nil })
+	out, err := Execute(context.Background(), "", []string{"docker", "action", "restart", id}, func(context.Context, Command) ([]byte, error) { calls++; return nil, nil })
 	if err != nil || calls != 0 || !strings.Contains(string(out), `"error"`) {
 		t.Fatalf("changed context: %s %v calls %d", out, err, calls)
 	}
@@ -92,7 +92,7 @@ func TestStaleContainerActionsAndChangedContextsNeverMutateAnything(t *testing.T
 func TestInvalidDockerActionTargetsAreRejectedBeforeStartingACommand(t *testing.T) {
 	for _, id := range []string{"", strings.Repeat("a", 16) + ":--help", strings.Repeat("a", 16) + ":" + strings.Repeat("b", 64) + "\n", "container-name", "a:b:c"} {
 		calls := 0
-		out, err := Execute(context.Background(), []string{"docker", "action", "start", id}, func(context.Context, Command) ([]byte, error) { calls++; return nil, nil })
+		out, err := Execute(context.Background(), "", []string{"docker", "action", "start", id}, func(context.Context, Command) ([]byte, error) { calls++; return nil, nil })
 		if calls != 0 || err == nil && !strings.Contains(string(out), `"error"`) {
 			t.Fatalf("id %q output %s error %v calls %d", id, out, err, calls)
 		}
@@ -103,7 +103,7 @@ func TestDockerActionFailuresAndTimeoutsNeverReportSuccess(t *testing.T) {
 	id, rows := actionTarget(t, "running")
 	base := fixture(t, rows)
 	for _, problem := range []error{errors.New("fixture restart refused"), context.DeadlineExceeded} {
-		out, err := Execute(context.Background(), []string{"docker", "action", "restart", id}, func(ctx context.Context, c Command) ([]byte, error) {
+		out, err := Execute(context.Background(), "", []string{"docker", "action", "restart", id}, func(ctx context.Context, c Command) ([]byte, error) {
 			if slices.Contains(c.Args, "restart") {
 				return nil, problem
 			}
