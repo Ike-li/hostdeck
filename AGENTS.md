@@ -66,7 +66,7 @@ Agreed in the M0 plan, 2026-10-22:
 - Chrome and Edge are tested; Firefox and Safari are best effort.
 - Size and memory: CI is to report them, and a budget is set after five runs on main.
 
-## Where the work stands (2026-10-26)
+## Where the work stands (2026-10-27)
 
 M0 slices S1 to S8 are merged, and after them the plugins page, reloading plugins as that page changes them, and embedding a web page by its address.
 
@@ -146,7 +146,7 @@ Scheduled-task recovery now marks unfinished runs interrupted, pauses them and r
 
 Scheduled-task scheduling now uses an injectable one-second clock, embedded timezone data and persistent eligibility, anchors, cursors and missed ranges. Cron skips missing minutes and repeats only the first local minute; clock jumps collapse old occurrences and refuse lateness of 60 seconds or more. Pause leaves active runs alone, Stop preserves future scheduling, and restart/reload/resume do not catch up. Manual and scheduled runs share four slots and task exclusion. Expired history is pruned even while paused. Full setup guidance and final acceptance follow in the last slice.
 
-Scheduled-task v1 is implemented: native installation, strict local configuration, gated manual/automatic execution, persistent recovery and retention, Cron/interval scheduling, Pause/Resume and bounded redacted history/logs. Empty details explain local setup and ship a disabled example; agent prompts include the complete schema and console-specific backup/reload commands. Authorized worker loss pauses uncertain work, environment lookup follows OS case rules, and foreign ownership or unresolved cleanup refuses disable/trash. Final browser acceptance covers installation, controls, invalid reload with retained Stop, history/logs, both languages/themes and 1280/520px. No live owner instance is installed or restarted by this implementation.
+Scheduled-task v1 is implemented: native installation, strict local configuration, gated manual/automatic execution, persistent recovery and retention, Cron/interval scheduling, Pause/Resume and bounded redacted history/logs. The detail page can save, replace and delete one script file under that plugin's `scripts/` directory from a Tasks | Scripts segment. An empty task list is a note, not a counted setup row. The page still does not edit `tasks.json`, set a schedule or run a script. Empty details explain local setup and ship a disabled example; agent prompts include the complete schema and console-specific backup/reload commands. Authorized worker loss pauses uncertain work, environment lookup follows OS case rules, and foreign ownership or unresolved cleanup refuses disable/trash. Final browser acceptance covers installation, controls, invalid reload with retained Stop, history/logs, both languages/themes and 1280/520px. No live owner instance is installed or restarted by this implementation.
 
 Scheduled-task CI run 40403097058 exposed a Windows test reader sharing violation during atomic state replacement; bounded Windows-only reader retries passed Windows race in run 40403816939. That run twice failed the existing eight-second layout notice assertion on macOS Chrome. The fixture now records timer registration time and advances to its actual deadline, because timer discovery can already advance virtual time; 20 local repetitions passed. This does not establish a cause or fix for the separately recorded paused-network clock stall. Product notice durations are unchanged.
 

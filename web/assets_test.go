@@ -625,7 +625,7 @@ func colourOf(value string) string {
 // sidebar's status dots. A field sits on a card or a dialog, or on the page
 // itself, as the plugins page's search does; the dots sit in the sidebar.
 func TestFieldEdgesTheFocusRingAndStatusDotsStandOutFromTheirSurfaces(t *testing.T) {
-	const field = ":is(.edit-field input, .edit-field select, .catalog-search, .agent-prompt textarea)"
+	const field = ":is(.edit-field input, .edit-field select, .edit-field textarea, .catalog-search, .agent-prompt textarea)"
 	rules := styleRules(t)
 	v := func(selector, prop string) string { return colourOf(ruleValue(t, rules, selector, prop)) }
 	marks := []struct {

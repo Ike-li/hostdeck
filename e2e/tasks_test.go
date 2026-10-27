@@ -195,14 +195,35 @@ func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *tes
 			dir := t.TempDir()
 			url := startConsole(t, dir)
 			ctx := openBrowser(t, lang)
-			do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.Click(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.Click(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.WaitVisible(chromedp.CSS(`#nav [data-id="scheduled-tasks"]`)), chromedp.Navigate(url+"#/scheduled-tasks"), chromedp.WaitVisible(chromedp.CSS(`.detail-item`)))
+			do(t, ctx, chromedp.Navigate(url+"#/.plugins"), chromedp.WaitVisible(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.Click(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.Click(chromedp.CSS(`#catalog-available [data-id="scheduled-tasks"] .btn`)), chromedp.WaitVisible(chromedp.CSS(`#nav [data-id="scheduled-tasks"]`)), chromedp.Navigate(url+"#/scheduled-tasks"), chromedp.WaitVisible(chromedp.CSS(`.task-switch`)))
 			poll := func(js string) {
 				t.Helper()
 				if _, err := chromedp.Run(ctx, chromedp.Poll[bool](js, chromedp.WithPollingTimeout(10*time.Second))); err != nil {
 					t.Fatal(err)
 				}
 			}
-			poll(`document.querySelector('.detail-view').textContent.includes('tasks.example.json')`)
+			poll(`document.querySelector('.detail-view').textContent.includes('tasks.example.json') && document.querySelectorAll('.detail-item').length===0 && document.querySelector('.task-switch [data-segment="tasks"]').getAttribute('aria-pressed')==='true' && document.querySelector('.task-script-add').hidden`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="scripts"]`)), chromedp.WaitVisible(chromedp.CSS(`.task-script-add`)), chromedp.Click(chromedp.CSS(`.task-script-add`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
+			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.name.value = 'hello.py'; form.elements.content.value = "print('你好')\\n"; form.requestSubmit(); })()`))
+			poll(`!!document.querySelector('.detail-item[data-script="hello.py"]') && !document.querySelector('#page-editor').open`)
+			for _, width := range []int64{1280, 520} {
+				do(t, ctx, chromedp.EmulateViewport(width, 800))
+				poll(`document.documentElement.scrollWidth<=innerWidth && document.querySelector('.task-script-add').getBoundingClientRect().height>=44 && document.querySelector('.script-delete').getBoundingClientRect().height>=44`)
+			}
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.script-edit`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
+			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.content.value = "print(2)\n"; form.requestSubmit(); })()`))
+			poll(`!document.querySelector('#page-editor').open`)
+			scriptPath := filepath.Join(dir, "plugins", "scheduled-tasks", "scripts", "hello.py")
+			if got, err := os.ReadFile(scriptPath); err != nil || string(got) != "print(2)\n" {
+				t.Fatalf("saved script %q %v", got, err)
+			}
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.script-delete`)), chromedp.Click(chromedp.CSS(`.script-delete`)))
+			poll(`!document.querySelector('.detail-item[data-script="hello.py"]') && !!document.querySelector('.detail-list [data-empty="scripts"]')`)
+			if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
+				t.Fatal("deleted script still on disk")
+			}
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="tasks"]`)))
+			poll(`document.querySelector('.task-switch [data-segment="tasks"]').getAttribute('aria-pressed')==='true'`)
 			p := filepath.Join(dir, "plugins", "scheduled-tasks")
 			work := t.TempDir()
 			config := map[string]any{"version": 1, "tasks": []any{map[string]any{"id": "local", "name": "Local task 中文", "enabled": true, "schedule": map[string]any{"every": "24h"}, "exec": map[string]any{"command": []string{binary, "--dir", work, "--addr", "127.0.0.1:0"}}, "timeout": "2m"}}}
