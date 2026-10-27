@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/Ike-li/hostdeck/internal/process"
 )
 
 // ErrTaskForm is a task the page is not allowed to store.
@@ -278,7 +280,22 @@ func (e *entry) writableLocked() error {
 	if e.ownerErr != nil {
 		return e.ownerErr
 	}
-	return e.claimLocked()
+	if err := e.claimLocked(); err != nil {
+		return err
+	}
+	for id, identity := range e.state.Active {
+		local := false
+		for _, current := range e.running {
+			if current.id == id {
+				local = true
+				break
+			}
+		}
+		if !local && identity.PID != 0 && !process.Gone(identity) {
+			return errors.New("old task process tree still needs local inspection")
+		}
+	}
+	return nil
 }
 
 func (e *entry) readAuthoredLocked() (Config, error) {
@@ -317,6 +334,9 @@ func (e *entry) publishLocked(c Config) error {
 	}
 	if _, err := parseConfig(b); err != nil {
 		return &formError{err.Error()}
+	}
+	if len(b) > maxConfig {
+		return &formError{"tasks.json exceeds 1 MiB"}
 	}
 	return e.replaceLocked("tasks.json", "tasks.json.tmp", b)
 }

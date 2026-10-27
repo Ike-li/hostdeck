@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/process"
 	"github.com/Ike-li/hostdeck/internal/tasks"
 )
 
@@ -124,7 +127,11 @@ func TestEditingATaskKeepsWhatTheFormDoesNotShowAndABadScheduleDoesNotWrite(t *t
 		t.Fatalf("file %s %v", raw, err)
 	}
 	got := saved.Tasks[0]
-	if got.ID != "backup" || got.Name != "Nightly" || got.Enabled || got.Timeout != "10m" || got.Schedule.Cron == nil || *got.Schedule.Cron != "15 3 * * *" || got.Schedule.Timezone == nil || *got.Schedule.Timezone != "Asia/Shanghai" || strings.Join(got.Exec.Command, " ") != "echo kept" || strings.Join(got.Exec.Windows, " ") != "py -3 scripts/backup.py" || got.Exec.Dir != "work" || got.Exec.Env["TOKEN"] != "${env:BACKUP_TOKEN}" {
+	commandLine, windowsLine := "echo kept", "py -3 scripts/backup.py"
+	if runtime.GOOS == "windows" {
+		commandLine, windowsLine = "python3 scripts/backup.py", "echo kept"
+	}
+	if got.ID != "backup" || got.Name != "Nightly" || got.Enabled || got.Timeout != "10m" || got.Schedule.Cron == nil || *got.Schedule.Cron != "15 3 * * *" || got.Schedule.Timezone == nil || *got.Schedule.Timezone != "Asia/Shanghai" || strings.Join(got.Exec.Command, " ") != commandLine || strings.Join(got.Exec.Windows, " ") != windowsLine || got.Exec.Dir != "work" || got.Exec.Env["TOKEN"] != "${env:BACKUP_TOKEN}" {
 		t.Fatalf("edited %+v", got)
 	}
 	if saved.Tasks[1].ID != "other" || saved.Tasks[1].Timeout != "5m" {
@@ -173,6 +180,71 @@ func TestEditingATaskKeepsWhatTheFormDoesNotShowAndABadScheduleDoesNotWrite(t *t
 	raw = mustRead(t, filepath.Join(dir, "tasks.json"))
 	if !strings.Contains(string(raw), `say \"hi\"`) && !strings.Contains(string(raw), `say "hi"`) {
 		t.Fatalf("argv lost its quote: %s", raw)
+	}
+}
+
+func TestATaskThatWouldExceedOneMiBIsNotWritten(t *testing.T) {
+	dir, _, _ := emptyTasks(t)
+	command := "true"
+	every := "24h"
+	if _, err := tasks.CreateTask(dir, tasks.TaskForm{Name: "Kept", Schedule: tasks.ScheduleForm{Every: &every}, Command: &command}); err != nil {
+		t.Fatal(err)
+	}
+	before := mustRead(t, filepath.Join(dir, "tasks.json"))
+	huge := strings.Repeat("a", 1<<20)
+	err := tasks.UpdateTask(dir, "kept", tasks.TaskForm{Name: "Kept", Command: &huge})
+	if !errors.Is(err, tasks.ErrTaskForm) {
+		t.Fatalf("oversized %v", err)
+	}
+	if string(mustRead(t, filepath.Join(dir, "tasks.json"))) != string(before) {
+		t.Fatal("an oversized edit changed tasks.json")
+	}
+}
+
+func TestALiveOldProcessTreeRefusesATaskWrite(t *testing.T) {
+	dir, p := fixture(t, "success", "5s")
+	operation(t, dir, "action", "run", "sample")
+	r := waitRecord(t, dir, "succeeded")
+	if err := tasks.Close(context.Background(), filepath.Dir(dir)); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestTaskCommand$")
+	cmd.Env = append(os.Environ(), "HOSTDECK_TASK_MODE=block", "HOSTDECK_TASK_BLOCK_DURATION=10s")
+	tree, err := process.NewTree(cmd, r["id"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { tree.Close(); cmd.Wait() }()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.Started(); err != nil {
+		t.Fatal(err)
+	}
+	s := readState(t, dir)
+	record := s["runs"].([]any)[0].(map[string]any)
+	record["status"] = "interrupted"
+	record["reason"] = "cleanup"
+	s["active"] = map[string]any{r["id"].(string): map[string]any{"pid": cmd.Process.Pid, "token": r["id"]}}
+	saveState(t, dir, s)
+	if err := tasks.Sync(filepath.Dir(dir), []plugin.Plugin{p}); err != nil {
+		t.Fatal(err)
+	}
+	before := mustRead(t, filepath.Join(dir, "tasks.json"))
+	err = tasks.UpdateTask(dir, "sample", tasks.TaskForm{Name: "Renamed"})
+	if err == nil || !strings.Contains(err.Error(), "local inspection") {
+		t.Fatalf("live process tree accepted a write: %v", err)
+	}
+	if string(mustRead(t, filepath.Join(dir, "tasks.json"))) != string(before) {
+		t.Fatal("a refused edit changed tasks.json")
+	}
+	if process.Gone(process.Identity{PID: cmd.Process.Pid, Token: r["id"].(string)}) {
+		t.Fatal("the refusal killed the old process")
+	}
+	tree.Stop()
+	cmd.Wait()
+	if err := tasks.UpdateTask(dir, "sample", tasks.TaskForm{Name: "Renamed"}); err != nil {
+		t.Fatalf("cleared tree could not edit: %v", err)
 	}
 }
 
