@@ -53,7 +53,15 @@ func TestTaskCommand(t *testing.T) {
 		time.Sleep(d)
 	}
 	if marker := os.Getenv("HOSTDECK_TASK_MARKER"); marker != "" {
-		if err := os.WriteFile(marker, []byte("ran"), 0600); err != nil {
+		body := []byte("ran")
+		if os.Getenv("HOSTDECK_TASK_REPORT") == "1" {
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			body = []byte(cwd + "\n" + os.Getenv("SCRIPT_TOKEN") + "\n")
+		}
+		if err := os.WriteFile(marker, body, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}

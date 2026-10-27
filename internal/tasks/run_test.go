@@ -345,3 +345,74 @@ func TestDisablingThePluginCancelsAScriptRun(t *testing.T) {
 		t.Fatalf("disable %+v", done)
 	}
 }
+
+func TestAScriptRunUsesTheMatchedTaskDirAndEnv(t *testing.T) {
+	dir, plug := fixture(t, "success", "30s")
+	work := filepath.Join(dir, "workdir")
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(work, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "scripts", "job.py"), []byte("print(1)\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOSTDECK_TASK_MODE", "success")
+	t.Setenv("BACKUP_TOKEN", "secret-token")
+	marker := filepath.Join(t.TempDir(), "report")
+	t.Setenv("HOSTDECK_TASK_MARKER", marker)
+	t.Setenv("HOSTDECK_TASK_REPORT", "1")
+
+	job := []string{os.Args[0], "-test.run=^TestTaskCommand$", "scripts/job.py"}
+	cfg := map[string]any{
+		"version": 1,
+		"tasks": []any{map[string]any{
+			"id": "sample", "name": "Sample", "enabled": true,
+			"schedule": map[string]any{"every": "24h"},
+			"timeout":  "5m",
+			"exec": map[string]any{
+				"command": job,
+				"dir":     "workdir",
+				"env":     map[string]string{"SCRIPT_TOKEN": "${env:BACKUP_TOKEN}"},
+			},
+		}},
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := tasks.Sync(filepath.Dir(dir), []plugin.Plugin{plug}); err != nil {
+		t.Fatal(err)
+	}
+	id, err := tasks.RunScript(dir, "job.py", job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = waitScriptStatus(t, dir, id, "succeeded")
+	body, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("report %q", body)
+	}
+	wantWork, err := filepath.EvalSymlinks(work)
+	if err != nil {
+		wantWork = work
+	}
+	gotWork, err := filepath.EvalSymlinks(lines[0])
+	if err != nil {
+		gotWork = lines[0]
+	}
+	if gotWork != wantWork {
+		t.Fatalf("cwd = %q, want %q", lines[0], work)
+	}
+	if lines[1] != "secret-token" {
+		t.Fatalf("SCRIPT_TOKEN = %q, want secret-token", lines[1])
+	}
+}

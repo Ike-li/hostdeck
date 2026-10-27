@@ -95,10 +95,20 @@ func RunScript(dir, name string, command []string) (string, error) {
 		e.stateErr = err
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	dir, env, secrets := e.dir, os.Environ(), []string(nil)
+	var envErr error
+	timeout := 30 * time.Minute
+	if task, ok := e.taskForCommand(command); ok {
+		if d, err := time.ParseDuration(task.Timeout); err == nil && d > 0 {
+			timeout = d
+		}
+		dir = localDir(e.dir, task.Exec.Dir)
+		env, secrets, envErr = environment(task)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	r := &running{id: id, ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	e.scriptRunning[name] = r
-	go e.executeScript(name, command, e.commandSecrets(command), r, out, errout)
+	go e.executeScript(name, command, dir, env, secrets, envErr, r, out, errout)
 	return id, nil
 }
 
@@ -127,20 +137,13 @@ func (e *entry) allowScriptCommand(name string, command []string) error {
 	return &formError{"command is not the default or a saved command for this script"}
 }
 
-func (e *entry) commandSecrets(command []string) []string {
-	var secrets []string
+func (e *entry) taskForCommand(command []string) (Task, bool) {
 	for _, t := range e.cfg.Tasks {
-		if !slices.Equal(shownCommand(t.Exec, runtime.GOOS), command) {
-			continue
+		if slices.Equal(shownCommand(t.Exec, runtime.GOOS), command) {
+			return t, true
 		}
-		_, found, err := environment(t)
-		if err != nil {
-			continue
-		}
-		secrets = append(secrets, found...)
 	}
-	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
-	return secrets
+	return Task{}, false
 }
 
 func (e *entry) scriptRecord(id string) *ScriptRun {
@@ -152,35 +155,37 @@ func (e *entry) scriptRecord(id string) *ScriptRun {
 	return nil
 }
 
-func (e *entry) executeScript(name string, command, secrets []string, r *running, out, errout *os.File) {
+func (e *entry) executeScript(name string, command []string, dir string, env, secrets []string, envErr error, r *running, out, errout *os.File) {
 	defer r.cancel()
 	stdout, stderr := newLog(out, secrets), newLog(errout, secrets)
-	result := process.Outcome{Clean: true}
-	if executable, exeErr := os.Executable(); exeErr == nil {
-		result = process.Run(r.ctx, executable, process.Spec{Command: command, Dir: e.dir, Env: os.Environ(), Token: r.id}, process.Hooks{
-			Stdout: stdout,
-			Stderr: stderr,
-			Prepared: func(identity process.Identity) error {
-				e.mu.Lock()
-				defer e.mu.Unlock()
-				e.state.Active[r.id] = identity
-				return e.saveLocked()
-			},
-			Started: func(int) error {
-				e.mu.Lock()
-				defer e.mu.Unlock()
-				record := e.scriptRecord(r.id)
-				if record == nil {
-					return errors.New("script run disappeared")
-				}
-				now := e.now()
-				record.StartedAt = &now
-				record.Status = "running"
-				return e.saveLocked()
-			},
-		})
-	} else {
-		result.Error = exeErr
+	result := process.Outcome{Error: envErr, Clean: true}
+	if envErr == nil {
+		if executable, exeErr := os.Executable(); exeErr == nil {
+			result = process.Run(r.ctx, executable, process.Spec{Command: command, Dir: dir, Env: env, Token: r.id}, process.Hooks{
+				Stdout: stdout,
+				Stderr: stderr,
+				Prepared: func(identity process.Identity) error {
+					e.mu.Lock()
+					defer e.mu.Unlock()
+					e.state.Active[r.id] = identity
+					return e.saveLocked()
+				},
+				Started: func(int) error {
+					e.mu.Lock()
+					defer e.mu.Unlock()
+					record := e.scriptRecord(r.id)
+					if record == nil {
+						return errors.New("script run disappeared")
+					}
+					now := e.now()
+					record.StartedAt = &now
+					record.Status = "running"
+					return e.saveLocked()
+				},
+			})
+		} else {
+			result.Error = exeErr
+		}
 	}
 	e.finish(r, stdout, stderr, secrets, result, finishTarget{running: e.scriptRunning, key: name})
 }
