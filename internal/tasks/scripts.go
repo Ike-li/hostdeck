@@ -269,7 +269,8 @@ func writeScript(dir, name, content string, create bool) error {
 	}
 }
 
-// DeleteScript removes one regular script file.
+// DeleteScript removes one regular script file. A run that is still going is
+// cancelled and waited on first, so it cannot write state for a deleted script.
 func DeleteScript(dir, name string) error {
 	if err := checkScriptName(name); err != nil {
 		return err
@@ -279,25 +280,44 @@ func DeleteScript(dir, name string) error {
 		return err
 	}
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if e.stateErr != nil {
+		e.mu.Unlock()
 		return e.stateErr
 	}
 	if e.ownerErr != nil {
+		e.mu.Unlock()
 		return e.ownerErr
 	}
 	if err := e.claimLocked(); err != nil {
+		e.mu.Unlock()
 		return err
 	}
 	info, err := e.root.Lstat("scripts/" + name)
 	if errors.Is(err, fs.ErrNotExist) {
+		e.mu.Unlock()
 		return ErrScriptMissing
 	}
 	if err != nil {
+		e.mu.Unlock()
 		return err
 	}
 	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		e.mu.Unlock()
 		return ErrScriptRefused
 	}
+	var wait <-chan struct{}
+	if r := e.scriptRunning[name]; r != nil {
+		if r.reason == "" {
+			r.reason = "stop"
+		}
+		r.cancel()
+		wait = r.done
+	}
+	e.mu.Unlock()
+	if wait != nil {
+		<-wait
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.root.Remove("scripts/" + name)
 }

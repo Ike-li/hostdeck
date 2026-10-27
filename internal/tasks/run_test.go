@@ -416,3 +416,43 @@ func TestAScriptRunUsesTheMatchedTaskDirAndEnv(t *testing.T) {
 		t.Fatalf("SCRIPT_TOKEN = %q, want secret-token", lines[1])
 	}
 }
+
+func TestDeletingARunningScriptCancelsItBeforeTheFileIsGone(t *testing.T) {
+	t.Setenv("HOSTDECK_TASK_BLOCK_DURATION", "30s")
+	dir, plug := fixture(t, "block", "30s")
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "scripts", "job.py"), []byte("print(1)\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	job := []string{os.Args[0], "-test.run=^TestTaskCommand$", "scripts/job.py"}
+	every := "24h"
+	jobLine := commandLine(t, job)
+	if err := tasks.UpdateTask(dir, "sample", tasks.TaskForm{Name: "Sample", Timeout: "30s", Schedule: tasks.ScheduleForm{Every: &every}, Command: &jobLine}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tasks.Sync(filepath.Dir(dir), []plugin.Plugin{plug}); err != nil {
+		t.Fatal(err)
+	}
+	id, err := tasks.RunScript(dir, "job.py", job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitScriptStatus(t, dir, id, "running")
+	if err := tasks.DeleteScript(dir, "job.py"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "scripts", "job.py")); !os.IsNotExist(err) {
+		t.Fatalf("script file still present: %v", err)
+	}
+	got := waitScriptStatus(t, dir, id, "cancelled")
+	if got["reason"] != "stop" && got["reason"] != "task_removed" {
+		t.Fatalf("cancel reason %+v", got)
+	}
+	state := readState(t, dir)
+	active, _ := state["active"].(map[string]any)
+	if active[id] != nil {
+		t.Fatalf("active slot left after delete: %+v", active)
+	}
+}
