@@ -1549,7 +1549,8 @@ card:
 // The plugins page orders plugins by the name it shows, not by the folder.
 func TestThePluginsPageListsPluginsByName(t *testing.T) {
 	dir := t.TempDir()
-	// Use existing built-in IDs so this remains a short catalog as examples grow.
+	// Installing built-in IDs keeps the total at the built-in count.
+	// SEARCH_AFTER is that count, so this page stays a plain list.
 	writePlugin(t, dir, "docker", "schema: 1\nname: {en: Beta, zh-CN: 乙}\npage: {link: 'https://b.example/'}\n")
 	writePlugin(t, dir, "jobs", "schema: 1\nname: {en: Alpha, zh-CN: 甲}\npage: {link: 'https://a.example/'}\n")
 	url := startConsole(t, dir)

@@ -9,7 +9,7 @@ export const PENDING_AGAIN = 2000; // how soon a card still being read is asked 
 export const LAYOUT_NOTE_FOR = 8000; // idle time before the saved notice and its one-step undo close
 export const INTERNAL_DRAG = 'application/x-hostdeck-internal';
 export const CATALOG = '.plugins'; // the plugins page's address, #/.plugins: no plugin ID starts with a dot
-export const SEARCH_AFTER = 8; // fewer plugins than this stay a plain list, without the search box
+export const SEARCH_AFTER = 9; // at most this many plugins stay a plain list, without the search box
 
 export const state = {
   lang: 'en',

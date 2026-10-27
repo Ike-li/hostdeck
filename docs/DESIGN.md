@@ -239,7 +239,7 @@ Interaction timings live in `web/state.js`, and count as tokens too:
 | `LAYOUT_NOTE_FOR` | 8000ms | "Layout saved." and its undo close after eight idle seconds, pausing while the pointer or focus is on them |
 | `PENDING_AGAIN` | 2000ms | How soon a card still being read is asked for again |
 | `STATUS_EVERY` | 15000ms | How often the sidebar's status dots are read |
-| `SEARCH_AFTER` | 8 | The plugins page shows its search from eight plugins |
+| `SEARCH_AFTER` | 9 | The plugins page shows its search from ten plugins |
 
 A detail view's action result closes after eight seconds (`web/monitor.js`).
 
@@ -411,7 +411,7 @@ Use:
 
 - Text: names and the like.
 - Address: `type="text"` with `inputmode="url"`, not `type="url"`. Why: it has to take `127.0.0.1:8080` without a scheme. Address fields also turn off `autocomplete` and `spellcheck`.
-- Search: `type="search"`, at most 360px wide, shown from eight plugins.
+- Search: `type="search"`, at most 360px wide, shown from ten plugins.
 - Long read-only text: 13px monospace, leading 1.65, at least 180px tall, resizable vertically only.
 
 **Widths in the add form**: fields flex at `1 1 160px`, the address at `2 1 260px`, wrapping when narrow.
@@ -622,7 +622,7 @@ All three use the same 8px box, so the column does not move. A dot has `role="im
 | View | Structure |
 | --- | --- |
 | Overview | Header (`h1` left; "Reset layout" and "Refresh" right; 12px gap when it wraps, 16px below) → the card grid (the plus card last) |
-| Pages & plugins | Header (`h1` and "Add content") → search (from eight plugins) → Enabled → Disabled → Needs attention → Trash → Add content (the form, built-in plugins, the connection help) → the plugins folder (collapsed) |
+| Pages & plugins | Header (`h1` and "Add content") → search (from ten plugins) → Enabled → Disabled → Needs attention → Trash → Add content (the form, built-in plugins, the connection help) → the plugins folder (collapsed) |
 | Service | Toolbar (padding 12px 16px, `--panel`, an edge below; the name as a 16px `h1`; Refresh, open in a new tab, More actions) → the iframe filling the rest |
 | Detail and monitor | A list of items, see 3.11; a monitor view's card is at most 720px wide |
 

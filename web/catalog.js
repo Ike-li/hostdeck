@@ -98,7 +98,7 @@ export async function copyAgentPrompt(kind) {
   }
 }
 
-// The search box is for a long page. Fewer plugins than this stay a plain list.
+// The search box is for a long page. At most SEARCH_AFTER plugins stay a plain list.
 export function updateCatalogSearch() {
   const search = $('catalog-search');
   const many = (state.catalog?.installed.length ?? 0) + (state.catalog?.available.length ?? 0) > SEARCH_AFTER;
