@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const day = 24 * time.Hour
@@ -212,6 +214,7 @@ func TestUnknownSessionsWhoseNamesSanitizeTogetherStayInSeparateGroups(t *testin
 			4: {PPID: 3, Name: "zsh"},
 			3: {PPID: 1, Name: "My Term"},
 		},
+		0,
 	)
 	var got struct {
 		Groups []struct {
@@ -264,7 +267,7 @@ func TestAnUnrecognisedSessionKeepsItsOldestAncestorName(t *testing.T) {
 	}
 }
 
-func TestDetailsGroupByOriginAndOfferNoActions(t *testing.T) {
+func TestDetailsGroupByOriginAndCanBeStoppedWhenTheLaunchWasNotRead(t *testing.T) {
 	raw := Detail(
 		map[int]Listener{
 			78656: {Command: "biliup", Ports: []int{19159}},
@@ -274,6 +277,7 @@ func TestDetailsGroupByOriginAndOfferNoActions(t *testing.T) {
 			78656: {PPID: 78071, Name: "biliup", Uptime: day + 2*time.Hour},
 			98224: {PPID: 98223, Name: "python", Uptime: 5 * time.Minute},
 		})),
+		0,
 	)
 	var got struct {
 		Presentation string `json:"presentation"`
@@ -310,8 +314,8 @@ func TestDetailsGroupByOriginAndOfferNoActions(t *testing.T) {
 		t.Fatalf("claude item %+v", got.Items[1])
 	}
 	for _, it := range got.Items {
-		if len(it.Actions) != 0 || it.Log != "" {
-			t.Fatalf("item %+v has an action or a log", it)
+		if len(it.Actions) != 1 || it.Actions[0].ID != "stop" || it.Log != "" {
+			t.Fatalf("item %+v", it)
 		}
 	}
 	fields := map[string]string{}
@@ -321,6 +325,135 @@ func TestDetailsGroupByOriginAndOfferNoActions(t *testing.T) {
 	if fields["PID"] != `"78656"` || fields["Ports"] != `"19159"` || fields["Started from"] == "" || fields["Running for"] == "" {
 		t.Fatalf("fields %v", fields)
 	}
+	if fields["Directory"] != `{"en":"Could not read the working directory.","zh-CN":"读不到工作目录。"}` || fields["Command"] != `{"en":"Could not read the command.","zh-CN":"读不到启动命令。"}` {
+		t.Fatalf("fields %v", fields)
+	}
+}
+
+func TestADetailRowShowsTheDirectoryAndTheCommand(t *testing.T) {
+	started := time.Unix(1_700_000_000, 0)
+	raw := Detail(
+		map[int]Listener{4: {Command: "mitmweb", Ports: []int{8081, 8888}}},
+		map[int]Proc{
+			4: {
+				PPID: 3, Name: "mitmweb", Uptime: 30 * time.Minute, Started: started,
+				Dir: "/Users/raylee/proxy", Exe: "/usr/local/bin/mitmweb",
+				Args: []string{"/usr/local/bin/mitmweb", "--listen", "8081"},
+				Env:  []string{"SECRET_TOKEN=hunter2"}, KnowsDir: true, KnowsArgs: true, KnowsEnv: true,
+			},
+			3: {PPID: 2, Name: "zsh"},
+			2: {PPID: 1, Name: "Code Helper (Plugin)"},
+		},
+		50,
+	)
+	if strings.Contains(string(raw), "hunter2") || strings.Contains(string(raw), "SECRET_TOKEN") {
+		t.Fatalf("detail includes the environment: %s", raw)
+	}
+	fields, actions := detailFields(t, raw, "4")
+	if fields["Directory"] != `"/Users/raylee/proxy"` || fields["Command"] != `"/usr/local/bin/mitmweb --listen 8081"` {
+		t.Fatalf("fields %v", fields)
+	}
+	if len(actions) != 2 || actions[0] != "stop" || actions[1] != "restart" {
+		t.Fatalf("actions %v", actions)
+	}
+}
+
+func TestALongCommandIsTruncatedInBothLanguages(t *testing.T) {
+	arg := strings.Repeat("a", 600)
+	raw := Detail(
+		map[int]Listener{4: {Command: "node", Ports: []int{9}}},
+		with(terminal(), map[int]Proc{4: {
+			PPID: 78071, Name: "node", Uptime: time.Minute, Started: time.Unix(10, 0),
+			Dir: "/tmp/app", Args: []string{arg}, Env: []string{"A=b"},
+			KnowsDir: true, KnowsArgs: true, KnowsEnv: true,
+		}}),
+		50,
+	)
+	fields, _ := detailFields(t, raw, "4")
+	var value map[string]string
+	if err := json.Unmarshal([]byte(fields["Command"]), &value); err != nil {
+		t.Fatalf("command %s: %v", fields["Command"], err)
+	}
+	if !strings.HasSuffix(value["en"], "… (truncated)") || !strings.HasSuffix(value["zh-CN"], "…（已截断）") {
+		t.Fatalf("command %v", value)
+	}
+	if utf8.RuneCountInString(strings.TrimSuffix(value["en"], " (truncated)")) != 513 {
+		t.Fatalf("kept %d runes", utf8.RuneCountInString(value["en"]))
+	}
+}
+
+func TestTheConsolesOwnProcessHasNoStopOrRestart(t *testing.T) {
+	raw := Detail(
+		map[int]Listener{50: {Command: "hostdeck", Ports: []int{4678}}},
+		with(terminal(), map[int]Proc{50: {
+			PPID: 78071, Name: "hostdeck", Uptime: time.Minute, Started: time.Unix(10, 0),
+			Dir: "/Users/raylee/code/hostdeck", Args: []string{"hostdeck"}, Env: []string{"A=b"},
+			KnowsDir: true, KnowsArgs: true, KnowsEnv: true,
+		}}),
+		50,
+	)
+	fields, actions := detailFields(t, raw, "50")
+	if len(actions) != 0 {
+		t.Fatalf("actions %v", actions)
+	}
+	if !strings.Contains(fields["Note"], "这是本控制台") || !strings.Contains(fields["Note"], "cannot be stopped") {
+		t.Fatalf("note %s", fields["Note"])
+	}
+}
+
+func TestAProcessRestartedFromTheConsoleSaysClosingTheTerminalWillNotStopIt(t *testing.T) {
+	raw := Detail(
+		map[int]Listener{9: {Command: "mitmweb", Ports: []int{8081}}},
+		with(terminal(), map[int]Proc{
+			9: {
+				PPID: 50, Name: "mitmweb", Uptime: time.Minute, Started: time.Unix(10, 0),
+				Dir: "/tmp/proxy", Exe: "/usr/local/bin/mitmweb", Args: []string{"/usr/local/bin/mitmweb"},
+				Env: []string{}, KnowsDir: true, KnowsArgs: true, KnowsEnv: true,
+			},
+			50: {PPID: 78071, Name: "hostdeck"},
+		}),
+		50,
+	)
+	fields, actions := detailFields(t, raw, "9")
+	if len(actions) != 2 || actions[0] != "stop" || actions[1] != "restart" {
+		t.Fatalf("actions %v", actions)
+	}
+	if !strings.Contains(fields["Note"], "已从本控制台重新启动") || !strings.Contains(fields["Note"], "Closing the original terminal will not stop it") {
+		t.Fatalf("note %s", fields["Note"])
+	}
+}
+
+func detailFields(t *testing.T, raw []byte, id string) (map[string]string, []string) {
+	t.Helper()
+	var got struct {
+		Items []struct {
+			ID     string `json:"id"`
+			Fields []struct {
+				Name  map[string]string `json:"name"`
+				Value json.RawMessage   `json:"value"`
+			} `json:"fields"`
+			Actions []struct{ ID string } `json:"actions"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range got.Items {
+		if it.ID != id {
+			continue
+		}
+		fields := map[string]string{}
+		for _, f := range it.Fields {
+			fields[f.Name["en"]] = string(f.Value)
+		}
+		var actions []string
+		for _, a := range it.Actions {
+			actions = append(actions, a.ID)
+		}
+		return fields, actions
+	}
+	t.Fatalf("no item %s in %s", id, raw)
+	return nil, nil
 }
 
 func TestNoServicesHaveAnEmptyDetail(t *testing.T) {
@@ -329,7 +462,7 @@ func TestNoServicesHaveAnEmptyDetail(t *testing.T) {
 		Groups []any `json:"groups"`
 		Error  any   `json:"error"`
 	}
-	if err := json.Unmarshal(Detail(nil, nil), &got); err != nil {
+	if err := json.Unmarshal(Detail(nil, nil, 0), &got); err != nil {
 		t.Fatal(err)
 	}
 	if len(got.Items) != 0 || len(got.Groups) != 0 || got.Error != nil {
@@ -350,7 +483,7 @@ func TestLsofAndPsOutputBecomeListenersAndProcesses(t *testing.T) {
 	}) {
 		t.Fatalf("listeners %+v", listeners)
 	}
-	if procs[78656] != (Proc{PPID: 78071, Name: "biliup", Uptime: day + 2*time.Hour + 3*time.Minute + 4*time.Second}) {
+	if !reflect.DeepEqual(procs[78656], Proc{PPID: 78071, Name: "biliup", Uptime: day + 2*time.Hour + 3*time.Minute + 4*time.Second}) {
 		t.Fatalf("biliup %+v", procs[78656])
 	}
 	if procs[89255].Uptime != 5*time.Minute+6*time.Second || procs[1].Uptime != 2*day || procs[1].Name != "launchd" {

@@ -21,10 +21,21 @@ type Listener struct {
 }
 
 // Proc is one process in the tree. Uptime is how long it has been running.
+// Directory, arguments, the Windows command line and the environment are set
+// only when a reading actually obtained them. The environment is never shown.
 type Proc struct {
-	PPID   int
-	Name   string
-	Uptime time.Duration
+	PPID        int
+	Name        string
+	Uptime      time.Duration
+	Started     time.Time
+	Dir         string
+	Exe         string
+	Args        []string
+	CommandLine string
+	Env         []string
+	KnowsDir    bool
+	KnowsArgs   bool
+	KnowsEnv    bool
 }
 
 type text map[string]string
@@ -56,11 +67,17 @@ type groupDoc struct {
 }
 
 type itemDoc struct {
-	ID     string     `json:"id"`
-	Name   string     `json:"name"`
-	Group  string     `json:"group"`
-	Value  text       `json:"value"`
-	Fields []fieldDoc `json:"fields"`
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Group   string      `json:"group"`
+	Value   text        `json:"value"`
+	Fields  []fieldDoc  `json:"fields"`
+	Actions []actionDoc `json:"actions,omitempty"`
+}
+
+type actionDoc struct {
+	ID    string `json:"id"`
+	Label text   `json:"label"`
 }
 
 type fieldDoc struct {
@@ -69,11 +86,23 @@ type fieldDoc struct {
 }
 
 type hit struct {
-	pid     int
-	command string
-	ports   []int
-	uptime  time.Duration
-	origin  origin
+	pid       int
+	ppid      int
+	command   string
+	ports     []int
+	uptime    time.Duration
+	origin    origin
+	started   time.Time
+	dir       string
+	exe       string
+	args      []string
+	cmdline   string
+	env       []string
+	knowsDir  bool
+	knowsArgs bool
+	knowsEnv  bool
+	noteSet   bool
+	refusal   text
 }
 
 type origin struct {
@@ -103,8 +132,11 @@ func Card(listeners map[int]Listener, procs map[int]Proc) []byte {
 	return out
 }
 
-// Detail is the compact list of the same listeners. It offers no actions.
-func Detail(listeners map[int]Listener, procs map[int]Proc) []byte {
+// Detail is the compact list of the same listeners. self is the console's PID:
+// that row explains itself and offers nothing, and a child of the console says
+// it was restarted here. Any other row can be stopped, and restarted when its
+// command, directory and environment were all read.
+func Detail(listeners map[int]Listener, procs map[int]Proc, self int) []byte {
 	hits := selectHits(listeners, procs)
 	doc := detailDoc{Items: []itemDoc{}}
 	if len(hits) == 0 {
@@ -132,19 +164,98 @@ func Detail(listeners map[int]Listener, procs map[int]Proc) []byte {
 	}
 	doc.Items = make([]itemDoc, len(hits))
 	for i, h := range hits {
-		doc.Items[i] = itemDoc{
-			ID: strconv.Itoa(h.pid), Name: h.command, Group: h.origin.id,
-			Value: running(h.origin.label, h.uptime),
-			Fields: []fieldDoc{
-				{Name: words("PID", "PID"), Value: strconv.Itoa(h.pid)},
-				{Name: words("Ports", "端口"), Value: portList(h.ports)},
-				{Name: words("Started from", "来源"), Value: h.origin.label},
-				{Name: words("Running for", "已运行"), Value: uptimeText(h.uptime)},
-			},
-		}
+		doc.Items[i] = detailItem(h, self)
 	}
 	out, _ := json.Marshal(doc)
 	return out
+}
+
+func detailItem(h hit, self int) itemDoc {
+	item := itemDoc{
+		ID: strconv.Itoa(h.pid), Name: h.command, Group: h.origin.id,
+		Value: running(h.origin.label, h.uptime),
+		Fields: []fieldDoc{
+			{Name: words("PID", "PID"), Value: strconv.Itoa(h.pid)},
+			{Name: words("Ports", "端口"), Value: portList(h.ports)},
+			{Name: words("Started from", "来源"), Value: h.origin.label},
+			{Name: words("Directory", "目录"), Value: directoryValue(h)},
+			{Name: words("Command", "命令"), Value: commandValue(h)},
+			{Name: words("Running for", "已运行"), Value: uptimeText(h.uptime)},
+		},
+	}
+	if self > 0 && h.pid == self {
+		item.Fields = append(item.Fields, fieldDoc{
+			Name:  words("Note", "说明"),
+			Value: words("This is the console, so it cannot be stopped or restarted here.", "这是本控制台，不能在这里结束或重启。"),
+		})
+		return item
+	}
+	if self > 0 && h.ppid == self {
+		item.Fields = append(item.Fields, fieldDoc{
+			Name:  words("Note", "说明"),
+			Value: words("Restarted from this console. Closing the original terminal will not stop it.", "已从本控制台重新启动。关掉原来的终端不会让它停。"),
+		})
+	}
+	item.Actions = []actionDoc{{ID: "stop", Label: words("Stop", "结束")}}
+	if canRestart(h) {
+		item.Actions = append(item.Actions, actionDoc{ID: "restart", Label: words("Restart", "重启")})
+	}
+	return item
+}
+
+func directoryValue(h hit) any {
+	if h.knowsDir && h.dir != "" {
+		return h.dir
+	}
+	return words("Could not read the working directory.", "读不到工作目录。")
+}
+
+func commandValue(h hit) any {
+	s := h.cmdline
+	if s == "" {
+		s = quoteArgs(h.args)
+	}
+	if s == "" {
+		return words("Could not read the command.", "读不到启动命令。")
+	}
+	const limit = 512
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	cut := string(r[:limit]) + "…"
+	return words(cut+" (truncated)", cut+"（已截断）")
+}
+
+func quoteArgs(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	parts := make([]string, len(args))
+	for i, arg := range args {
+		if arg == "" || strings.ContainsAny(arg, " \t\n\"\\") {
+			parts[i] = strconv.Quote(arg)
+		} else {
+			parts[i] = arg
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func canRestart(h hit) bool {
+	return !h.started.IsZero() && h.knowsDir && h.dir != "" && h.knowsEnv && commandKnown(h) && launchExe(h) != ""
+}
+
+func commandKnown(h hit) bool { return len(h.args) > 0 || h.cmdline != "" }
+
+func launchExe(h hit) string {
+	if h.exe != "" {
+		return h.exe
+	}
+	if len(h.args) > 0 {
+		return h.args[0]
+	}
+	return ""
 }
 
 func selectHits(listeners map[int]Listener, procs map[int]Proc) []hit {
@@ -169,7 +280,13 @@ func selectHits(listeners map[int]Listener, procs map[int]Proc) []hit {
 		if command == "" {
 			command = fmt.Sprintf("pid %d", pid)
 		}
-		hits = append(hits, hit{pid: pid, command: command, ports: ports, uptime: proc.Uptime, origin: classifyOrigin(names)})
+		hits = append(hits, hit{
+			pid: pid, ppid: proc.PPID, command: command, ports: ports, uptime: proc.Uptime,
+			origin: classifyOrigin(names), started: proc.Started, dir: proc.Dir, exe: proc.Exe,
+			args: append([]string(nil), proc.Args...), cmdline: proc.CommandLine,
+			env: append([]string(nil), proc.Env...), knowsDir: proc.KnowsDir,
+			knowsArgs: proc.KnowsArgs, knowsEnv: proc.KnowsEnv,
+		})
 	}
 	sort.Slice(hits, func(i, j int) bool {
 		a, b := strings.ToLower(hits[i].command), strings.ToLower(hits[j].command)

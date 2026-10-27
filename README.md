@@ -245,7 +245,7 @@ The built-in **Docker containers** plugin provides a compact searchable containe
 
 ## Services started by hand
 
-Add **Services started by hand** under Pages & plugins → Add content. It lists TCP listeners started from a terminal or a session, such as a program left running in Terminal, iTerm, Windows Terminal, VS Code or a Claude session. They stop when that terminal or session closes. launchd jobs, Windows services and ports an app opens for itself are not listed, and there is no restart. The card names each process and the ports it holds; the page groups them by where they were started. This is not yet the view of every process listening on a port.
+Add **Services started by hand** under Pages & plugins → Add content. It lists TCP listeners started from a terminal or a session, such as a program left running in Terminal, iTerm, Windows Terminal, VS Code or a Claude session. The page shows the working directory and the command. A confirmed action stops that process, or restarts it from this console; the console itself cannot be stopped here. A restarted process keeps running after the original terminal closes. After hostdeck exits it keeps running and leaves this list. launchd jobs, Windows services and ports an app opens for itself are not listed. The card names each process and the ports it holds; the page groups them by where they were started. This is not yet the view of every process listening on a port.
 
 ## Scheduled script tasks
 
