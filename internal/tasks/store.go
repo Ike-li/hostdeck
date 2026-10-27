@@ -57,10 +57,28 @@ type Record struct {
 	Logs        logs       `json:"logs"`
 	Diagnostic  string     `json:"diagnostic,omitempty"`
 }
+
+// ScriptRun is one one-shot script execution. It is not a task and is not a
+// member of Runs: a script file name is not a task id, and a configuration
+// refresh must not treat the run as removed.
+type ScriptRun struct {
+	ID         string     `json:"id"`
+	File       string     `json:"file"`
+	Command    []string   `json:"command"`
+	AcceptedAt time.Time  `json:"accepted_at"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	Status     string     `json:"status"`
+	ExitCode   *int       `json:"exit_code"`
+	Reason     *string    `json:"reason"`
+	Logs       logs       `json:"logs"`
+	Diagnostic string     `json:"diagnostic,omitempty"`
+}
 type saved struct {
 	Version int                         `json:"version"`
 	Tasks   map[string]taskState        `json:"tasks"`
 	Runs    []Record                    `json:"runs"`
+	Scripts []ScriptRun                 `json:"scripts,omitempty"`
 	Active  map[string]process.Identity `json:"active"`
 }
 
@@ -157,15 +175,32 @@ func loadState(root *os.Root) (saved, error) {
 		}
 		ids[r.ID] = r
 	}
+	scriptIDs, err := scriptRecords(&s, ids)
+	if err != nil {
+		return s, err
+	}
 	for id, identity := range s.Active {
 		r := ids[id]
-		if r.ID == "" || identity.PID < 0 || identity.Token != id || s.Tasks[r.TaskID].Revision == "" || (!activeStatus(r.Status) && r.Status != "interrupted") || (r.Status == "running" && identity.PID == 0) {
+		sr := scriptIDs[id]
+		if (r.ID == "") == (sr.ID == "") {
+			return s, errors.New("invalid active worker")
+		}
+		status := r.Status
+		if sr.ID != "" {
+			status = sr.Status
+		}
+		if identity.PID < 0 || identity.Token != id || (!activeStatus(status) && status != "interrupted") || (status == "running" && identity.PID == 0) || (r.ID != "" && s.Tasks[r.TaskID].Revision == "") {
 			return s, errors.New("invalid active worker")
 		}
 	}
 	for _, r := range s.Runs {
 		if activeStatus(r.Status) && s.Active[r.ID].Token == "" {
 			return s, errors.New("active run has no worker identity")
+		}
+	}
+	for _, r := range s.Scripts {
+		if activeStatus(r.Status) && s.Active[r.ID].Token == "" {
+			return s, errors.New("active script run has no worker identity")
 		}
 	}
 	for id, ts := range s.Tasks {
@@ -222,7 +257,77 @@ func stateShape(b []byte) error {
 			return err
 		}
 	}
+	if raw, ok := root["scripts"]; ok && string(raw) != "null" {
+		var records []json.RawMessage
+		if err := json.Unmarshal(raw, &records); err != nil {
+			return err
+		}
+		for _, raw := range records {
+			o, err := object(raw, []string{"id", "file", "command", "accepted_at", "started_at", "finished_at", "status", "exit_code", "reason", "logs"}, []string{"started_at", "finished_at", "exit_code", "reason"})
+			if err != nil {
+				return err
+			}
+			if _, err := object(o["logs"], []string{"stdout", "stderr", "stdout_truncated", "stderr_truncated"}, []string{"stdout", "stderr"}); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+func scriptRecords(s *saved, runs map[string]Record) (map[string]ScriptRun, error) {
+	if len(s.Scripts) > 68 {
+		return nil, errors.New("invalid task state version or collections")
+	}
+	out := map[string]ScriptRun{}
+	for _, r := range s.Scripts {
+		if !runIDPattern.MatchString(r.ID) || runs[r.ID].ID != "" || out[r.ID].ID != "" || checkScriptName(r.File) != nil || r.AcceptedAt.IsZero() || len(r.Diagnostic) > 1024 {
+			return nil, errors.New("invalid script run identity")
+		}
+		if len(r.Command) == 0 || strings.TrimSpace(r.Command[0]) == "" || r.Command[0] == "@hostdeck" {
+			return nil, errors.New("invalid script command")
+		}
+		for _, arg := range r.Command {
+			if strings.ContainsRune(arg, 0) {
+				return nil, errors.New("invalid script command")
+			}
+		}
+		switch r.Status {
+		case "starting", "running", "succeeded", "failed", "timed_out", "cancelled", "interrupted", "skipped":
+		default:
+			return nil, errors.New("invalid script run status")
+		}
+		if activeStatus(r.Status) && r.FinishedAt != nil || !activeStatus(r.Status) && r.FinishedAt == nil {
+			return nil, errors.New("invalid script run completion")
+		}
+		if r.Status == "running" && r.StartedAt == nil || r.Status == "starting" && r.StartedAt != nil {
+			return nil, errors.New("invalid script run start")
+		}
+		if activeStatus(r.Status) || r.Status == "succeeded" {
+			if r.Reason != nil {
+				return nil, errors.New("unexpected script run reason")
+			}
+		} else {
+			allowed := map[string][]string{"failed": {"exit", "start", "environment", "log_io"}, "timed_out": {"timeout"}, "cancelled": {"stop", "task_removed", "plugin_disabled", "shutdown"}, "interrupted": {"recovery", "cleanup"}, "skipped": {"overlap", "capacity"}}
+			if r.Reason == nil || !slices.Contains(allowed[r.Status], *r.Reason) {
+				return nil, errors.New("invalid script run reason")
+			}
+		}
+		if r.Status == "succeeded" && (r.StartedAt == nil || r.ExitCode == nil || *r.ExitCode != 0) {
+			return nil, errors.New("invalid successful script result")
+		}
+		if r.Reason != nil && *r.Reason == "exit" && (r.ExitCode == nil || *r.ExitCode == 0) {
+			return nil, errors.New("invalid script exit failure")
+		}
+		for i, p := range []*string{r.Logs.Stdout, r.Logs.Stderr} {
+			suffix := []string{".stdout.log", ".stderr.log"}[i]
+			if p != nil && *p != "data/logs/"+r.ID+suffix {
+				return nil, errors.New("invalid script log path")
+			}
+		}
+		out[r.ID] = r
+	}
+	return out, nil
 }
 
 func (e *entry) saveLocked() error {
@@ -325,6 +430,17 @@ func (e *entry) recoverLocked() error {
 		e.state.Tasks[r.TaskID] = ts
 		changed = true
 	}
+	for i := range e.state.Scripts {
+		r := &e.state.Scripts[i]
+		if !activeStatus(r.Status) {
+			continue
+		}
+		now := e.now()
+		r.Status = "interrupted"
+		r.Reason = str("recovery")
+		r.FinishedAt = &now
+		changed = true
+	}
 	for id, identity := range e.state.Active {
 		if identity.PID == 0 || process.Gone(identity) {
 			delete(e.state.Active, id)
@@ -372,9 +488,75 @@ func (e *entry) pruneLocked(reserve int) error {
 		kept = append(kept, r)
 	}
 	e.state.Runs = kept
+	scriptKept := make([]ScriptRun, 0, len(e.state.Scripts))
+	var finishedScripts []ScriptRun
+	for _, r := range e.state.Scripts {
+		if activeStatus(r.Status) || e.state.Active[r.ID].Token != "" {
+			scriptKept = append(scriptKept, r)
+			continue
+		}
+		if r.AcceptedAt.Before(now.Add(-30 * 24 * time.Hour)) {
+			appendLogPaths(&remove, r.Logs)
+			changed = true
+			continue
+		}
+		finishedScripts = append(finishedScripts, r)
+	}
+	newestScript := map[string]ScriptRun{}
+	var scriptOrder []string
+	for _, r := range finishedScripts {
+		prev, ok := newestScript[r.File]
+		if !ok {
+			newestScript[r.File] = r
+			scriptOrder = append(scriptOrder, r.File)
+			continue
+		}
+		drop := r
+		if r.AcceptedAt.After(prev.AcceptedAt) {
+			drop = prev
+			newestScript[r.File] = r
+		}
+		appendLogPaths(&remove, drop.Logs)
+		changed = true
+	}
+	finishedKept := make([]ScriptRun, 0, len(newestScript))
+	for _, file := range scriptOrder {
+		finishedKept = append(finishedKept, newestScript[file])
+	}
+	if len(finishedKept) > 64 {
+		slices.SortFunc(finishedKept, func(a, b ScriptRun) int { return a.AcceptedAt.Compare(b.AcceptedAt) })
+		for _, r := range finishedKept[:len(finishedKept)-64] {
+			appendLogPaths(&remove, r.Logs)
+		}
+		finishedKept = finishedKept[len(finishedKept)-64:]
+		changed = true
+	}
+	e.state.Scripts = append(scriptKept, finishedKept...)
 	var used int64
 	for i := range e.state.Runs {
 		r := &e.state.Runs[i]
+		if e.state.Active[r.ID].Token != "" {
+			continue
+		}
+		for _, p := range []**string{&r.Logs.Stdout, &r.Logs.Stderr} {
+			if *p == nil {
+				continue
+			}
+			info, err := e.root.Stat(**p)
+			if errors.Is(err, fs.ErrNotExist) {
+				*p = nil
+				changed = true
+				continue
+			}
+			if err != nil {
+				e.state = previous
+				return err
+			}
+			used += info.Size()
+		}
+	}
+	for i := range e.state.Scripts {
+		r := &e.state.Scripts[i]
 		if e.state.Active[r.ID].Token != "" {
 			continue
 		}
@@ -401,6 +583,29 @@ func (e *entry) pruneLocked(reserve int) error {
 			break
 		}
 		r := &e.state.Runs[i]
+		if e.state.Active[r.ID].Token != "" {
+			continue
+		}
+		for _, p := range []**string{&r.Logs.Stdout, &r.Logs.Stderr} {
+			if *p == nil {
+				continue
+			}
+			info, err := e.root.Stat(**p)
+			if err != nil {
+				e.state = previous
+				return err
+			}
+			used -= info.Size()
+			remove = append(remove, **p)
+			*p = nil
+			changed = true
+		}
+	}
+	for i := range e.state.Scripts {
+		if used <= budget {
+			break
+		}
+		r := &e.state.Scripts[i]
 		if e.state.Active[r.ID].Token != "" {
 			continue
 		}
@@ -461,7 +666,24 @@ func (e *entry) pruneLocked(reserve int) error {
 			e.nextPrune = expiry
 		}
 	}
+	for _, r := range e.state.Scripts {
+		if activeStatus(r.Status) || e.state.Active[r.ID].Token != "" {
+			continue
+		}
+		expiry := r.AcceptedAt.Add(30*24*time.Hour + time.Nanosecond)
+		if e.nextPrune.IsZero() || expiry.Before(e.nextPrune) {
+			e.nextPrune = expiry
+		}
+	}
 	return nil
+}
+
+func appendLogPaths(remove *[]string, recorded logs) {
+	for _, p := range []*string{recorded.Stdout, recorded.Stderr} {
+		if p != nil {
+			*remove = append(*remove, *p)
+		}
+	}
 }
 
 func (e *entry) sweepLogsLocked() error {
@@ -482,6 +704,13 @@ func (e *entry) sweepLogsLocked() error {
 	}
 	referenced := map[string]bool{}
 	for _, r := range e.state.Runs {
+		for _, p := range []*string{r.Logs.Stdout, r.Logs.Stderr} {
+			if p != nil {
+				referenced[*p] = true
+			}
+		}
+	}
+	for _, r := range e.state.Scripts {
 		for _, p := range []*string{r.Logs.Stdout, r.Logs.Stderr} {
 			if p != nil {
 				referenced[*p] = true

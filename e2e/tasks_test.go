@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -208,10 +209,45 @@ func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *tes
 			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-script-add`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
 			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.name.value = 'hello.py'; form.elements.content.value = "print('你好')\\n"; form.requestSubmit(); })()`))
 			poll(`!!document.querySelector('.detail-item[data-script="hello.py"]') && !document.querySelector('#page-editor').open`)
+			scheduleLabel := map[string]string{"en": "Schedule", "zh-CN": "设定时"}[lang]
+			runLabel := map[string]string{"en": "Run", "zh-CN": "运行"}[lang]
+			poll(`document.querySelector('.detail-item[data-script="hello.py"] .script-schedule')?.textContent===` + fmt.Sprintf("%q", scheduleLabel) + ` && document.querySelector('.detail-item[data-script="hello.py"] .script-run')?.textContent===` + fmt.Sprintf("%q", runLabel))
 			for _, width := range []int64{1280, 520} {
 				do(t, ctx, chromedp.EmulateViewport(width, 800))
-				poll(`document.documentElement.scrollWidth<=innerWidth && document.querySelector('.task-script-add').getBoundingClientRect().height>=44 && document.querySelector('.script-delete').getBoundingClientRect().height>=44`)
+				poll(`document.documentElement.scrollWidth<=innerWidth && document.querySelector('.task-script-add').getBoundingClientRect().height>=44 && document.querySelector('.script-schedule').getBoundingClientRect().height>=44 && document.querySelector('.script-run').getBoundingClientRect().height>=44 && document.querySelector('.script-delete').getBoundingClientRect().height>=44`)
 			}
+			defaultCommand := "python3 scripts/hello.py"
+			if runtime.GOOS == "windows" {
+				defaultCommand = "py -3 scripts/hello.py"
+			}
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-item[data-script="hello.py"] .script-schedule`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] [name="command"]`)))
+			poll(`document.querySelector('#page-editor [name="name"]').value==='hello.py' && document.querySelector('#page-editor [name="command"]').value===` + fmt.Sprintf("%q", defaultCommand) + ` && !document.querySelector('#page-editor [name="id"]')`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`#editor-cancel`)))
+			poll(`!document.querySelector('#page-editor').open`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-script-add`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
+			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.name.value = 'notes.txt'; form.elements.content.value = "hello\\n"; form.requestSubmit(); })()`))
+			poll(`!!document.querySelector('.detail-item[data-script="notes.txt"] .script-schedule') && !document.querySelector('.detail-item[data-script="notes.txt"] .script-run')`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-item[data-script="notes.txt"] .script-schedule`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] [name="command"]`)))
+			poll(`document.querySelector('#page-editor [name="command"]').value===''`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`#editor-cancel`)))
+			poll(`!document.querySelector('#page-editor').open`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-item[data-script="notes.txt"] .script-delete`)), chromedp.Click(chromedp.CSS(`.detail-item[data-script="notes.txt"] .script-delete`)))
+			poll(`!document.querySelector('.detail-item[data-script="notes.txt"]') && !!document.querySelector('.detail-item[data-script="hello.py"]')`)
+			tasksPath := filepath.Join(dir, "plugins", "scheduled-tasks", "tasks.json")
+			tasksBefore, err := os.ReadFile(tasksPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.detail-item[data-script="hello.py"] .script-run`)), chromedp.Click(chromedp.CSS(`.detail-item[data-script="hello.py"] .script-run`)))
+			poll(`!!document.querySelector('.detail-item[data-script="hello.py"] .script-result')?.textContent.trim()`)
+			tasksAfter, err := os.ReadFile(tasksPath)
+			if err != nil || string(tasksAfter) != string(tasksBefore) {
+				t.Fatalf("script run changed tasks.json: %s", tasksAfter)
+			}
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="tasks"]`)))
+			poll(`document.querySelectorAll('.detail-item').length===0 && document.querySelector('.detail-view').textContent.includes('tasks.example.json')`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="scripts"]`)))
+			poll(`!!document.querySelector('.detail-item[data-script="hello.py"]')`)
 			do(t, ctx, chromedp.Click(chromedp.CSS(`.script-edit`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
 			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.content.value = "print(2)\n"; form.requestSubmit(); })()`))
 			poll(`!document.querySelector('#page-editor').open`)

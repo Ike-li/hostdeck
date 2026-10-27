@@ -125,6 +125,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/plugins/scheduled-tasks/scripts/{name}", s.serveScriptRead)
 	mux.HandleFunc("POST /api/plugins/scheduled-tasks/scripts/{name}", s.serveScriptUpdate)
 	mux.HandleFunc("POST /api/plugins/scheduled-tasks/scripts/{name}/delete", s.serveScriptDelete)
+	mux.HandleFunc("POST /api/plugins/scheduled-tasks/scripts/{name}/run", s.serveScriptRun)
 	mux.HandleFunc("GET /api/plugins/scheduled-tasks/tasks", s.serveTaskList)
 	mux.HandleFunc("POST /api/plugins/scheduled-tasks/tasks", s.serveTaskCreate)
 	mux.HandleFunc("GET /api/plugins/scheduled-tasks/tasks/{id}", s.serveTaskRead)

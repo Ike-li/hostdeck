@@ -43,7 +43,7 @@ export function scheduledTaskTools(p, view, tools, choice, onChange, reload) {
       addTask.hidden = segment !== 'tasks';
       add.hidden = segment !== 'scripts';
     },
-    paint() { return paintScripts(view, choice, onChange); },
+    paint() { return paintScripts(view, choice, onChange, reload); },
   };
 }
 
@@ -79,7 +79,12 @@ export function taskRowControls(item, view, reload) {
   return [edit, remove];
 }
 
-async function paintScripts(view, choice, onChange) {
+async function paintScripts(view, choice, onChange, reload, quiet) {
+  if (choice.segment !== 'scripts') return;
+  if (view.querySelector('.detail-list .armed')) {
+    watchScripts(view, () => paintScripts(view, choice, onChange, reload, true));
+    return;
+  }
   const token = (view.scriptToken || 0) + 1;
   view.scriptToken = token;
   const list = view.querySelector('.detail-list');
@@ -88,17 +93,21 @@ async function paintScripts(view, choice, onChange) {
     list.replaceChildren(el('p', 'empty', t('loading')));
     try {
       const body = await readJSON('/api/plugins/scheduled-tasks/scripts');
-      if (view.scriptToken !== token) return;
+      if (view.scriptToken !== token || choice.segment !== 'scripts') return;
       view.scriptFiles = body.files || [];
     } catch (err) {
-      if (view.scriptToken !== token) return;
+      if (view.scriptToken !== token || choice.segment !== 'scripts') return;
       const note = el('p', 'banner', err.code ? explain(err) : err.message);
       note.setAttribute('role', 'alert');
       list.replaceChildren(note);
       return;
     }
   }
-  if (view.scriptToken !== token) return;
+  if (view.scriptToken !== token || choice.segment !== 'scripts') return;
+  if (view.querySelector('.detail-list .armed')) {
+    watchScripts(view, () => paintScripts(view, choice, onChange, reload, true));
+    return;
+  }
   const query = choice.search.trim().toLocaleLowerCase();
   const matched = view.scriptFiles.filter((file) => file.name.toLocaleLowerCase().includes(query));
   matched.sort((a, b) => a.name.localeCompare(b.name, state.lang, { sensitivity: 'base' }));
@@ -108,11 +117,29 @@ async function paintScripts(view, choice, onChange) {
     list.replaceChildren(empty);
   }
   else if (!matched.length) list.replaceChildren(el('p', 'empty', t('detail.noMatches')));
-  else list.replaceChildren(...matched.map((file) => scriptRow(view, file, onChange)));
-  if (state.current?.id === 'scheduled-tasks') announce(t('detail.matches', { count: matched.length, total: view.scriptFiles.length }));
+  else list.replaceChildren(...matched.map((file) => scriptRow(view, file, onChange, reload)));
+  if (!quiet && state.current?.id === 'scheduled-tasks') announce(t('detail.matches', { count: matched.length, total: view.scriptFiles.length }));
+  watchScripts(view, () => paintScripts(view, choice, onChange, reload, true));
 }
 
-function scriptRow(view, file, onChange) {
+// watchScripts refreshes a running script without replacing a button that is
+// waiting for its second click. A quiet refresh does not announce the count.
+function watchScripts(view, refresh) {
+  clearTimeout(view.scriptTimer);
+  const live = (view.scriptFiles || []).some((file) => file.status === 'starting' || file.status === 'running');
+  if (!live) return;
+  const delay = view.querySelector('.detail-list .armed') ? 400 : 1000;
+  view.scriptTimer = setTimeout(() => {
+    if (view.querySelector('.detail-list .armed')) {
+      watchScripts(view, refresh);
+      return;
+    }
+    view.scriptFiles = null;
+    refresh();
+  }, delay);
+}
+
+function scriptRow(view, file, onChange, reload) {
   const section = el('section', 'detail-item');
   section.dataset.script = file.name;
   const head = el('header', 'detail-head');
@@ -131,6 +158,9 @@ function scriptRow(view, file, onChange) {
       edit.disabled = false;
     }
   });
+  const schedule = el('button', 'btn script-schedule', t('tasks.scheduleScript'));
+  schedule.type = 'button';
+  schedule.addEventListener('click', () => openTaskEditor(view, { name: file.name, command: file.command || '' }, schedule, reload));
   const remove = el('button', 'btn script-delete', t('tasks.deleteScript'));
   remove.type = 'button';
   twoClicks(remove, t('tasks.confirmDelete', { name: file.name }), async () => {
@@ -145,9 +175,36 @@ function scriptRow(view, file, onChange) {
       remove.disabled = false;
     }
   });
-  actions.append(edit, remove);
+  actions.append(edit, schedule);
+  if (file.runnable) {
+    const run = el('button', 'btn script-run', t('tasks.runScript'));
+    run.type = 'button';
+    twoClicks(run, t('tasks.confirmRun', { name: file.name }), async () => {
+      run.disabled = true;
+      try {
+        await postJSON(`/api/plugins/scheduled-tasks/scripts/${encodeURIComponent(file.name)}/run`);
+        view.scriptFiles = null;
+        announce(t('tasks.scriptStarted', { name: file.name }));
+        onChange();
+      } catch (err) {
+        announce(err.code ? explain(err) : err.message);
+        run.disabled = false;
+      }
+    });
+    actions.append(run);
+  }
+  actions.append(remove);
   head.append(actions);
   section.append(head);
+  if (file.result || file.status) section.append(el('p', 'script-result', pick(file.result)));
+  if (file.log) {
+    const log = el('details', 'detail-log');
+    const content = el('pre', null, file.log);
+    content.tabIndex = 0;
+    content.setAttribute('aria-label', t('detail.log'));
+    log.append(el('summary', null, t('detail.log')), content);
+    section.append(log);
+  }
   return section;
 }
 
@@ -242,14 +299,14 @@ const cronFields = [['minute', 'tasks.minute'], ['hour', 'tasks.hour'], ['day', 
 // Saving refreshes the schedule; it does not run the command.
 function openTaskEditor(view, task, opener, reload) {
   const editor = $('page-editor');
-  const creating = !task;
+  const creating = !task?.id;
   const head = el('header', 'editor-head');
   const title = el('h2', null, creating ? t('tasks.addTask') : t('tasks.editTitle', { name: task.name }));
   title.id = 'editor-title';
   head.append(title);
   const form = el('form', 'page-edit-form');
   const fields = el('fieldset', 'editor-fields');
-  const name = labeled('name', t('page.name'), creating ? '' : task.name, false);
+  const name = labeled('name', t('page.name'), task?.name || '', false);
   const nameInput = name.querySelector('input');
   nameInput.required = true;
   nameInput.maxLength = 200;

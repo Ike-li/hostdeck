@@ -71,6 +71,7 @@ export function renderDetail(p, view) {
   }
   view.detailStale = false;
   view.scriptFiles = null;
+  clearTimeout(view.scriptTimer);
   view.classList.toggle('detail-compact', view.data.presentation === 'compact');
   const { items, error, groups = [] } = view.data;
   view.querySelector('.detail-tools')?.remove();
@@ -116,6 +117,7 @@ function renderDetailTools(p, view) {
       tasksUI.mark('scripts');
       return tasksUI.paint();
     }
+    clearTimeout(view.scriptTimer);
     if (tasksUI) tasksUI.mark('tasks');
     filters.hidden = false;
     const items = view.data.items || [];

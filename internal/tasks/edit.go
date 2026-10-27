@@ -284,14 +284,7 @@ func (e *entry) writableLocked() error {
 		return err
 	}
 	for id, identity := range e.state.Active {
-		local := false
-		for _, current := range e.running {
-			if current.id == id {
-				local = true
-				break
-			}
-		}
-		if !local && identity.PID != 0 && !process.Gone(identity) {
+		if !e.ownsActive(id) && identity.PID != 0 && !process.Gone(identity) {
 			return errors.New("old task process tree still needs local inspection")
 		}
 	}

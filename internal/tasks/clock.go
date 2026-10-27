@@ -43,7 +43,7 @@ func (e *entry) now() time.Time { return e.clock.Now().UTC() }
 
 func (e *entry) initializeScheduleLocked() error {
 	e.next = map[string]time.Time{}
-	needed := len(e.state.Tasks) > 0 || len(e.state.Runs) > 0
+	needed := len(e.state.Tasks) > 0 || len(e.state.Runs) > 0 || len(e.state.Scripts) > 0
 	for _, t := range e.cfg.Tasks {
 		if *t.Enabled && !e.state.Tasks[t.ID].Paused {
 			needed = true

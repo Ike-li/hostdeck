@@ -109,13 +109,44 @@ func (s *server) serveScriptDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, struct{}{})
 }
 
+func (s *server) serveScriptRun(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	dir, ok := s.taskDir()
+	if !ok {
+		writeError(w, http.StatusNotFound, &card.Error{Code: "not_installed"})
+		return
+	}
+	var command []string
+	if r.ContentLength != 0 {
+		var req struct {
+			Command []string `json:"command"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
+			return
+		}
+		command = req.Command
+	}
+	s.changing.Lock()
+	defer s.changing.Unlock()
+	id, err := tasks.RunScript(dir, r.PathValue("name"), command)
+	if err != nil {
+		writeScriptError(w, err)
+		return
+	}
+	writeJSON(w, map[string]string{"id": id})
+}
+
 func writeScriptError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, tasks.ErrScriptExists):
 		writeError(w, http.StatusConflict, &card.Error{Code: "script_exists"})
 	case errors.Is(err, tasks.ErrScriptMissing):
 		writeError(w, http.StatusNotFound, &card.Error{Code: "script_missing"})
-	case errors.Is(err, tasks.ErrScriptName), errors.Is(err, tasks.ErrScriptContent), errors.Is(err, tasks.ErrScriptRefused):
+	case errors.Is(err, tasks.ErrTaskForm), errors.Is(err, tasks.ErrScriptName), errors.Is(err, tasks.ErrScriptContent), errors.Is(err, tasks.ErrScriptRefused):
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
 	default:
 		writeError(w, http.StatusConflict, &card.Error{Code: "task_unavailable", Detail: err.Error()})

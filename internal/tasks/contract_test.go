@@ -33,7 +33,7 @@ func TestTheTaskReferenceNamesEveryConfigurationAndStoredField(t *testing.T) {
 		return fields
 	}
 	fields := configFields(reflect.TypeFor[Config](), "")
-	for _, typ := range []reflect.Type{reflect.TypeFor[saved](), reflect.TypeFor[taskState](), reflect.TypeFor[Record](), reflect.TypeFor[logs]()} {
+	for _, typ := range []reflect.Type{reflect.TypeFor[saved](), reflect.TypeFor[taskState](), reflect.TypeFor[Record](), reflect.TypeFor[ScriptRun](), reflect.TypeFor[logs]()} {
 		for i := 0; i < typ.NumField(); i++ {
 			tag, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
 			fields = append(fields, tag)

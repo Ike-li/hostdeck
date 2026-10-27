@@ -36,6 +36,7 @@ type entry struct {
 	configErr, stateErr, ownerErr error
 	state                         saved
 	running                       map[string]*running
+	scriptRunning                 map[string]*running
 	stopping, retired             bool
 	clock                         Clock
 	stopClock                     func()
@@ -114,7 +115,7 @@ func Sync(root string, plugins []plugin.Plugin, options ...Option) error {
 				r.Close()
 				return err
 			}
-			e = &entry{dir: dir, root: r, identity: info, state: emptyState(), running: map[string]*running{}, clock: realClock{}, next: map[string]time.Time{}}
+			e = &entry{dir: dir, root: r, identity: info, state: emptyState(), running: map[string]*running{}, scriptRunning: map[string]*running{}, clock: realClock{}, next: map[string]time.Time{}}
 			for _, option := range options {
 				option(e)
 			}
@@ -158,7 +159,7 @@ func (e *entry) refreshLocked() {
 		state, err := loadState(e.root)
 		if err != nil {
 			e.stateErr = err
-		} else if len(e.running) == 0 {
+		} else if len(e.running) == 0 && len(e.scriptRunning) == 0 {
 			e.state = state
 			e.stateErr = nil
 			e.stateErr = e.recoverLocked()
@@ -169,9 +170,10 @@ func (e *entry) refreshLocked() {
 			e.stateErr = err
 		}
 	}
-	if e.valid && (len(e.cfg.Tasks) > 0 || len(e.state.Runs) > 0) && !e.stopping && !e.retired && e.stopClock == nil {
+	busy := len(e.cfg.Tasks) > 0 || len(e.state.Runs) > 0 || len(e.state.Scripts) > 0
+	if e.valid && busy && !e.stopping && !e.retired && e.stopClock == nil {
 		e.stopClock = e.clock.Every(time.Second, e.tick)
-	} else if len(e.cfg.Tasks) == 0 && len(e.state.Runs) == 0 && e.stopClock != nil {
+	} else if !busy && e.stopClock != nil {
 		e.stopClock()
 		e.stopClock = nil
 	}
@@ -202,12 +204,14 @@ func stopEntry(ctx context.Context, e *entry, reason string) error {
 		}
 	}
 	var wait []chan struct{}
-	for _, r := range e.running {
-		if r.reason == "" {
-			r.reason = reason
+	for _, set := range []map[string]*running{e.running, e.scriptRunning} {
+		for _, r := range set {
+			if r.reason == "" {
+				r.reason = reason
+			}
+			r.cancel()
+			wait = append(wait, r.done)
 		}
-		r.cancel()
-		wait = append(wait, r.done)
 	}
 	e.mu.Unlock()
 	for _, done := range wait {
@@ -263,14 +267,7 @@ func Suspend(ctx context.Context, dir string) (func(), error) {
 	}
 	if err == nil {
 		for id, identity := range e.state.Active {
-			local := false
-			for _, current := range e.running {
-				if current.id == id {
-					local = true
-					break
-				}
-			}
-			if !local && identity.PID != 0 && !process.Gone(identity) {
+			if !e.ownsActive(id) && identity.PID != 0 && !process.Gone(identity) {
 				err = errors.New("old task process tree still needs local inspection")
 				break
 			}
@@ -297,7 +294,7 @@ func Suspend(ctx context.Context, dir string) (func(), error) {
 			if err != nil {
 				return
 			}
-			restored := &entry{dir: e.dir, root: root, identity: info, state: emptyState(), running: map[string]*running{}, clock: e.clock, next: map[string]time.Time{}}
+			restored := &entry{dir: e.dir, root: root, identity: info, state: emptyState(), running: map[string]*running{}, scriptRunning: map[string]*running{}, clock: e.clock, next: map[string]time.Time{}}
 			restored.refreshLocked()
 			registry.Lock()
 			if registry.items[e.dir] == nil {
@@ -329,6 +326,20 @@ func Issue(dir string) plugin.Text {
 		}
 	}
 	return plugin.Text{}
+}
+
+func (e *entry) ownsActive(id string) bool {
+	for _, current := range e.running {
+		if current.id == id {
+			return true
+		}
+	}
+	for _, current := range e.scriptRunning {
+		if current.id == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *entry) task(id string) (Task, bool) {

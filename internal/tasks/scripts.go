@@ -6,10 +6,13 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/Ike-li/hostdeck/internal/plugin"
 )
 
 const maxScript = 1 << 20
@@ -29,9 +32,50 @@ var (
 )
 
 // ScriptInfo is one file directly inside the plugin's scripts directory.
+// Command and Runnable describe the platform default used by Run and by the
+// task form's prefilled command. Result and Log are the latest one-shot run.
 type ScriptInfo struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
+	Name     string      `json:"name"`
+	Size     int64       `json:"size"`
+	Command  string      `json:"command,omitempty"`
+	Runnable bool        `json:"runnable"`
+	Status   string      `json:"status,omitempty"`
+	Result   plugin.Text `json:"result,omitempty"`
+	ExitCode *int        `json:"exit_code,omitempty"`
+	Reason   string      `json:"reason,omitempty"`
+	Log      string      `json:"log,omitempty"`
+}
+
+// defaultCommand is the argv offered for Run and for a new task. A file
+// without one can still be scheduled once the form has a command.
+func defaultCommand(name, goos string) ([]string, bool) {
+	file := "scripts/" + name
+	switch scriptExt(name) {
+	case ".py":
+		if goos == "windows" {
+			return []string{"py", "-3", file}, true
+		}
+		return []string{"python3", file}, true
+	case ".js", ".mjs":
+		return []string{"node", file}, true
+	case ".sh":
+		if goos == "windows" {
+			return nil, false
+		}
+		return []string{"bash", file}, true
+	case ".ps1":
+		return []string{"powershell", "-NoProfile", "-File", file}, true
+	default:
+		return nil, false
+	}
+}
+
+func scriptExt(name string) string {
+	i := strings.LastIndex(name, ".")
+	if i < 0 {
+		return ""
+	}
+	return strings.ToLower(name[i:])
 }
 
 func checkScriptName(name string) error {
@@ -83,10 +127,37 @@ func ListScripts(dir string) ([]ScriptInfo, error) {
 		if infoErr != nil || checkScriptName(name) != nil || info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			continue
 		}
-		out = append(out, ScriptInfo{Name: name, Size: info.Size()})
+		out = append(out, e.decorateScript(ScriptInfo{Name: name, Size: info.Size()}))
 	}
 	slices.SortFunc(out, func(a, b ScriptInfo) int { return strings.Compare(a.Name, b.Name) })
 	return out, nil
+}
+
+func (e *entry) decorateScript(info ScriptInfo) ScriptInfo {
+	if command, ok := defaultCommand(info.Name, runtime.GOOS); ok {
+		if line, ok := quoteCommand(command); ok {
+			info.Command = line
+		}
+		info.Runnable = true
+	}
+	var last *ScriptRun
+	for i := len(e.state.Scripts) - 1; i >= 0; i-- {
+		if e.state.Scripts[i].File == info.Name {
+			last = &e.state.Scripts[i]
+			break
+		}
+	}
+	if last == nil {
+		return info
+	}
+	info.Status = last.Status
+	info.Result = runStatus(last.Status)
+	info.ExitCode = last.ExitCode
+	if last.Reason != nil {
+		info.Reason = *last.Reason
+	}
+	info.Log = e.scriptLog(last)
+	return info
 }
 
 // ReadScript returns the text of one script file.
