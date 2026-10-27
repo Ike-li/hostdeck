@@ -655,6 +655,21 @@ func fakePlugin(args []string) {
 		fmt.Print(`{"presentation":"compact","items":[{"id":"job","name":"Keyboard","status":"error","log":"` + strings.Repeat(`line\n`, 80) + `END","logAvailable":true}]}`)
 	case "jobs-log-action":
 		fmt.Print(`{"message":{"en":"Ran. Not running, exit 78.","zh-CN":"已运行。未在运行，退出码 78。"}}`)
+	case "detail-late":
+		marker := args[1]
+		if _, err := os.Stat(marker); err == nil {
+			os.Remove(marker)
+			time.Sleep(800 * time.Millisecond)
+			os.WriteFile(marker+".done", []byte("1"), 0o644)
+			fmt.Print(`{"items":[{"id":"job","name":"After","actions":[{"id":"run","label":"Run"},{"id":"stop","label":"Stop"}]}]}`)
+			break
+		}
+		fmt.Print(`{"items":[{"id":"job","name":"Before","actions":[{"id":"run","label":"Run"},{"id":"stop","label":"Stop"}]}]}`)
+	case "action-late":
+		if len(args) >= 3 && args[2] == "run" {
+			os.WriteFile(args[1], []byte("x"), 0o644)
+		}
+		fmt.Print(`{"message":{"en":"Done","zh-CN":"完成"}}`)
 	case "detail-json":
 		fmt.Print(args[1])
 	case "detail-long":

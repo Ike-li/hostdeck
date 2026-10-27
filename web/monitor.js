@@ -40,6 +40,13 @@ export async function loadMonitor(p, view, refresh = false) {
 // periodic render does not reset an action button waiting for its second click.
 export async function loadDetail(p, view) {
   if (!view.openLogs) view.openLogs = new Set();
+  if (!view.detailDisarm) {
+    view.detailDisarm = true;
+    view.addEventListener('disarm', () => {
+      if (view.detailStale && !view.querySelector('.action.armed')) renderDetail(view.detailPlugin, view);
+    });
+  }
+  view.detailPlugin = p;
   view.setAttribute('aria-busy', 'true');
   if (state.current?.id === p.id) $('service-reload').disabled = true;
   try {
@@ -54,8 +61,16 @@ export async function loadDetail(p, view) {
 }
 
 export function renderDetail(p, view) {
-  view.scriptFiles = null;
+  view.detailPlugin = p;
   view.lang = state.lang;
+  // A reading can arrive between the two clicks that confirm an action.
+  // Replacing the button would forget the first click.
+  if (view.querySelector('.action.armed')) {
+    view.detailStale = true;
+    return;
+  }
+  view.detailStale = false;
+  view.scriptFiles = null;
   view.classList.toggle('detail-compact', view.data.presentation === 'compact');
   const { items, error, groups = [] } = view.data;
   view.querySelector('.detail-tools')?.remove();
