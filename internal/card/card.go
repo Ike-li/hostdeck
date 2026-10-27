@@ -313,6 +313,7 @@ const FetchTimeout = 30 * time.Second
 type Cache struct {
 	now     func() time.Time
 	mu      sync.Mutex
+	epoch   uint64 // bumped by Drop; in-flight fetches capture it
 	entries map[string]*entry
 }
 
@@ -327,10 +328,12 @@ func NewCache(now func() time.Time) *Cache {
 }
 
 // Drop forgets every kept view, so the next Get asks again before the interval.
-// A fetch that is already running is left to finish.
+// A fetch that is already running still finishes for its waiters, but must not
+// extend until after this Drop.
 func (c *Cache) Drop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.epoch++
 	for _, e := range c.entries {
 		e.until = time.Time{}
 	}
@@ -352,7 +355,7 @@ func (c *Cache) Get(ctx context.Context, p plugin.Plugin) View {
 	}
 	if e.running == nil {
 		e.running = make(chan struct{})
-		go c.fetch(p, e)
+		go c.fetch(p, e, c.epoch)
 	}
 	running := e.running
 	c.mu.Unlock()
@@ -373,7 +376,7 @@ func (c *Cache) Get(ctx context.Context, p plugin.Plugin) View {
 	return v
 }
 
-func (c *Cache) fetch(p plugin.Plugin, e *entry) {
+func (c *Cache) fetch(p plugin.Plugin, e *entry, epoch uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), FetchTimeout)
 	defer cancel()
 	v := Fetch(ctx, p)
@@ -381,7 +384,7 @@ func (c *Cache) fetch(p plugin.Plugin, e *entry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e.view, e.until = v, time.Time{}
-	if v.Error == nil {
+	if v.Error == nil && epoch == c.epoch {
 		e.until = c.now().Add(time.Duration(p.Card.Interval))
 	}
 	close(e.running)

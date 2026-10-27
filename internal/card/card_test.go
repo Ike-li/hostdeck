@@ -365,6 +365,48 @@ func TestARefreshReadsTheCardAgainBeforeItsInterval(t *testing.T) {
 }
 
 // A service that was down shows its value as soon as it is up again.
+func TestADropDuringFetchDoesNotKeepTheInFlightResult(t *testing.T) {
+	gate := make(chan struct{})
+	url, hits := counting(t, gate)
+	p := declarative(url, "v")
+	p.Card.Interval = plugin.Duration(time.Minute)
+	now := time.Now()
+	cache := NewCache(func() time.Time { return now })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if v := cache.Get(ctx, p); !v.Pending {
+		t.Fatalf("while gated: %+v, want pending", v)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for hits.Load() < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("fetch never reached the service")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	cache.Drop()
+	close(gate)
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		v := cache.Get(context.Background(), p)
+		if !v.Pending && v.Value != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("in-flight fetch never finished for waiters: %+v", v)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Still within the card interval; Drop must force a new fetch.
+	if v := cache.Get(context.Background(), p); v.Value != "2" || hits.Load() != 2 {
+		t.Fatalf("after Drop during fetch: value %q after %d requests, want a new 2", v.Value, hits.Load())
+	}
+}
+
 func TestAFailedCardIsNotKept(t *testing.T) {
 	var up atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
