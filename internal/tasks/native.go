@@ -69,6 +69,43 @@ func Sync(root string, plugins []plugin.Plugin, options ...Option) error {
 			wanted[dir] = true
 		}
 	}
+	type prepared struct {
+		dir      string
+		existing *entry
+		replaced *entry
+		root     *os.Root
+		identity os.FileInfo
+	}
+	var next []prepared
+	closePrepared := func() {
+		for _, p := range next {
+			if p.root != nil {
+				p.root.Close()
+			}
+		}
+	}
+	for dir := range wanted {
+		e := lookup(dir)
+		if e != nil {
+			info, err := os.Stat(dir)
+			if err == nil && os.SameFile(info, e.identity) {
+				next = append(next, prepared{dir: dir, existing: e})
+				continue
+			}
+		}
+		r, err := os.OpenRoot(dir)
+		if err != nil {
+			closePrepared()
+			return err
+		}
+		info, err := os.Stat(dir)
+		if err != nil {
+			r.Close()
+			closePrepared()
+			return err
+		}
+		next = append(next, prepared{dir: dir, replaced: e, root: r, identity: info})
+	}
 	registry.Lock()
 	var old []*entry
 	for dir, e := range registry.items {
@@ -82,45 +119,36 @@ func Sync(root string, plugins []plugin.Plugin, options ...Option) error {
 		err := stopEntry(ctx, e, "plugin_disabled")
 		cancel()
 		if err != nil {
+			closePrepared()
 			return err
 		}
 		registry.Lock()
 		delete(registry.items, e.dir)
 		registry.Unlock()
 	}
-	for dir := range wanted {
-		e := lookup(dir)
-		if e != nil {
-			info, err := os.Stat(dir)
-			if err != nil || !os.SameFile(info, e.identity) {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				err := stopEntry(ctx, e, "plugin_disabled")
-				cancel()
-				if err != nil {
-					return err
-				}
-				registry.Lock()
-				delete(registry.items, dir)
-				registry.Unlock()
-				e = nil
+	for i := range next {
+		p := &next[i]
+		if p.replaced != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := stopEntry(ctx, p.replaced, "plugin_disabled")
+			cancel()
+			if err != nil {
+				closePrepared()
+				return err
 			}
+			registry.Lock()
+			delete(registry.items, p.dir)
+			registry.Unlock()
 		}
+		e := p.existing
 		if e == nil {
-			r, err := os.OpenRoot(dir)
-			if err != nil {
-				return err
-			}
-			info, err := os.Stat(dir)
-			if err != nil {
-				r.Close()
-				return err
-			}
-			e = &entry{dir: dir, root: r, identity: info, state: emptyState(), running: map[string]*running{}, scriptRunning: map[string]*running{}, clock: realClock{}, next: map[string]time.Time{}}
+			e = &entry{dir: p.dir, root: p.root, identity: p.identity, state: emptyState(), running: map[string]*running{}, scriptRunning: map[string]*running{}, clock: realClock{}, next: map[string]time.Time{}}
+			p.root = nil
 			for _, option := range options {
 				option(e)
 			}
 			registry.Lock()
-			registry.items[dir] = e
+			registry.items[p.dir] = e
 			registry.Unlock()
 		}
 		e.mu.Lock()

@@ -5,13 +5,17 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Ike-li/hostdeck/internal/console"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/tasks"
+	"github.com/tidwall/gjson"
 )
 
 func TestStartupRefusesAddressesOtherThanLoopback(t *testing.T) {
@@ -103,5 +107,160 @@ func TestEmbeddedServicesStartAndStopAsThePluginsChange(t *testing.T) {
 	}
 	if got := answer(t, url); got != "b" {
 		t.Errorf("pointed elsewhere, it answers %q, want b", got)
+	}
+}
+
+func TestAFailedSyncKeepsTheRunningForwardersAsTheyWere(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	portsFile := filepath.Join(t.TempDir(), "ports.json")
+	f := &forwarders{portsFile: portsFile, consolePort: ln.Addr().(*net.TCPAddr).Port, tokens: onetime.New(time.Now)}
+	defer f.close()
+	a, b := service(t, "a"), service(t, "b")
+
+	served, err := f.sync([]plugin.Plugin{proxied("svc", a)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := served["svc"].URL
+	if got := answer(t, url); got != "a" {
+		t.Fatalf("%s answers %q, want a", url, got)
+	}
+
+	// Make ports.json unreadable/unwritable by replacing it with a folder.
+	if err := os.Remove(portsFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(portsFile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.sync([]plugin.Plugin{proxied("svc", b)}); err == nil {
+		t.Fatal("retargeting with broken ports.json succeeded, want an error")
+	}
+	if got := answer(t, url); got != "a" {
+		t.Fatalf("after failed retarget, %s answers %q, want a", url, got)
+	}
+
+	if _, err := f.sync(nil); err == nil {
+		t.Fatal("removing with broken ports.json succeeded, want an error")
+	}
+	if got := answer(t, url); got != "a" {
+		t.Fatalf("after failed removal, %s answers %q, want a", url, got)
+	}
+}
+
+func TestAFailedReloadKeepsForwardersPortsAndTasksMatchingTheConsole(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "plugins")
+	portsFile := filepath.Join(dir, "ports.json")
+	t.Cleanup(func() { _ = tasks.Close(t.Context(), pluginDir) })
+
+	a, b, c := service(t, "a"), service(t, "b"), service(t, "c")
+	svcDir := filepath.Join(pluginDir, "svc")
+	if err := os.MkdirAll(svcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(svcDir, "plugin.yaml"), []byte("schema: 1\nname: Service\npage:\n  proxy: "+a+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tasksDir := filepath.Join(pluginDir, "scheduled-tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tasksManifest := "schema: 1\nname: Scheduled tasks\ndetail:\n  exec:\n    command: [\"@hostdeck\", \"tasks\", \"detail\"]\n"
+	if err := os.WriteFile(filepath.Join(tasksDir, "plugin.yaml"), []byte(tasksManifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	consolePort := ln.Addr().(*net.TCPAddr).Port
+	origin := "http://127.0.0.1:" + strings.Split(ln.Addr().String(), ":")[1]
+	tokens := onetime.New(time.Now)
+	f := &forwarders{portsFile: portsFile, consolePort: consolePort, tokens: tokens}
+	defer f.close()
+
+	loaded, err := f.reload(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := loaded.Served["svc"].URL
+	if got := answer(t, url); got != "a" {
+		t.Fatalf("%s answers %q, want a", url, got)
+	}
+	initialPorts, err := os.ReadFile(portsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := console.Handler(console.Config{
+		Origin:    origin,
+		Plugins:   loaded.Plugins,
+		Broken:    loaded.Broken,
+		PluginDir: pluginDir,
+		Served:    loaded.Served,
+		Tokens:    tokens,
+		Reload:    func() (console.Loaded, error) { return f.reload(pluginDir) },
+	})
+
+	// 1. A reload that fails in f.sync after retargeting svc on disk keeps
+	// both the console's sidebar URL and the running proxy on "a".
+	if err := os.WriteFile(filepath.Join(svcDir, "plugin.yaml"), []byte("schema: 1\nname: Service\npage:\n  proxy: "+b+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(portsFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(portsFile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, origin+"/api/plugins/reload", nil)
+	req.Header.Set("Origin", origin)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError || gjson.GetBytes(w.Body.Bytes(), "error.code").String() != "reload_failed" {
+		t.Fatalf("reload status = %d %s, want 500 reload_failed", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, origin+"/api/plugins", nil))
+	if got := gjson.GetBytes(w.Body.Bytes(), `#(id=="svc").url`).String(); got != url {
+		t.Fatalf("sidebar svc url = %q, want %q", got, url)
+	}
+	if got := answer(t, url); got != "a" {
+		t.Fatalf("after failed reload, %s answers %q, want a", url, got)
+	}
+
+	// Restore ports.json and verify that a failure in tasks.Sync rolls back
+	// f.sync and ports.json to the previously loaded plugins.
+	if err := os.Remove(portsFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(portsFile, initialPorts, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	brokenTasks := plugin.Plugin{
+		ID:     "missing-tasks",
+		Dir:    filepath.Join(pluginDir, "missing-tasks"),
+		Detail: &plugin.Detail{Exec: &plugin.Exec{Command: []string{"@hostdeck", "tasks", "detail"}}},
+	}
+	if _, err := f.apply(pluginDir, []plugin.Plugin{proxied("svc", b), proxied("svc2", c), brokenTasks}); err == nil {
+		t.Fatal("apply with unreadable tasks folder succeeded, want an error")
+	}
+	if got := answer(t, url); got != "a" {
+		t.Fatalf("after failed tasks.Sync, %s answers %q, want a", url, got)
+	}
+	if _, ok := f.running["svc2"]; ok {
+		t.Fatalf("after failed tasks.Sync, svc2 is still running: %+v", f.running["svc2"])
+	}
+	afterPorts, err := os.ReadFile(portsFile)
+	if err != nil || string(afterPorts) != string(initialPorts) {
+		t.Fatalf("ports.json = %q (%v), want %q", afterPorts, err, initialPorts)
 	}
 }

@@ -14,12 +14,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/Ike-li/hostdeck/examples"
+	"github.com/Ike-li/hostdeck/internal/atomicfile"
 	"github.com/Ike-li/hostdeck/internal/cli"
 	"github.com/Ike-li/hostdeck/internal/console"
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
@@ -98,6 +100,7 @@ func run(args []string) error {
 	consolePort := ln.Addr().(*net.TCPAddr).Port
 	tokens := onetime.New(time.Now)
 	f := &forwarders{portsFile: filepath.Join(dir, "ports.json"), consolePort: consolePort, tokens: tokens}
+	defer f.close()
 	var lifecycle sync.Mutex
 	stopping := false
 	// The console calls reload one change at a time.
@@ -107,23 +110,7 @@ func run(args []string) error {
 		if stopping {
 			return console.Loaded{}, errors.New("hostdeck is shutting down")
 		}
-		plugins, broken, err := plugin.Load(pluginDir)
-		if err != nil {
-			return console.Loaded{}, err
-		}
-		for _, b := range broken {
-			log.Printf("%s: not loaded: %v", b.ID, b.Err)
-		}
-		served, err := f.sync(plugins)
-		if err != nil {
-			return console.Loaded{}, err
-		}
-		diskhistory.Sync(pluginDir, plugins)
-		if err := tasks.Sync(pluginDir, plugins); err != nil {
-			return console.Loaded{}, err
-		}
-		log.Printf("hostdeck: %d plugins in %s", len(plugins), pluginDir)
-		return console.Loaded{Plugins: plugins, Broken: broken, Served: served}, nil
+		return f.reload(pluginDir)
 	}
 	loaded, err := reload()
 	if err != nil {
@@ -178,12 +165,53 @@ type forwarders struct {
 	consolePort int
 	tokens      *onetime.Tokens
 	running     map[string]*forwarder // by plugin ID
+	loaded      []plugin.Plugin
 }
 
 type forwarder struct {
+	port   int
 	target string // the manifest's page.proxy
 	url    string // where the browser finds it
 	server *http.Server
+}
+
+func (f *forwarders) reload(pluginDir string) (console.Loaded, error) {
+	plugins, broken, err := plugin.Load(pluginDir)
+	if err != nil {
+		return console.Loaded{}, err
+	}
+	for _, b := range broken {
+		log.Printf("%s: not loaded: %v", b.ID, b.Err)
+	}
+	served, err := f.apply(pluginDir, plugins)
+	if err != nil {
+		return console.Loaded{}, err
+	}
+	log.Printf("hostdeck: %d plugins in %s", len(plugins), pluginDir)
+	return console.Loaded{Plugins: plugins, Broken: broken, Served: served}, nil
+}
+
+func (f *forwarders) apply(pluginDir string, plugins []plugin.Plugin) (map[string]console.Served, error) {
+	portsData, portsErr := os.ReadFile(f.portsFile)
+	served, err := f.sync(plugins)
+	if err != nil {
+		return nil, err
+	}
+	if pluginDir != "" {
+		if err := tasks.Sync(pluginDir, plugins); err != nil {
+			if portsErr == nil {
+				_ = atomicfile.Write(f.portsFile, portsData)
+			} else if errors.Is(portsErr, os.ErrNotExist) {
+				_ = os.Remove(f.portsFile)
+			}
+			_, _ = f.sync(f.loaded)
+			_ = tasks.Sync(pluginDir, f.loaded)
+			return nil, err
+		}
+		diskhistory.Sync(pluginDir, plugins)
+	}
+	f.loaded = slices.Clone(plugins)
+	return served, nil
 }
 
 // sync serves the proxied pages of plugins, and only those, and says where the
@@ -204,19 +232,36 @@ func (f *forwarders) sync(plugins []plugin.Plugin) (map[string]console.Served, e
 			ids = append(ids, p.ID)
 		}
 	}
-	// Stopped first, so that a service pointed elsewhere gets its port back.
+	// Stopped first when retargeted, so that a service pointed elsewhere gets
+	// its port back; removed services stay up until the new ports are ready.
+	stopped := map[string]*forwarder{}
 	for id, r := range f.running {
-		if want[id] != r.target {
+		if want[id] != "" && want[id] != r.target {
 			r.server.Close()
 			delete(f.running, id)
+			stopped[id] = r
 			log.Printf("%s: %s stopped", id, r.url)
 		}
 	}
 	opened, err := ports.Listen(f.portsFile, ids, f.consolePort+1)
 	if err != nil {
+		for id, r := range stopped {
+			ln, listenErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", r.port))
+			if listenErr != nil {
+				log.Printf("%s: %v", id, listenErr)
+				continue
+			}
+			_ = f.start(id, r.port, r.target, ln)
+		}
 		return nil, err
 	}
-	consoleOrigin := fmt.Sprintf("http://127.0.0.1:%d", f.consolePort)
+	for id, r := range f.running {
+		if want[id] == "" {
+			r.server.Close()
+			delete(f.running, id)
+			log.Printf("%s: %s stopped", id, r.url)
+		}
+	}
 	served := make(map[string]console.Served, len(want))
 	for _, id := range ids {
 		o := opened[id]
@@ -225,30 +270,39 @@ func (f *forwarders) sync(plugins []plugin.Plugin) (map[string]console.Served, e
 			served[id] = console.Served{Err: o.Err}
 			continue
 		}
-		target, err := url.Parse(want[id])
-		if err != nil {
-			o.Listener.Close()
+		if err := f.start(id, o.Port, want[id], o.Listener); err != nil {
 			served[id] = console.Served{Err: err}
 			continue
 		}
-		redeem := func(token string) bool { return f.tokens.Redeem(id, token) }
-		r := &forwarder{
-			target: want[id],
-			url:    fmt.Sprintf("http://127.0.0.1:%d%s", o.Port, target.RequestURI()),
-			server: &http.Server{Handler: proxy.New(target, consoleOrigin, redeem)},
-		}
-		f.running[id] = r
-		log.Printf("%s: http://127.0.0.1:%d/ -> %s", id, o.Port, r.target)
-		go func() {
-			if err := r.server.Serve(o.Listener); !errors.Is(err, http.ErrServerClosed) {
-				log.Printf("%s: %v", id, err)
-			}
-		}()
 	}
 	for id, r := range f.running {
 		served[id] = console.Served{URL: r.url}
 	}
 	return served, nil
+}
+
+func (f *forwarders) start(id string, port int, rawTarget string, ln net.Listener) error {
+	target, err := url.Parse(rawTarget)
+	if err != nil {
+		ln.Close()
+		return err
+	}
+	consoleOrigin := fmt.Sprintf("http://127.0.0.1:%d", f.consolePort)
+	redeem := func(token string) bool { return f.tokens.Redeem(id, token) }
+	r := &forwarder{
+		port:   port,
+		target: rawTarget,
+		url:    fmt.Sprintf("http://127.0.0.1:%d%s", port, target.RequestURI()),
+		server: &http.Server{Handler: proxy.New(target, consoleOrigin, redeem)},
+	}
+	f.running[id] = r
+	log.Printf("%s: http://127.0.0.1:%d/ -> %s", id, port, r.target)
+	go func() {
+		if err := r.server.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("%s: %v", id, err)
+		}
+	}()
+	return nil
 }
 
 func (f *forwarders) close() {
