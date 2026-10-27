@@ -352,3 +352,108 @@ func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *tes
 		})
 	}
 }
+
+// dialogFoot is why an open dialog fails to keep its foot inside the window.
+// A tall form must scroll its body; a short one must not be stretched to fill.
+func dialogFoot(mustScroll bool) string {
+	scroll := "false"
+	if mustScroll {
+		scroll = "true"
+	}
+	return `(() => {
+		const mustScroll = ` + scroll + `;
+		const d = document.querySelector('#page-editor');
+		if (!d || !d.open) return 'dialog is closed';
+		const r = d.getBoundingClientRect();
+		const n = (v) => Math.round(v);
+		if (r.top < -0.5 || r.left < -0.5 || r.bottom > innerHeight + 0.5 || r.right > innerWidth + 0.5) {
+			return 'dialog leaves the window: ' + n(r.left) + ',' + n(r.top) + ' ' + n(r.right) + ',' + n(r.bottom) + ' in ' + innerWidth + 'x' + innerHeight;
+		}
+		if (d.scrollWidth > d.clientWidth + 1) return 'dialog scrolls sideways by ' + (d.scrollWidth - d.clientWidth) + 'px';
+		const body = d.querySelector('.editor-body');
+		const actions = d.querySelector('.editor-actions');
+		if (!body || !actions) return 'dialog is missing its body or foot';
+		if (body.contains(actions)) return 'the foot scrolls with the body';
+		if (body.scrollWidth > body.clientWidth + 1) return 'dialog body scrolls sideways by ' + (body.scrollWidth - body.clientWidth) + 'px';
+		const buttons = [...actions.querySelectorAll('button')];
+		if (buttons.length < 1) return 'the foot has no button';
+		for (const b of buttons) {
+			const br = b.getBoundingClientRect();
+			const name = b.id || b.textContent;
+			if (br.height < 44) return name + ' is ' + n(br.height) + 'px tall';
+			if (br.top < r.top - 0.5 || br.bottom > r.bottom + 0.5 || br.left < r.left - 0.5 || br.right > r.right + 0.5 || br.bottom > innerHeight + 0.5 || br.top < -0.5) {
+				return name + ' is outside the dialog or the window';
+			}
+		}
+		const cron = d.querySelector('.task-cron');
+		if (cron && !cron.hidden) {
+			for (const input of cron.querySelectorAll('input')) {
+				const ir = input.getBoundingClientRect();
+				if (ir.width < 24 || ir.left < r.left - 0.5 || ir.right > r.right + 0.5) return 'a cron field is clipped';
+			}
+		}
+		if (mustScroll && body.scrollHeight <= body.clientHeight + 1) return 'the body does not scroll, so a short window is not being tested';
+		if (!mustScroll && body.clientHeight > body.scrollHeight + 8) return 'a short form is stretched to fill the dialog';
+		return '';
+	})()`
+}
+
+func TestAShortWindowKeepsDialogActionsInView(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "plugins")
+	if err := os.Mkdir(pluginDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.Add(examples.Files, pluginDir, "scheduled-tasks"); err != nil {
+		t.Fatal(err)
+	}
+	writePlugin(t, dir, "svc", fmt.Sprintf(proxyPlugin, page(t, servicePage)))
+	url := startConsole(t, dir)
+	widths := []int64{1280, 520}
+	for _, lang := range []string{"en", "zh-CN"} {
+		t.Run(lang, func(t *testing.T) {
+			ctx := openBrowser(t, lang)
+			do(t, ctx, chromedp.Navigate(url+"#/scheduled-tasks"), chromedp.WaitVisible(chromedp.CSS(`.task-add`)))
+			check := func(width int64, opener, closer string, mustScroll bool) {
+				t.Helper()
+				do(t, ctx,
+					chromedp.EmulateViewport(width, 640),
+					chromedp.Click(chromedp.CSS(opener)),
+					chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] .editor-actions button`)),
+				)
+				reason, err := chromedp.Run(ctx, chromedp.Evaluate[string](dialogFoot(mustScroll)))
+				if err != nil || reason != "" {
+					t.Fatalf("%s at %dpx: %s %v", opener, width, reason, err)
+				}
+				do(t, ctx, chromedp.Click(chromedp.CSS(closer)))
+				if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!document.querySelector('#page-editor').open`)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, width := range widths {
+				check(width, `.task-add`, `#editor-cancel`, true)
+			}
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="scripts"]`)), chromedp.WaitVisible(chromedp.CSS(`.task-script-add`)))
+			for _, width := range widths {
+				check(width, `.task-script-add`, `#editor-cancel`, false)
+			}
+			do(t, ctx, chromedp.Navigate(url+"#/svc"), chromedp.WaitVisible(chromedp.CSS(`#service-more .more-trigger`)))
+			for _, width := range widths {
+				do(t, ctx,
+					chromedp.EmulateViewport(width, 640),
+					chromedp.Click(chromedp.CSS(`#service-more .more-trigger`)),
+					chromedp.Click(chromedp.CSS(`#service-notify`)),
+					chromedp.WaitVisible(chromedp.CSS(`#notify-close`)),
+				)
+				reason, err := chromedp.Run(ctx, chromedp.Evaluate[string](dialogFoot(false)))
+				if err != nil || reason != "" {
+					t.Fatalf("notifications at %dpx: %s %v", width, reason, err)
+				}
+				do(t, ctx, chromedp.Click(chromedp.CSS(`#notify-close`)))
+				if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!document.querySelector('#page-editor').open`)); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}

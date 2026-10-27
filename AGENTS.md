@@ -156,4 +156,6 @@ Disk space details name the large figure. It is df's Available, labelled free / 
 
 The overview header is now a 16px title plus an Add content link, and the plus card remains last.
 
+The one dialog keeps its foot inside a short window. New task, new script and the notifications dialog stay within 1280×640 and 520×640, and a task form that is taller than that window scrolls its body instead of taking Cancel and Save with it. The page behind the dialog still does not scroll.
+
 Background job details open without log text. The list prints the domain once and reads at most four jobs at a time. A stdout or stderr path sets `logAvailable`; opening that row reads the last 256 KiB of each distinct regular file and the page scrolls it, at most 480px tall. Windows lists do not query events; opening one service reads at most 100 matches from 400 events, capped at 256 KiB. Run and Restart print the state read afterwards and the page reloads at once, reopening that log. `GET /api/detail/{id}?item=` passes only the item id in `HOSTDECK_DETAIL_ITEM`. Health rules are unchanged. An installed jobs copy keeps its old scripts until that folder is replaced.
