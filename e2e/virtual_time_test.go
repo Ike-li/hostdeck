@@ -111,6 +111,9 @@ func clockStall(ctx context.Context) string {
 	if err != nil {
 		return report + "; the page did not answer within 2 s"
 	}
+	if strings.Contains(report, "/api/layout") {
+		report += "; layout.json may already be written — paused virtual time can still hold the fetch answer"
+	}
 	return report + "; the page answered at " + state
 }
 
@@ -387,5 +390,55 @@ func TestTimerDiscoveryRunsRendererTasksWhileAnotherRequestIsStillOpen(t *testin
 	}
 	if len(times) != 2 || times[0]-times[1] >= 1 {
 		t.Fatalf("timer discovery consumed the new timer's budget: %v (origin %.3f)", times, before)
+	}
+}
+
+// CI named the paused-clock stall as POST /api/layout still open while the page
+// answered. A held layout POST reproduces that discovery deadlock: network-aware
+// microsteps cannot run the renderer task that arms the notice timer. Advance
+// discovery must still arm it; product durations stay on the network-aware clock.
+func TestTimerDiscoveryRunsWithAHeldLayoutPost(t *testing.T) {
+	sent, release := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/layout" {
+			close(sent)
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		fmt.Fprint(w, "<!doctype html><title>layout post</title>")
+	}))
+	defer server.Close()
+	defer close(release)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(server.URL))
+	pauseTime(t, ctx)
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`fetch('/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}), undefined`)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sent:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the layout POST never reached the server")
+	}
+	before, err := chromedp.Run(ctx, chromedp.Evaluate[float64](`(() => {
+ const channel=new MessageChannel();
+ channel.port1.onmessage=()=>{window.__layoutDiscoveryStartedAt=performance.now();setTimeout(()=>{},8000);};
+ channel.port2.postMessage(null);
+ return performance.now();
+})()`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForTimer(t, ctx, 8000, 0)
+	times, err := chromedp.Run(ctx, chromedp.Evaluate[[]float64](`[performance.now(), window.__layoutDiscoveryStartedAt]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(times) != 2 || times[0]-times[1] >= 1 {
+		t.Fatalf("timer discovery consumed the notice timer budget: %v (origin %.3f)", times, before)
 	}
 }
