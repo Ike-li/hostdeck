@@ -321,8 +321,8 @@ func emptyNote(dir string) plugin.Text {
 	config := filepath.Join(dir, "tasks.json")
 	example := filepath.Join(dir, "tasks.example.json")
 	return text(
-		fmt.Sprintf("No tasks yet. Use Scripts to add a script file. To add a task, edit the configuration and reload this console. Configuration file: %s. Disabled example: %s.", config, example),
-		fmt.Sprintf("还没有任务。可以先在「脚本」里写一个脚本。添加任务仍是编辑配置文件后重载。配置文件：%s。停用的示例：%s。", config, example),
+		fmt.Sprintf("No tasks yet. Use New task, or add a script first. You can still edit the configuration and reload this console. Configuration file: %s. Disabled example: %s.", config, example),
+		fmt.Sprintf("还没有任务。可以新建任务，也可以先写一个脚本。手改配置文件后重载仍然有效。配置文件：%s。停用的示例：%s。", config, example),
 	)
 }
 func runReason(reason string) plugin.Text {

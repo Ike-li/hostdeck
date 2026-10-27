@@ -3,7 +3,7 @@ import { getJSON, postJSON } from './api.js';
 import { t, pick, explain } from './i18n.js';
 import { twoClicks } from './confirm.js';
 import { cardElement } from './overview.js';
-import { scheduledTaskTools } from './tasks.js';
+import { scheduledTaskTools, taskRowControls } from './tasks.js';
 import { PENDING_AGAIN, state } from './state.js';
 
 let monitorTimer = null;
@@ -94,7 +94,7 @@ function renderDetailTools(p, view) {
   tools.append(form, filters);
   view.querySelector('.detail-list').before(tools);
   let update = () => {};
-  const tasksUI = scheduledTaskTools(p, view, tools, choice, () => update());
+  const tasksUI = scheduledTaskTools(p, view, tools, choice, () => update(), () => loadDetail(p, view));
   update = () => {
     if (tasksUI && choice.segment === 'scripts') {
       tasksUI.mark('scripts');
@@ -162,10 +162,19 @@ function detailItem(p, item, view) {
     log.append(el('summary', null, t('detail.log')), content);
     section.append(log);
   }
+  let actions = null;
   if (item.actions?.length) {
-    const actions = el('div', 'detail-actions');
+    actions = el('div', 'detail-actions');
     actions.append(...item.actions.map((action) => actionButton(p, item, action, view)));
     (compact ? head : section).append(actions);
+  }
+  if (p.id === 'scheduled-tasks' && item.id && !String(item.id).startsWith('_')) {
+    section.dataset.id = item.id;
+    if (!actions) {
+      actions = el('div', 'detail-actions');
+      (compact ? head : section).append(actions);
+    }
+    actions.append(...taskRowControls(item, view, () => loadDetail(p, view)));
   }
   return section;
 }

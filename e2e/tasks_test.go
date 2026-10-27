@@ -38,7 +38,7 @@ func TestScheduledTaskConfigurationIsReadableInBothLanguagesAndNarrowWindows(t *
 			do(t, ctx, chromedp.Navigate(url+"#/scheduled-tasks"), chromedp.WaitVisible(chromedp.CSS(`.detail-item`)))
 			for _, width := range []int64{1280, 520} {
 				do(t, ctx, chromedp.EmulateViewport(width, 800))
-				ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('.detail-name').textContent==='Backup 中文' && document.querySelector('.detail-view').textContent.includes('Asia/Shanghai') && document.querySelector('.detail-view').textContent.includes('missing-task-program') && document.querySelectorAll('.detail-actions button').length===0 && document.documentElement.scrollWidth<=innerWidth`))
+				ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.querySelector('.detail-name').textContent==='Backup 中文' && document.querySelector('.detail-view').textContent.includes('Asia/Shanghai') && document.querySelector('.detail-view').textContent.includes('missing-task-program') && document.querySelectorAll('.detail-actions .action').length===0 && document.querySelector('.task-edit') && document.querySelector('.task-delete') && document.documentElement.scrollWidth<=innerWidth`))
 				if err != nil || !ok {
 					t.Fatalf("configuration at %dpx: %v %v", width, ok, err)
 				}
@@ -202,8 +202,10 @@ func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *tes
 					t.Fatal(err)
 				}
 			}
-			poll(`document.querySelector('.detail-view').textContent.includes('tasks.example.json') && document.querySelectorAll('.detail-item').length===0 && document.querySelector('.task-switch [data-segment="tasks"]').getAttribute('aria-pressed')==='true' && document.querySelector('.task-script-add').hidden`)
-			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="scripts"]`)), chromedp.WaitVisible(chromedp.CSS(`.task-script-add`)), chromedp.Click(chromedp.CSS(`.task-script-add`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
+			poll(`document.querySelector('.detail-view').textContent.includes('tasks.example.json') && document.querySelectorAll('.detail-item').length===0 && document.querySelector('.task-switch [data-segment="tasks"]').getAttribute('aria-pressed')==='true' && document.querySelector('.task-script-add').hidden && !document.querySelector('.task-add').hidden`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="scripts"]`)), chromedp.WaitVisible(chromedp.CSS(`.task-script-add`)))
+			poll(`document.querySelector('.task-add').hidden`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-script-add`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] textarea`)))
 			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.name.value = 'hello.py'; form.elements.content.value = "print('你好')\\n"; form.requestSubmit(); })()`))
 			poll(`!!document.querySelector('.detail-item[data-script="hello.py"]') && !document.querySelector('#page-editor').open`)
 			for _, width := range []int64{1280, 520} {
@@ -223,7 +225,21 @@ func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *tes
 				t.Fatal("deleted script still on disk")
 			}
 			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-switch [data-segment="tasks"]`)))
-			poll(`document.querySelector('.task-switch [data-segment="tasks"]').getAttribute('aria-pressed')==='true'`)
+			poll(`document.querySelector('.task-switch [data-segment="tasks"]').getAttribute('aria-pressed')==='true' && !document.querySelector('.task-add').hidden`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-add`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] input`)))
+			do(t, ctx, chromedp.EmulateViewport(520, 800))
+			poll(`document.querySelector('#page-editor').getBoundingClientRect().width<=innerWidth && document.querySelector('.task-enabled').getBoundingClientRect().height>=44 && document.querySelector('#page-editor [name="timezone"]').value===` + fmt.Sprintf("%q", map[string]string{"en": "UTC", "zh-CN": "Asia/Shanghai"}[lang]))
+			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); form.elements.name.value = 'From the page'; form.querySelector('[data-schedule="every"]').click(); form.elements.every.value = '24h'; form.elements.command.value = 'echo hello'; form.requestSubmit(); })()`))
+			poll(`document.querySelector('.detail-item[data-id="from-the-page"] .detail-name')?.textContent==='From the page' && !document.querySelector('#page-editor').open`)
+			for _, width := range []int64{1280, 520} {
+				do(t, ctx, chromedp.EmulateViewport(width, 800))
+				poll(`document.documentElement.scrollWidth<=innerWidth && document.querySelector('.task-add').getBoundingClientRect().height>=44 && document.querySelector('.task-edit').getBoundingClientRect().height>=44 && document.querySelector('.task-delete').getBoundingClientRect().height>=44`)
+			}
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-edit`)), chromedp.WaitVisible(chromedp.CSS(`#page-editor[open] .task-id`)))
+			do(t, ctx, chromedp.Evaluate[chromedp.Void](`(() => { const form = document.querySelector('#page-editor form'); if (form.querySelector('[name="id"]')) throw new Error('id is editable'); form.elements.name.value = 'Renamed page'; form.requestSubmit(); })()`))
+			poll(`document.querySelector('.detail-item[data-id="from-the-page"] .detail-name')?.textContent==='Renamed page' && !document.querySelector('#page-editor').open`)
+			do(t, ctx, chromedp.Click(chromedp.CSS(`.task-delete`)), chromedp.Click(chromedp.CSS(`.task-delete`)))
+			poll(`document.querySelectorAll('.detail-item').length===0 && document.querySelector('.detail-view').textContent.includes('tasks.example.json')`)
 			p := filepath.Join(dir, "plugins", "scheduled-tasks")
 			work := t.TempDir()
 			config := map[string]any{"version": 1, "tasks": []any{map[string]any{"id": "local", "name": "Local task 中文", "enabled": true, "schedule": map[string]any{"every": "24h"}, "exec": map[string]any{"command": []string{binary, "--dir", work, "--addr", "127.0.0.1:0"}}, "timeout": "2m"}}}
@@ -233,7 +249,7 @@ func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *tes
 			}
 			cliCommand(t, 0, "plugin", "reload", "--url", url)
 			do(t, ctx, chromedp.Click(chromedp.CSS(`#service-reload`)))
-			poll(`document.querySelector('.detail-name')?.textContent==='Local task 中文' && document.querySelectorAll('.detail-actions button').length===2`)
+			poll(`document.querySelector('.detail-name')?.textContent==='Local task 中文' && document.querySelectorAll('.detail-actions button').length===4 && document.querySelector('.detail-actions button').textContent===` + fmt.Sprintf("%q", map[string]string{"en": "Run now", "zh-CN": "立即运行"}[lang]))
 			for _, width := range []int64{1280, 520} {
 				for _, theme := range []string{"light", "dark"} {
 					do(t, ctx, chromedp.EmulateViewport(width, 800))
@@ -261,9 +277,9 @@ func TestScheduledTaskSetupAndLifecycleWorkInBothLanguagesThemesAndWidths(t *tes
 				do(t, ctx, chromedp.Click(chromedp.CSS(selector)), chromedp.Click(chromedp.CSS(selector)))
 			}
 			click(2)
-			poll(`document.querySelectorAll('.detail-actions button').length===1 && document.querySelector('.detail-actions button').textContent===` + fmt.Sprintf("%q", map[string]string{"en": "Resume", "zh-CN": "恢复"}[lang]))
+			poll(`document.querySelectorAll('.detail-actions button').length===3 && document.querySelector('.detail-actions button').textContent===` + fmt.Sprintf("%q", map[string]string{"en": "Resume", "zh-CN": "恢复"}[lang]))
 			click(1)
-			poll(`document.querySelectorAll('.detail-actions button').length===2 && !document.querySelector('.detail-actions button').disabled`)
+			poll(`document.querySelectorAll('.detail-actions button').length===4 && !document.querySelector('.detail-actions button').disabled`)
 			click(1)
 			waitForTaskFile := func(status string) {
 				t.Helper()
