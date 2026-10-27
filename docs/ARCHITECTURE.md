@@ -56,7 +56,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/run` | Runs a plugin program in its folder with a deadline, caps its output, and kills everything it started: a process group on macOS, a Job Object on Windows. Decodes the JSON it prints strictly. |
 | `internal/dockerview` | Native Docker monitoring through a bounded CLI runner, local endpoint pinning and selected inspect fields. |
 | `internal/diskhistory` | Native disk-history operations, bounded rooted filesystem traversal, atomic JSON history, process-held writer locks, cancellable scans and opt-in hourly tracking. |
-| `internal/manualview` | TCP listeners started from a shell: a card and a compact detail, with no actions. |
+| `internal/manualview` | TCP listeners started from a shell: a card and a compact detail that shows the working directory and command, and can stop or restart one. |
 | `internal/console` | The console's HTTP handler: the page from `web/`, the API, and the checks every request passes. |
 | `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache and notifications addresses itself. |
 | `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |
@@ -182,7 +182,7 @@ Everything rests on hostdeck being reachable from this machine only.
 - `GET /api/detail/{id}?item={id}` reads one detail item. It is a console read with the same loopback and `Sec-Fetch-Site` rules as other GETs, checks no Origin, and writes nothing. The item id is passed only as the environment variable `HOSTDECK_DETAIL_ITEM` into that plugin's own detail program. It cannot name a file path; the jobs program resolves paths from the jobs it has already listed. A newline or an id longer than 256 bytes is refused before the program runs.
 
 - Docker's native start/restart uses the existing Origin-checked action endpoint. It can change only the selected local container's runtime state, after offered-action revalidation, endpoint fingerprint checking and fresh full-ID inspection. It accepts only start/restart, never arbitrary CLI arguments, names or shortened IDs. It writes no hostdeck or Docker configuration.
-- The manual-services reading only reads processes visible to the current user and the TCP listen table. It writes nothing and offers no action. It is not the port view: a listener is listed only when a shell is among its ancestors.
+- The manual-services action uses the existing Origin-checked action endpoint. It may signal, and may start again, only a process id that a fresh read still lists as a hand-started TCP listener and whose start time still matches. The request names the action and the process id; it cannot supply a command. A restart executes the absolute program path read from that process and passes its original argument list, with no PATH lookup. The program never signals pid 1, the console's own process, or a process that started the console. It writes no file in hostdeck's folder. The reading itself remains a list of listeners visible to the current user that have a shell among their ancestors, and it is not the port view.
 
 Plugins themselves are trusted: they are folders you put there, and they run with your rights.
 
