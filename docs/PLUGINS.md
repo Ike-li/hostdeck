@@ -87,7 +87,7 @@ The value is sent to the service and written nowhere. In a card's error it shows
 
 ### How a program runs
 
-- `command`, or on Windows `windows` when it is given, runs in the plugin's folder with hostdeck's environment. A card program and a detail program are given no arguments; an action program is given two more, see [Action programs](#action-programs).
+- `command`, or on Windows `windows` when it is given, runs in the plugin's folder with hostdeck's environment. A card program and a detail program are given no arguments; an action program is given two more, see [Action programs](#action-programs). Opening one item's log runs that detail program again with the environment variable `HOSTDECK_DETAIL_ITEM` set to the item id; a list read leaves it unset. The id is data, not a path. A newline or an id longer than 256 bytes is refused before the program runs.
 - Each run has 30 seconds. At the deadline the program and every process it started are ended: a process group on macOS, a Job Object on Windows. Processes it leaves running when it exits are ended too, and hostdeck waits at most one second for output after the program exits.
 - stdout holds exactly one JSON value, which may start with a UTF-8 byte order mark; nothing but white space may follow it. A field this page does not name is an error, so a typo shows up. hostdeck keeps the first 4 MiB of stdout and the first 64 KiB of stderr.
 - Exit code 0 is success. Any other exit code is an error that shows the code and the last line of stderr, and stdout is not read. So write diagnostics to stderr, and report a failure meant for people as `{"error": …}` with exit code 0.
@@ -137,13 +137,13 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": �
 | `items[].fields[].name` | text | A field's name |
 | `items[].fields[].value` | string, number or localized text | A field's value |
 | `items[].log` | string | Shown under Log, in a box of its own that scrolls. Print the part to show; the page does not follow the file |
-| `items[].logAvailable` | boolean | Optional. True means a log can be loaded for that item. The page asks for it with the item id when the log is opened |
+| `items[].logAvailable` | boolean | Optional. True means a log can be loaded for that item. Opening it runs the detail program again with `HOSTDECK_DETAIL_ITEM` set to this item's id. That run prints this one item, including `log`, or a field that says the log is empty or unreadable. An unknown id is `{"error": …}`. A list read leaves the variable unset and may omit `log`. A program that already prints `log` on the list is unchanged: the page shows that text and does not ask again |
 | `items[].actions[].id` | string | Required; the action program is given it |
 | `items[].actions[].label` | text | The action's button |
 
 ### Action programs
 
-An action's button needs a second click. hostdeck then runs the detail program again, and runs the action only if that item still offers it; otherwise the page says so and reads the list again. One action runs at a time, across every plugin. The action program runs as `<command…> <action id> <item id>`, and runs to its end or its deadline even if the page that asked for it is closed, so that a restart is never stopped halfway. The two IDs are ones your detail program printed a moment before; treat them as data, never as code.
+An action's button needs a second click. hostdeck then runs the detail program again, without `HOSTDECK_DETAIL_ITEM`, and runs the action only if that item still offers it; otherwise the page says so and reads the list again. One action runs at a time, across every plugin. The action program runs as `<command…> <action id> <item id>`, and runs to its end or its deadline even if the page that asked for it is closed, so that a restart is never stopped halfway. The two IDs are ones your detail program printed a moment before; treat them as data, never as code.
 
 The program may print nothing, `{"message": …}`, which the page shows as the result, or `{"error": …}`; both are text. With nothing printed, the page says the action is done. The page reads the detail again immediately and shows that message.
 

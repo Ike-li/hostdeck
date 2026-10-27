@@ -341,6 +341,18 @@ func jsonFields(t reflect.Type, prefix string) []string {
 	return fields
 }
 
+func TestThePluginReferenceNamesTheItemReadEnvironmentVariable(t *testing.T) {
+	for _, doc := range []string{"PLUGINS.md", "PLUGINS.zh-CN.md", "ARCHITECTURE.md", "ARCHITECTURE.zh-CN.md"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "docs", doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "HOSTDECK_DETAIL_ITEM") {
+			t.Errorf("docs/%s does not name HOSTDECK_DETAIL_ITEM", doc)
+		}
+	}
+}
+
 func TestThePluginReferenceNamesEveryFieldADetailProgramPrints(t *testing.T) {
 	fields := append(jsonFields(reflect.TypeFor[Item](), "items[]."), "presentation", "groups[].id", "groups[].label")
 	for _, doc := range []string{"PLUGINS.md", "PLUGINS.zh-CN.md"} {
