@@ -621,7 +621,7 @@ All three use the same 8px box, so the column does not move. A dot has `role="im
 
 | View | Structure |
 | --- | --- |
-| Overview | Header (`h1` left; "Reset layout" and "Refresh" right; 12px gap when it wraps, 16px below) → the card grid (the plus card last) |
+| Overview | Header (a 16px `h1` on the left; "Reset layout", "Add content" and "Refresh" on the right, Refresh the only primary; 12px gap when it wraps, 16px below; the header scrolls with the page; "Add content" opens the same add area as the plus card) → the card grid (the plus card last) |
 | Pages & plugins | Header (`h1` and "Add content") → search (from ten plugins) → Enabled → Disabled → Needs attention → Trash → Add content (the form, built-in plugins, the connection help) → the plugins folder (collapsed) |
 | Service | Toolbar (padding 12px 16px, `--panel`, an edge below; the name as a 16px `h1`; Refresh, open in a new tab, More actions) → the iframe filling the rest |
 | Detail and monitor | A list of items, see 3.11; a monitor view's card is at most 720px wide |

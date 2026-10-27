@@ -466,6 +466,8 @@ main {
 
 .overview-head h1 { margin: 0; }
 
+#overview h1 { font-size: var(--text-lg); }
+
 .overview-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 
 h1 {
