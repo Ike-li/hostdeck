@@ -132,7 +132,13 @@ function detailItem(p, item, view) {
   const compact = view.data.presentation === 'compact';
   if (compact && item.value != null || item.status) head.append(el('span', 'pill detail-status', compact && item.value != null ? pick(item.value) : t(`card.status.${item.status}`)));
   section.append(head);
-  if (!compact && item.value !== undefined && item.value !== null) section.append(el('p', 'detail-value', pick(item.value)));
+  if (!compact && item.value !== undefined && item.value !== null) {
+    const figure = el('p', 'detail-figure');
+    figure.append(el('span', 'detail-value', pick(item.value)));
+    const caption = pick(item.label).trim();
+    if (caption) figure.append(el('span', 'detail-label', caption));
+    section.append(figure);
+  }
   if (item.fields?.length) {
     const fields = el('dl', 'detail-fields');
     for (const f of item.fields) fields.append(el('dt', null, pick(f.name)), el('dd', null, pick(f.value)));

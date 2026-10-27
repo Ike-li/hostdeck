@@ -586,6 +586,56 @@ func TestTheDiskExampleShowsItsStatusAndRows(t *testing.T) {
 	if row := text(t, ctx, card+" .row-value"); !strings.HasSuffix(row, "%") {
 		t.Errorf("first row says %q, want how much of the home folder's disk is used", row)
 	}
+
+	do(t, ctx,
+		chromedp.Click(chromedp.CSS(`.nav-item[data-id="disk"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`.detail-item .detail-label`)),
+	)
+	for _, width := range []int64{1280, 520} {
+		do(t, ctx, chromedp.EmulateViewport(width, 800))
+		report := diskDetailReport(t, ctx)
+		if report == "" || strings.Contains(report, "bad") {
+			t.Errorf("at %dpx the disk detail does not name free space and the gigabytes used: %s", width, report)
+		}
+	}
+	// The language switch sits in the sidebar, which a 520px window keeps off-screen.
+	// Wait until the wider layout has placed the button, or the click lands on the old position.
+	do(t, ctx, chromedp.EmulateViewport(1280, 800))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`(() => { const r = document.querySelector('[data-lang="en"]').getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; })()`)); err != nil {
+		t.Fatalf("English language button: %v", err)
+	}
+	do(t, ctx, chromedp.Click(chromedp.CSS(`[data-lang="en"]`)))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`document.documentElement.lang === "en" && document.querySelector(".detail-label")?.textContent === "free"`)); err != nil {
+		t.Fatalf("English label: %v; page says %s", err, diskDetailReport(t, ctx))
+	}
+	if report := diskDetailReport(t, ctx); strings.Contains(report, "bad") {
+		t.Errorf("in English the disk detail does not name free space and the gigabytes used: %s", report)
+	}
+}
+
+// diskDetailReport describes each volume's figure, its caption and its Used
+// field. A line is "bad" unless the caption names free space and Used is a
+// whole number of GB plus a percent.
+func diskDetailReport(t *testing.T, ctx context.Context) string {
+	t.Helper()
+	got, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+		const items = [...document.querySelectorAll('.detail-list .detail-item')];
+		if (!items.length) return 'bad no items';
+		return items.map(item => {
+			const fields = [...item.querySelectorAll('dt')].map((dt, i) => dt.textContent + '=' + item.querySelectorAll('dd')[i].textContent);
+			const used = fields.find(f => f.startsWith('已用=') || f.startsWith('Used=')) || '';
+			const label = item.querySelector('.detail-label')?.textContent || '';
+			const value = item.querySelector('.detail-value')?.textContent || '';
+			const named = label === '可用' || label === 'free';
+			const sized = /^\d+ GB · \d+%$/.test(used.split('=')[1] || '');
+			const fits = item.scrollWidth <= item.clientWidth + 1;
+			return (named && sized && fits && value.endsWith(' GB') ? 'ok' : 'bad') + ' ' + value + ' ' + label + ' ' + used;
+		}).join('\n');
+	})()`))
+	if err != nil {
+		t.Fatalf("disk detail: %v", err)
+	}
+	return got
 }
 
 // fakePlugin is the test binary playing a plugin's commands, for hostdeck to

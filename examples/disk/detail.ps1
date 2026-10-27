@@ -10,14 +10,17 @@ $items = @(Get-PSDrive -PSProvider FileSystem | Where-Object { $null -ne $_.Free
   $status = if ($used -ge 90) { 'error' } elseif ($used -ge 80) { 'warn' } else { 'ok' }
   $name = "$($_.Name):"
   if ($_.Name -eq $homeDrive) { $name = [ordered]@{ en = "$($_.Name): (home folder disk)"; 'zh-CN' = "$($_.Name):（主目录所在磁盘）" } }
+  # The large figure is free space. Used is this drive's Used, in whole GB,
+  # with the percent of Used + Free.
   [ordered]@{
     id      = $_.Root
     name    = $name
     status  = $status
     value   = "$([math]::Round($_.Free / 1GB)) GB"
+    label   = [ordered]@{ en = 'free'; 'zh-CN' = '可用' }
     fields  = @(
-      [ordered]@{ name = [ordered]@{ en = 'Total'; 'zh-CN' = '总量' }; value = "$([math]::Round($size / 1GB)) GB" },
-      [ordered]@{ name = [ordered]@{ en = 'Used'; 'zh-CN' = '已用' }; value = "$used%" }
+      [ordered]@{ name = [ordered]@{ en = 'Used'; 'zh-CN' = '已用' }; value = "$([math]::Round($_.Used / 1GB)) GB · $used%" },
+      [ordered]@{ name = [ordered]@{ en = 'Total'; 'zh-CN' = '总量' }; value = "$([math]::Round($size / 1GB)) GB" }
     )
     actions = @([ordered]@{ id = 'open'; label = [ordered]@{ en = 'Open in File Explorer'; 'zh-CN' = '在资源管理器中打开' } })
   }

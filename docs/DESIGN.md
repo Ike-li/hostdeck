@@ -586,7 +586,7 @@ Each plugin on the Pages & plugins page is a row (`.catalog-entry`, also a `.car
 | View | Padding 24px (16px narrow), `--bg` |
 | Item | Padding 24px (16px narrow), 16px below, a 1px `--line` edge, 12px corners, `--panel` |
 | Name | 16px, 600 |
-| Main value | 24px, 600, 12px above and below |
+| Main value | 24px, 600, 12px above and below. An optional label sits on the same baseline, gap 8px, in `--muted`, and wraps when the row is too narrow. The compact list does not show that label |
 | Fields | A `<dl>` grid `minmax(80px, 160px) 1fr`, gap 8px 16px, 13px, names `--muted`; one column when narrow, names above values |
 | Log | A `<details>`, 13px; its `<pre>` at most 240px tall and scrolling, padding 16px, `--bg`, a 1px `--line` edge, 6px corners |
 | Actions | Wrapping, gap 8px, 16px margin and 16px padding above, a 1px `--line` above; button words aligned left and wrapping |

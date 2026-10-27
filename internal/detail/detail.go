@@ -44,6 +44,7 @@ type Item struct {
 	Name    plugin.Text `json:"name"`
 	Status  string      `json:"status,omitempty"`
 	Value   Value       `json:"value,omitzero"`
+	Label   plugin.Text `json:"label,omitempty"`
 	Fields  []Field     `json:"fields,omitempty"`
 	Log     string      `json:"log,omitempty"`
 	Actions []Action    `json:"actions,omitempty"`

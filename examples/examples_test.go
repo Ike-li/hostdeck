@@ -94,10 +94,13 @@ func TestTheDiskExampleListsTheHomeFoldersDiskWithAnOpenAction(t *testing.T) {
 		t.Fatalf("items %+v, want the home folder's disk, named in Chinese", v.Items)
 	}
 	home := v.Items[i]
+	if home.Label.ByLang["zh-CN"] != "可用" || home.Label.ByLang["en"] != "free" || !strings.HasSuffix(home.Value.String(), " GB") {
+		t.Errorf("value %q label %+v, want the free space in GB, named free and 可用", home.Value, home.Label)
+	}
 	if !slices.ContainsFunc(home.Fields, func(f detail.Field) bool {
-		return f.Name.ByLang["zh-CN"] == "已用" && strings.HasSuffix(f.Value.String(), "%")
+		return f.Name.ByLang["zh-CN"] == "已用" && strings.Contains(f.Value.String(), "GB") && strings.HasSuffix(f.Value.String(), "%")
 	}) {
-		t.Errorf("fields %+v, want how much is used", home.Fields)
+		t.Errorf("fields %+v, want how many GB are used, and the percent", home.Fields)
 	}
 	if len(home.Actions) != 1 || home.Actions[0].ID != "open" {
 		t.Errorf("actions %+v, want open", home.Actions)
@@ -183,6 +186,42 @@ func TestTheDiskDetailListsVolumesAndNotBackupsOrRecovery(t *testing.T) {
 	want := []string{"/System/Volumes/Data", "/Volumes/PublishTmp", "/Volumes/Storage", "/Volumes/time machine"}
 	if !slices.Equal(got, want) {
 		t.Errorf("items %q, want %q", got, want)
+	}
+}
+
+// The detail page's large figure is free space. Without a name beside it, and
+// with Used printed only as a percent, the two cannot be told apart.
+func TestTheDiskDetailNamesTheFreeSpaceAndTheGigabytesUsed(t *testing.T) {
+	onAMac(t)
+
+	v := detail.Read(context.Background(), load(t, "disk"))
+
+	if v.Error != nil {
+		t.Fatalf("error: %+v", v.Error)
+	}
+	want := []struct{ id, free, used string }{
+		{"/System/Volumes/Data", "195 GB", "234 GB · 55%"},
+		{"/Volumes/PublishTmp", "19 GB", "0 GB · 1%"},
+		{"/Volumes/Storage", "263 GB", "189 GB · 42%"},
+		{"/Volumes/time machine", "126 GB", "479 GB · 80%"},
+	}
+	if len(v.Items) != len(want) {
+		t.Fatalf("%d items, want %d", len(v.Items), len(want))
+	}
+	for i, it := range v.Items {
+		w := want[i]
+		if it.ID != w.id || it.Value.String() != w.free || it.Label.ByLang["en"] != "free" || it.Label.ByLang["zh-CN"] != "可用" {
+			t.Errorf("item %d: id %q value %q label %+v, want %s free %s named free/可用", i, it.ID, it.Value, it.Label, w.id, w.free)
+		}
+		var used string
+		for _, f := range it.Fields {
+			if f.Name.ByLang["zh-CN"] == "已用" {
+				used = f.Value.String()
+			}
+		}
+		if used != w.used {
+			t.Errorf("%s used %q, want %s", it.ID, used, w.used)
+		}
 	}
 }
 

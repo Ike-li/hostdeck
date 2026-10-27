@@ -113,7 +113,7 @@ func TestAgentPromptsClarifyPageIDsExecKeysOptionalFieldsAndVerification(t *test
 			path: "i18n/en.json",
 			want: map[string][]string{
 				"help.agent.pages":    {"data.id", "page update --url ORIGIN --id ID", "remove the temporary backup"},
-				"help.agent.contract": {"card.exec.command", "detail.exec.command", "actions.exec.command", "exec.windows", "fields, log and actions are optional"},
+				"help.agent.contract": {"card.exec.command", "detail.exec.command", "actions.exec.command", "exec.windows", "fields, log and actions are optional", "items[].label"},
 				"help.agent.finish":   {"GET /api/cards", "GET /api/detail/<id>", "monitoring card", "detail"},
 			},
 		},
@@ -121,7 +121,7 @@ func TestAgentPromptsClarifyPageIDsExecKeysOptionalFieldsAndVerification(t *test
 			path: "i18n/zh-CN.json",
 			want: map[string][]string{
 				"help.agent.pages":    {"data.id", "page update --url ORIGIN --id ID", "删除临时备份"},
-				"help.agent.contract": {"card.exec.command", "detail.exec.command", "actions.exec.command", "exec.windows", "fields、log、actions 可选"},
+				"help.agent.contract": {"card.exec.command", "detail.exec.command", "actions.exec.command", "exec.windows", "fields、log、actions 可选", "items[].label"},
 				"help.agent.finish":   {"GET /api/cards", "GET /api/detail/<id>", "监控卡片", "详情"},
 			},
 		},

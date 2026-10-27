@@ -133,6 +133,7 @@ A detail program prints the items of the plugin's sidebar page, or `{"error": â€
 | `items[].name` | text | Required. The item's heading. Missing, `null`, empty or whitespace-only text, or a language object with no nonblank text is an error, and the page shows no items. One language with nonblank text is enough |
 | `items[].status` | `ok`, `warn`, `error`, or left out | The item's state, shown in words |
 | `items[].value` | string, number or localized text | The item's main value |
+| `items[].label` | text | Optional. Shown with the main value. The compact list does not show it |
 | `items[].fields[].name` | text | A field's name |
 | `items[].fields[].value` | string, number or localized text | A field's value |
 | `items[].log` | string | Shown under Last lines of the log, in a box of its own that scrolls; print the last lines, not a whole file |

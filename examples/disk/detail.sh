@@ -2,6 +2,9 @@
 # Prints hostdeck's detail page: the disk that holds the home folder and every
 # volume mounted under /Volumes, each with an action that opens it in Finder.
 # Recovery, and Time Machine's backups mounted deeper down, are left out.
+# The large figure is df's Available. Its label says that it is free space.
+# Used is df's Used, in whole GB, with df's capacity percent. Those two need
+# not add up to the total: some filesystems reserve blocks.
 set -eu
 home=$(df -Pk "$HOME" | awk 'NR == 2 { m = $6; for (i = 7; i <= NF; i++) m = m " " $i; print m }')
 df -Pkl | awk -v home="$home" '
@@ -19,8 +22,9 @@ NR > 1 {
 	if (mount == home) name = "{\"en\": \"Home folder disk\", \"zh-CN\": \"主目录所在磁盘\"}"
 	else { name = mount; sub(/^\/Volumes\//, "", name); name = "\"" name "\"" }
 	printf "%s{\"id\": \"%s\", \"name\": %s, \"status\": \"%s\", \"value\": \"%.0f GB\", ", (n++ ? ", " : ""), mount, name, status, $4 / 1048576
-	printf "\"fields\": [{\"name\": {\"en\": \"Total\", \"zh-CN\": \"总量\"}, \"value\": \"%.0f GB\"}, ", $2 / 1048576
-	printf "{\"name\": {\"en\": \"Used\", \"zh-CN\": \"已用\"}, \"value\": \"%d%%\"}, ", used
+	printf "\"label\": {\"en\": \"free\", \"zh-CN\": \"可用\"}, "
+	printf "\"fields\": [{\"name\": {\"en\": \"Used\", \"zh-CN\": \"已用\"}, \"value\": \"%.0f GB · %d%%\"}, ", $3 / 1048576, used
+	printf "{\"name\": {\"en\": \"Total\", \"zh-CN\": \"总量\"}, \"value\": \"%.0f GB\"}, ", $2 / 1048576
 	printf "{\"name\": {\"en\": \"Mounted at\", \"zh-CN\": \"挂载点\"}, \"value\": \"%s\"}], ", mount
 	printf "\"actions\": [{\"id\": \"open\", \"label\": {\"en\": \"Open in Finder\", \"zh-CN\": \"在访达中打开\"}}]}"
 }
