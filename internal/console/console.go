@@ -328,7 +328,12 @@ func (s *server) serveRefresh(w http.ResponseWriter, r *http.Request) {
 
 // serveClear hands out the address at which an embedded service's proxy has
 // the browser clear that service's cache and storage. The address works once.
+// Minting the token needs the console's Origin, like other console actions.
 func (s *server) serveClear(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
 	id := r.PathValue("id")
 	served, ok := s.loaded().Served[id]
 	if !ok || served.Err != nil {

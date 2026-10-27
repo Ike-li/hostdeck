@@ -209,10 +209,15 @@ func TestClearingIsOfferedForEmbeddedServicesOnly(t *testing.T) {
 		"grafana": {URL: "http://127.0.0.1:4679/grafana/"},
 		"stuck":   {Err: errors.New("port 4680 is in use")},
 	}
-	h := Handler(Config{Plugins: plugins, Served: served, Tokens: tokens})
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", Plugins: plugins, Served: served, Tokens: tokens})
 
 	var got struct{ URL string }
-	if err := json.NewDecoder(post(h, "http://127.0.0.1:4678/api/clear/grafana").Body).Decode(&got); err != nil {
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4678/api/clear/grafana", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:4678")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if err := json.NewDecoder(w.Result().Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
 	prefix := "http://127.0.0.1:4679" + proxy.ClearPath + "?token="
@@ -222,8 +227,35 @@ func TestClearingIsOfferedForEmbeddedServicesOnly(t *testing.T) {
 	}
 
 	for _, id := range []string{"stuck", "wiki", "nothing"} {
-		if resp := post(h, "http://127.0.0.1:4678/api/clear/"+id); resp.StatusCode != http.StatusNotFound {
-			t.Errorf("%s: status %d, want 404", id, resp.StatusCode)
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4678/api/clear/"+id, nil)
+		req.Header.Set("Origin", "http://127.0.0.1:4678")
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", id, w.Code)
+		}
+	}
+
+	for name, origin := range map[string]string{
+		"missing Origin": "",
+		"wrong Origin":   "http://127.0.0.1:4679",
+	} {
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4678/api/clear/grafana", nil)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", name, w.Code)
+		}
+		var body struct {
+			Error struct{ Code string }
+		}
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil || body.Error.Code != "not_console" {
+			t.Errorf("%s: body %s, want not_console", name, w.Body.String())
 		}
 	}
 }
