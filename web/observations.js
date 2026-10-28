@@ -11,6 +11,7 @@ const backoff = [2000, 5000, 10000];
 export function observationPanel(p, item, view, saved = null) {
   if (!view.observationPanels) view.observationPanels = new Map();
   const key = saved?.id || item.id;
+  const carried=view.observationCarry?.get(key);
   if (view.observationPanels.has(key)) return view.observationPanels.get(key);
   const node = el('details', 'detail-log observation');
   const summary = el('summary', null, t('observation.title'));
@@ -30,7 +31,7 @@ export function observationPanel(p, item, view, saved = null) {
   latest.type = 'button'; latest.hidden = true;
   warning.setAttribute('role', 'status');
   node.append(summary, progress, status, sources, at, warning, scope, existing, pre, latest);
-  const model = { p, item, view, node, id: saved?.id, cursor: '', failures: 0, busy: false, following: true, timer: null, active: false, saved };
+  const model = { p, item, view, node, id: carried?.id || saved?.id, cursor: '', failures: 0, busy: false, following: true, timer: null, active: false, saved };
   node.observation = model;
   view.observationPanels.set(key, node);
   panels.add(model);
@@ -90,7 +91,9 @@ export function observationPanel(p, item, view, saved = null) {
     }
   }
   node.addEventListener('toggle', model.wake);
-  if (saved) model.paint({ ...saved, reset: true });
+  if (carried?.snapshot) model.paint(carried.snapshot);
+  else if (saved) model.paint({ ...saved, reset: true });
+  if(carried){model.following=carried.following;latest.hidden=model.following;node.open=carried.open;}
   model.submit = async (action) => {
     model.submitting = true;
     node.open = true;

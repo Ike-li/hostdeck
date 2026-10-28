@@ -63,6 +63,11 @@ export async function loadDetail(p, view) {
 
 export function renderDetail(p, view) {
   view.detailPlugin = p;
+  if(view.lang && view.lang!==state.lang){
+    view.observationCarry=new Map([...(view.observationPanels||[])].map(([key,node])=>[key,{id:node.observation.id,snapshot:{...node.observation.saved,log:node.querySelector('.observation-log').textContent,reset:true},open:node.open,following:node.observation.following}]));
+    view.detailRows=new Map();view.observationPanels=new Map();
+    view.querySelector('.recent-operations')?.remove();
+  }
   view.lang = state.lang;
   // A reading can arrive between the two clicks that confirm an action.
   // Replacing the button would forget the first click.

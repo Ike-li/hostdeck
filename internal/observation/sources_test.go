@@ -38,9 +38,10 @@ func TestCopyTruncationThatRegrowsPastTheCursorResetsTheLog(t *testing.T) {
 	}
 }
 func TestOnlyRegularFileDescriptorsAreAcceptedAsProcessLogSources(t *testing.T) {
-	out := []byte("p42\nf1\ntREG\nn/tmp/stdout.log\nf2\ntCHR\nn/dev/ttys001\nf0\ntREG\nn/tmp/input\n")
+	path := filepath.Join(t.TempDir(), "stdout.log")
+	out := []byte("p42\nf1\ntREG\nn" + path + "\nf2\ntCHR\nn/dev/ttys001\nf0\ntREG\nn/tmp/input\n")
 	got := descriptorFiles(out)
-	if len(got) != 1 || got[0] != "/tmp/stdout.log" {
+	if len(got) != 1 || got[0] != path {
 		t.Fatalf("sources: %v", got)
 	}
 }
