@@ -27,6 +27,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
 	"github.com/Ike-li/hostdeck/internal/dockerview"
 	"github.com/Ike-li/hostdeck/internal/layout"
+	"github.com/Ike-li/hostdeck/internal/listenerview"
 	"github.com/Ike-li/hostdeck/internal/manualview"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
@@ -41,6 +42,7 @@ func init() {
 	runpkg.Register("tasks", tasks.Execute)
 	runpkg.Register("disk-history", diskhistory.Execute)
 	runpkg.Register("docker", dockerview.Execute)
+	runpkg.Register("listeners", listenerview.Execute)
 	runpkg.Register("manual", manualview.Execute)
 }
 

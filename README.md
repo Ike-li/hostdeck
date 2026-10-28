@@ -245,7 +245,11 @@ The built-in **Docker containers** plugin provides a compact searchable containe
 
 ## Services started by hand
 
-Add **Services started by hand** under Pages & plugins → Add content. It lists TCP listeners started from a terminal or a session, such as a program left running in Terminal, iTerm, Windows Terminal, VS Code or a Claude session. The page shows the working directory and the command. A confirmed action stops that process, or restarts it from this console; the console itself cannot be stopped here. A restarted process keeps running after the original terminal closes. After hostdeck exits it keeps running and leaves this list. launchd jobs, Windows services and ports an app opens for itself are not listed. The card names each process and the ports it holds; the page groups them by where they were started. This is not yet the view of every process listening on a port.
+Add **Services started by hand** under Pages & plugins → Add content. It lists TCP listeners started from a terminal or a session, such as a program left running in Terminal, iTerm, Windows Terminal, VS Code or a Claude session. The page shows the working directory and the command. A confirmed action stops that process, or restarts it from this console; the console itself cannot be stopped here. A restarted process keeps running after the original terminal closes. After hostdeck exits it keeps running and leaves this list. launchd jobs, Windows services and ports an app opens for itself are not listed. The card names each process and the ports it holds; the page groups them by where they were started. For every TCP listener on this machine, see **Listening ports**.
+
+## Listening ports
+
+Add **Listening ports** under Pages & plugins → Add content. It lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID and process name. The detail page is searchable. hostdeck itself and the ports it forwards are marked and still listed. This slice is read-only: it does not stop a process. UDP is not listed. Enrichment beyond the list (command line, working directory grouping) and Stop remain later M1 work.
 
 ## Scheduled script tasks
 

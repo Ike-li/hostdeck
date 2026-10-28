@@ -1,0 +1,13 @@
+schema: 1
+name: {en: Listening ports, zh-CN: 监听端口}
+icon: 🔌
+description:
+  en: Every TCP port that is listening on this machine, with the process that holds it. The page shows the bind address (127.0.0.1 vs 0.0.0.0), PID and process name. hostdeck itself and the ports it forwards are marked and still listed. Read-only in this version; stopping a process is not offered here.
+  zh-CN: 本机正在监听的每一个 TCP 端口，以及持有它的进程。页面显示绑定地址（127.0.0.1 与 0.0.0.0）、PID 和进程名。hostdeck 自身及其转发端口会标记但仍列出。本版只读，不提供结束进程。
+card:
+  interval: 1m
+  exec:
+    command: ['@hostdeck', listeners, card]
+detail:
+  exec:
+    command: ['@hostdeck', listeners, detail]
