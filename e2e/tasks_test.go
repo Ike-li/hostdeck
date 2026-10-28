@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 	"time"
 
@@ -99,6 +101,13 @@ func TestEnabledScheduledTasksRunWithoutAnOpenPage(t *testing.T) {
 	}
 	for {
 		b, err := os.ReadFile(filepath.Join(p, "data/state.json"))
+		// Atomic replacement may briefly exclude Windows readers. Retry only the
+		// sharing boundary; retain failure for malformed JSON and persistent errors.
+		until := time.Now().Add(2 * time.Second)
+		for runtime.GOOS == "windows" && (errors.Is(err, syscall.Errno(32)) || os.IsPermission(err)) && time.Now().Before(until) {
+			time.Sleep(10 * time.Millisecond)
+			b, err = os.ReadFile(filepath.Join(p, "data/state.json"))
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
