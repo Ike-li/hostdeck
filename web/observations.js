@@ -31,7 +31,8 @@ export function observationPanel(p, item, view, saved = null) {
   latest.type = 'button'; latest.hidden = true;
   warning.setAttribute('role', 'status');
   node.append(summary, progress, status, sources, at, warning, scope, existing, pre, latest);
-  const model = { p, item, view, node, id: carried?.id || saved?.id, cursor: '', failures: 0, busy: false, following: true, timer: null, active: false, saved };
+  const initialIdentity=view.data?.identities?.[item.id] || saved?.identity;
+  const model = { initialIdentity,p, item, view, node, id: carried?.id || saved?.id, cursor: '', failures: 0, busy: false, following: true, timer: null, active: false, saved };
   node.observation = model;
   view.observationPanels.set(key, node);
   panels.add(model);
@@ -73,7 +74,7 @@ export function observationPanel(p, item, view, saved = null) {
     model.abort = new AbortController();
     try {
       if (!model.id) {
-        const session = await postJSON(`/api/observations/${encodeURIComponent(p.id)}`, { item: item.id });
+        const session = await postJSON(`/api/observations/${encodeURIComponent(p.id)}`, { item: item.id,expected:model.initialIdentity });
         model.id = session.id;
       }
       if (!visible()) return;
@@ -108,7 +109,7 @@ export function observationPanel(p, item, view, saved = null) {
     model.abort?.abort();
     progress.textContent = t('observation.result.submitting');
     // A fresh session establishes file positions for each distinct operation.
-    const session = await postJSON(`/api/observations/${encodeURIComponent(p.id)}`, { item: item.id, action: action.id });
+    const session = await postJSON(`/api/observations/${encodeURIComponent(p.id)}`, { item: item.id, action: action.id,expected:model.initialIdentity });
     model.id = session.id; model.cursor = '';
     return session.id;
   };

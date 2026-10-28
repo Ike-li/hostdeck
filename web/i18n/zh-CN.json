@@ -346,5 +346,6 @@
   "observation.source.configuration_missing": "已加载任务没有提供配置路径或输出文件。",
   "observation.source.events_empty": "没有匹配的近期服务管理事件。这不是应用业务日志。",
   "observation.source.events_unreadable": "无法读取服务管理事件。这不是应用业务日志。",
-  "observation.lastState": "最后观察状态："
+  "observation.lastState": "最后观察状态：",
+  "error.observation_identity": "无法确认这次列表中的进程身份，未执行操作。重新加载列表以查看当前进程。"
 }

@@ -379,7 +379,24 @@ func (s *server) serveDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := detail.Read(r.Context(), p)
-	v.Observation = observationKind(p) != ""
+	kind := observationKind(p)
+	v.Observation = kind != ""
+	if kind == "listeners" || kind == "manual" {
+		identities := map[string]observation.Identity{}
+		for _, item := range v.Items {
+			for _, field := range item.Fields {
+				if textEnglish(field.Name) == "PID" {
+					pid, _ := strconv.Atoi(field.Value.String())
+					identities[item.ID] = observation.ProcessIdentity(pid)
+				}
+			}
+		}
+		writeJSON(w, struct {
+			detail.View
+			Identities map[string]observation.Identity `json:"identities"`
+		}{v, identities})
+		return
+	}
 	writeJSON(w, v)
 }
 

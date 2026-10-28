@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Ike-li/hostdeck/internal/catalog"
+	"github.com/Ike-li/hostdeck/internal/listenerview"
 	"github.com/Ike-li/hostdeck/internal/observation"
+	"github.com/Ike-li/hostdeck/internal/run"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Ike-li/hostdeck/examples"
 	"github.com/Ike-li/hostdeck/internal/plugin"
@@ -170,5 +173,35 @@ case "$2" in */com.example.test) printf '\tstate = not running\n\tpath = /missin
 	target, err := s.resolveObservation(context.Background(), p, "jobs", "com.example.test", observation.Identity{})
 	if err != nil || target.Reason != "configuration_unreadable" {
 		t.Fatalf("target %+v err %v", target, err)
+	}
+}
+
+func TestANativeObservationRejectsAListingIdentityThatHasAlreadyChanged(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "plugins"), 0700)
+	path, err := catalog.Add(examples.Files, filepath.Join(root, "plugins"), "listeners")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := plugin.ReadFolder(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The native program's JSON output is the protocol boundary. No signal or
+	// external service is used; the only kernel identity read is this test's.
+	run.Register("listeners", func(context.Context, string, []string, run.Runner) ([]byte, error) {
+		return []byte(fmt.Sprintf(`{"items":[{"id":"fixture","name":"Fixture","fields":[{"name":"PID","value":"%d"}]}]}`, os.Getpid())), nil
+	})
+	t.Cleanup(func() { run.Register("listeners", listenerview.Execute) })
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: filepath.Join(root, "plugins"), Plugins: []plugin.Plugin{p}})
+	identity := observation.ProcessIdentity(os.Getpid())
+	identity.Started = identity.Started.Add(-time.Second)
+	payload, _ := json.Marshal(map[string]any{"item": "fixture", "expected": identity})
+	req := httptest.NewRequest("POST", "http://127.0.0.1:4678/api/observations/listeners", bytes.NewReader(payload))
+	req.Header.Set("Origin", "http://127.0.0.1:4678")
+	response := httptest.NewRecorder()
+	h.ServeHTTP(response, req)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("changed listing: %d %s", response.Code, response.Body.String())
 	}
 }

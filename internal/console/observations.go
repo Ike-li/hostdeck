@@ -78,8 +78,9 @@ func (s *server) serveObservationCreate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Item   string `json:"item"`
-		Action string `json:"action"`
+		Item     string                `json:"item"`
+		Action   string                `json:"action"`
+		Expected *observation.Identity `json:"expected,omitempty"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	dec.DisallowUnknownFields()
@@ -90,6 +91,10 @@ func (s *server) serveObservationCreate(w http.ResponseWriter, r *http.Request) 
 	target, err := s.resolveObservation(r.Context(), p, kind, req.Item, observation.Identity{})
 	if err != nil {
 		s.observationError(w, 502, err)
+		return
+	}
+	if kind != "jobs" && (req.Expected == nil || !req.Expected.Equal(target.Identity)) {
+		writeError(w, http.StatusConflict, &card.Error{Code: "observation_identity"})
 		return
 	}
 	id, err := s.observations.Create(p.ID, req.Item, req.Action, target)

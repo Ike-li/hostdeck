@@ -346,5 +346,6 @@
   "observation.source.configuration_missing": "The loaded task provides no configuration path or output file.",
   "observation.source.events_empty": "No matching recent service management events. These are not application logs.",
   "observation.source.events_unreadable": "Could not read service management events. These are not application logs.",
-  "observation.lastState": "Last observed state: "
+  "observation.lastState": "Last observed state: ",
+  "error.observation_identity": "The process identity from this list cannot be confirmed. No operation was performed. Reload the list to inspect the current process."
 }

@@ -18,7 +18,7 @@ func TestAnOpenObservationFollowsWithoutReplacingTheFocusedAction(t *testing.T) 
 	if testing.Short() {
 		t.Skip("browser test")
 	}
-	var reads, actions atomic.Int32
+	var reads, actions, badBindings atomic.Int32
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServerFS(web.Files))
 	jsonReply := func(w http.ResponseWriter, v any) {
@@ -31,9 +31,23 @@ func TestAnOpenObservationFollowsWithoutReplacingTheFocusedAction(t *testing.T) 
 	mux.HandleFunc("GET /api/layout", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, map[string]any{}) })
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, map[string]any{}) })
 	mux.HandleFunc("GET /api/detail/jobs", func(w http.ResponseWriter, r *http.Request) {
-		jsonReply(w, map[string]any{"observation": true, "items": []any{map[string]any{"id": "short", "name": "Short task", "actions": []any{map[string]any{"id": "start", "label": "Run"}}}}})
+		jsonReply(w, map[string]any{"observation": true, "identities": map[string]any{"short": map[string]any{"pid": 77, "started": "2026-10-28T00:00:00Z"}}, "items": []any{map[string]any{"id": "short", "name": "Short task", "actions": []any{map[string]any{"id": "start", "label": "Run"}}}}})
 	})
-	mux.HandleFunc("POST /api/observations/jobs", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, map[string]string{"id": "session"}) })
+	mux.HandleFunc("POST /api/observations/jobs", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Expected struct {
+				PID     int    `json:"pid"`
+				Started string `json:"started"`
+			}
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Expected.PID != 77 || body.Expected.Started != "2026-10-28T00:00:00Z" {
+			badBindings.Add(1)
+			w.WriteHeader(400)
+			return
+		}
+		jsonReply(w, map[string]string{"id": "session"})
+	})
 	mux.HandleFunc("POST /api/observations/session/session/read", func(w http.ResponseWriter, r *http.Request) {
 		n := reads.Add(1)
 		jsonReply(w, map[string]any{"id": "session", "state": "idle", "collectedAt": time.Now(), "reset": true, "cursor": fmt.Sprint(n), "log": strings.Repeat("line\n", 160) + fmt.Sprintf("delayed-%d", n), "sources": []any{map[string]string{"state": "available"}}})
@@ -74,6 +88,9 @@ func TestAnOpenObservationFollowsWithoutReplacingTheFocusedAction(t *testing.T) 
 				})
 			}
 		}
+	}
+	if badBindings.Load() != 0 {
+		t.Fatalf("unbound browser sessions: %d", badBindings.Load())
 	}
 	if actions.Load() != 8 {
 		t.Fatalf("executed %d actions", actions.Load())
