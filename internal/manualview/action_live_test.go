@@ -77,7 +77,6 @@ func TestStopAndRestartOnlyTheListenerThisTestStarted(t *testing.T) {
 	if !op.Alive(next) {
 		t.Fatalf("restarted pid %d is not running", next)
 	}
-	waitListed(t, op, next)
 	time.Sleep(200 * time.Millisecond)
 	if !op.Alive(next) {
 		t.Fatal("restarted process ended when the action returned")

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Ike-li/hostdeck/internal/observation"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -265,6 +267,15 @@ func TestACancelledActionDoesNotSignal(t *testing.T) {
 	cancel()
 	out, err := act(ctx, op, dir, "stop", "4")
 	if !errors.Is(err, context.Canceled) || out != nil || len(op.signals) != 0 {
+		t.Fatalf("out %s err %v signals %v", out, err, op.signals)
+	}
+}
+
+func TestAnObservationCannotStopAReplacementAlreadyPresentAtSubmission(t *testing.T) {
+	op := &fakeOp{sockets: []Socket{{PID: 4, Port: 8080, Addr: "127.0.0.1", Command: "app"}}, procs: map[int]Proc{4: {PPID: 1, Name: "app", Started: time.Unix(100, 0)}}, self: 50, dieOnTerm: true}
+	ctx := observation.WithIdentity(context.Background(), observation.Identity{PID: 4, Started: time.Unix(1, 0)})
+	out, err := act(ctx, op, testDirWithPorts(t, ""), "stop", "4-127-0-0-1-8080")
+	if err != nil || len(op.signals) != 0 || !strings.Contains(string(out), "changed") {
 		t.Fatalf("out %s err %v signals %v", out, err, op.signals)
 	}
 }

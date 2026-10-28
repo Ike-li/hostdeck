@@ -2,11 +2,14 @@
 package observation
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,6 +47,7 @@ type Target struct {
 	Text     string // Bounded service-management events, not application output.
 }
 type Source struct {
+	ID    string `json:"id,omitempty"`
 	Name  string `json:"name"`
 	State string `json:"state"`
 }
@@ -71,8 +75,9 @@ type Snapshot struct {
 	Partial        bool        `json:"partial"`
 }
 type fileState struct {
-	info os.FileInfo
-	size int64
+	info   os.FileInfo
+	size   int64
+	anchor []byte
 }
 type session struct {
 	snap    Snapshot
@@ -134,7 +139,11 @@ func (s *Store) Binding(id string) (string, string, string, Identity, error) {
 	if err != nil {
 		return "", "", "", Identity{}, err
 	}
-	return v.snap.Plugin, v.snap.Item, v.snap.Action, v.target.Identity, nil
+	identity := v.target.Identity
+	if identity.Started.IsZero() {
+		identity = v.snap.Identity
+	}
+	return v.snap.Plugin, v.snap.Item, v.snap.Action, identity, nil
 }
 func (s *Store) Begin(id, plugin, item, action string) error {
 	s.mu.Lock()
@@ -159,10 +168,10 @@ func (s *Store) Begin(id, plugin, item, action string) error {
 				n, _ := f.ReadAt(chunk, max(0, info.Size()-FragmentLimit))
 				v.snap.ExistingLog = tail(v.snap.ExistingLog + string(chunk[:n]))
 			}
-			f.Close()
 			if info != nil {
-				v.files[path] = fileState{info, info.Size()}
+				v.files[path] = fileState{info: info, size: info.Size(), anchor: readAnchor(f, info.Size())}
 			}
+			f.Close()
 		}
 	}
 	v.snap.Log = ""
@@ -222,6 +231,9 @@ func (s *Store) Read(ctx context.Context, id, cursor string, t Target) (Snapshot
 	if err = ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
+	if v.target.Identity.PID > 1 && v.snap.Plugin != "" && !t.Identity.Started.IsZero() && v.target.Identity.PID == t.Identity.PID && !v.target.Identity.Equal(t.Identity) {
+		t = Target{Identity: v.target.Identity, State: "unknown", Reason: "identity_changed"}
+	}
 	before := v.snap.Log
 	reset := cursor == "" || cursor != v.snap.Cursor
 	v.touched = time.Now()
@@ -236,13 +248,15 @@ func (s *Store) Read(ctx context.Context, id, cursor string, t Target) (Snapshot
 	v.snap.Runs = t.Runs
 	sources := []Source{}
 	body := before
-	if !v.used {
-		body = ""
-	}
+	preview := ""
+	previewRead := false
+	previewFailed := false
 	for _, path := range slices.Compact(slices.Sorted(slices.Values(t.Files))) {
-		source := Source{Name: filepath.Base(path)}
+		digest := sha256.Sum256([]byte(fmt.Sprintf("%d/%s/%s", t.Identity.PID, t.Identity.Started.UTC(), path)))
+		source := Source{ID: hex.EncodeToString(digest[:]), Name: filepath.Base(path)}
 		f, openErr := openRegular(path)
 		if openErr != nil {
+			previewFailed = true
 			switch {
 			case errors.Is(openErr, os.ErrNotExist):
 				source.State = "waiting"
@@ -262,11 +276,12 @@ func (s *Store) Read(ctx context.Context, id, cursor string, t Target) (Snapshot
 			continue
 		}
 		old, seen := v.files[path]
+		changed := seen && len(old.anchor) > 0 && !bytes.Equal(old.anchor, readAnchor(f, old.size))
 		offset := int64(0)
-		if v.used && seen && os.SameFile(old.info, info) && info.Size() >= old.size {
+		if v.used && seen && os.SameFile(old.info, info) && info.Size() >= old.size && !changed {
 			offset = old.size
 		}
-		if seen && (!os.SameFile(old.info, info) || info.Size() < old.size) {
+		if seen && (!os.SameFile(old.info, info) || info.Size() < old.size || changed) {
 			reset = true
 			body = ""
 		}
@@ -281,6 +296,7 @@ func (s *Store) Read(ctx context.Context, id, cursor string, t Target) (Snapshot
 		}
 		chunk := make([]byte, min(int64(FragmentLimit), max(0, info.Size()-offset)))
 		n, readErr := f.ReadAt(chunk, offset)
+		anchor := readAnchor(f, offset+int64(n))
 		f.Close()
 		if readErr != nil && readErr != io.EOF {
 			source.State = "unreadable"
@@ -289,11 +305,17 @@ func (s *Store) Read(ctx context.Context, id, cursor string, t Target) (Snapshot
 		} else {
 			source.State = "available"
 		}
-		if n > 0 {
+		if !v.used {
+			previewRead = true
+			preview += string(chunk[:n])
+		} else if n > 0 {
 			body += string(chunk[:n])
 		}
-		v.files[path] = fileState{info, offset + int64(n)}
+		v.files[path] = fileState{info: info, size: offset + int64(n), anchor: anchor}
 		sources = append(sources, source)
+	}
+	if !v.used && previewRead && !previewFailed {
+		body = preview
 	}
 	if t.Text != "" {
 		body = tail(t.Text)
@@ -350,4 +372,13 @@ func (s *Store) Recent(plugin string) ([]Snapshot, error) {
 	}
 	slices.SortFunc(out, func(a, b Snapshot) int { return b.OperationTime.Compare(a.OperationTime) })
 	return out, nil
+}
+
+func readAnchor(f *os.File, offset int64) []byte {
+	if offset <= 0 {
+		return nil
+	}
+	b := make([]byte, min(int64(64), offset))
+	n, _ := f.ReadAt(b, offset-int64(len(b)))
+	return b[:n]
 }

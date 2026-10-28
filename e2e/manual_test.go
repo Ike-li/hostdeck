@@ -205,7 +205,7 @@ func TestStopOnlyTheServiceThisTestStarted(t *testing.T) {
 			const i = dts.findIndex(dt => dt.textContent.trim() === name);
 			return i >= 0 && dds[i] ? dds[i].textContent.trim() : '';
 		};
-		const item = [...document.querySelectorAll('#service .detail-item')].find(el => field(el, 'Ports').split(',').map(s => s.trim()).includes(wantPort));
+		const item = [...document.querySelectorAll('#service .detail-list .detail-item')].find(el => field(el, 'Ports').split(',').map(s => s.trim()).includes(wantPort));
 		if (!item) return '';
 		if (field(item, 'PID') !== wantPID) return 'pid:' + field(item, 'PID');
 		const directory = field(item, 'Directory');
@@ -249,7 +249,7 @@ func TestStopOnlyTheServiceThisTestStarted(t *testing.T) {
 		if (!view || view.getAttribute('aria-busy') === 'true') return false;
 		const wantPort = ` + strconv.Quote(port) + `;
 		const wantPID = ` + strconv.Quote(strconv.Itoa(pid)) + `;
-		return ![...document.querySelectorAll('#service .detail-item')].some(el => {
+		return ![...document.querySelectorAll('#service .detail-list .detail-item')].some(el => {
 			const dts = [...el.querySelectorAll('dt')];
 			const dds = [...el.querySelectorAll('dd')];
 			const at = (name) => { const i = dts.findIndex(dt => dt.textContent.trim() === name); return i >= 0 && dds[i] ? dds[i].textContent.trim() : ''; };

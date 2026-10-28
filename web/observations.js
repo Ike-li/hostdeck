@@ -141,3 +141,31 @@ export async function recentOperations(p, view) {
     area.hidden = !recent.length;
   } catch { area.hidden = false; area.append(el('p', null, t('observation.failed'))); }
 }
+
+// Reconcile current membership once after an operation. Surviving row and
+// control objects are reused; retired observations move to history.
+export async function refreshObservedItems(p,view) {
+  try {
+    const fresh=await getJSON(`/api/detail/${encodeURIComponent(p.id)}`);
+    if(fresh.error) return;
+    const ids=new Set((fresh.items||[]).map(it=>it.id));
+    let area=view.querySelector('.recent-operations');
+    if(!area){area=el('section','recent-operations');area.append(el('h2',null,t('observation.recent')));view.append(area);}
+    for(const [id,row] of view.detailRows||[]) {
+      if(ids.has(id)) continue;
+      const model=row.querySelector('.observation')?.observation;
+      if(!model?.id) continue;
+      area.querySelector(`[data-operation="${CSS.escape(model.id)}"]`)?.remove();
+      row.dataset.operation=model.id;
+      for(const button of row.querySelectorAll('.action')) button.disabled=true;
+      const focused=document.activeElement;
+      area.hidden=false;area.append(row);
+      if(focused?.isConnected) focused.focus({preventScroll:true});
+    }
+    view.data=fresh;
+    if(view.updateObservedList) view.updateObservedList();
+    else {
+      for(const row of view.querySelectorAll('.detail-list > .detail-item')) if(!ids.has(row.dataset.item)) row.remove();
+    }
+  }catch { /* The observation independently reports a failed latest reading. */ }
+}

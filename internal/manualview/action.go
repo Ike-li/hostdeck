@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Ike-li/hostdeck/internal/observation"
 	"sort"
 	"strconv"
 	"time"
@@ -45,6 +46,9 @@ func act(ctx context.Context, op operator, action, item string) ([]byte, error) 
 	}
 	if refusal, ok := h.note(); ok {
 		return refusal, nil
+	}
+	if expected, ok := observation.ExpectedIdentity(ctx); ok && !expected.Equal(observation.Identity{PID: h.pid, Started: h.started}) {
+		return refused("That process changed, so it was left alone.", "这个进程已经变了，所以没有动它。")
 	}
 	if action == "restart" && !canRestart(h) {
 		return refused("Could not read the command, directory, or environment, so it was left running.", "读不到命令、目录或环境，所以没有动它。")

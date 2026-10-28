@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Ike-li/hostdeck/internal/observation"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -272,4 +274,14 @@ func itoa(n int) string {
 func jsonNumber(n int) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+func TestAnObservationCannotStopAReplacementAlreadyPresentAtSubmission(t *testing.T) {
+	op := readyOp(t)
+	op.dieOnTerm = true
+	ctx := observation.WithIdentity(context.Background(), observation.Identity{PID: 4, Started: time.Unix(1, 0)})
+	out, err := act(ctx, op, "stop", "4")
+	if err != nil || len(op.signals) != 0 || !strings.Contains(string(out), "changed") {
+		t.Fatalf("out %s err %v signals %v", out, err, op.signals)
+	}
 }

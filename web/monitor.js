@@ -4,7 +4,7 @@ import { t, pick, explain } from './i18n.js';
 import { twoClicks } from './confirm.js';
 import { cardElement } from './overview.js';
 import { scheduledTaskTools } from './tasks.js';
-import { observationPanel, recentOperations } from './observations.js';
+import { observationPanel, recentOperations, refreshObservedItems } from './observations.js';
 import { PENDING_AGAIN, state } from './state.js';
 
 let monitorTimer = null;
@@ -145,21 +145,31 @@ function renderDetailTools(p, view) {
     }
     clear.disabled = !choice.search;
     const list = view.querySelector('.detail-list');
+    const focused=document.activeElement; const scroll=view.scrollTop;
     if (selected.length) list.replaceChildren(...selected.map((it) => {
       const row = detailItem(p, it, view);
       tasksUI?.decorate(row, it);
       return row;
     }));
     else list.replaceChildren(el('p', 'empty', !items.length ? (view.data.note ? pick(view.data.note) : t('detail.empty')) : t(query ? 'detail.noMatches' : 'detail.groupEmpty')));
+    if (focused?.isConnected) focused.focus({preventScroll:true});
+    view.scrollTop=scroll;
     if (state.current?.id === p.id) announce(t('detail.matches', { count: selected.length, total: items.length }));
   };
+  view.updateObservedList=update;
   input.addEventListener('input', () => { choice.search = input.value; update(); });
   clear.addEventListener('click', () => { choice.search = input.value = ''; update(); input.focus(); });
   update();
 }
 
 function detailItem(p, item, view) {
+  if (view.data.observation) {
+    if (!view.detailRows) view.detailRows=new Map();
+    if (view.detailRows.has(item.id)) return view.detailRows.get(item.id);
+  }
   const section = el('section', 'detail-item');
+  section.dataset.item=item.id;
+  if (view.data.observation) view.detailRows.set(item.id, section);
   if (item.status) section.dataset.status = item.status;
   const head = el('header', 'detail-head');
   head.append(el('h2', 'detail-name', pick(item.name)));
@@ -283,6 +293,7 @@ export function actionButton(p, item, action, view) {
     if (panel) {
       panel.observation.returned(note, failed);
       btn.disabled = false; btn.textContent = label;
+      await refreshObservedItems(p,view);
       recentOperations(p, view);
     } else await loadDetail(p, view);
   });

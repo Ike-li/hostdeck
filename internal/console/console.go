@@ -404,17 +404,26 @@ func (s *server) serveAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
 		return
 	}
+	actionContext := r.Context()
 	if req.Observation != "" {
 		if observationKind(p) == "" {
 			s.observationError(w, 403, observation.ErrSession)
 			return
+		}
+		if observationKind(p) != "jobs" {
+			_, _, _, identity, bindingErr := s.observations.Binding(req.Observation)
+			if bindingErr != nil || !identity.Equal(observation.ProcessIdentity(identity.PID)) {
+				s.observationError(w, 409, observation.ErrSession)
+				return
+			}
+			actionContext = observation.WithIdentity(actionContext, identity)
 		}
 		if err := s.observations.Begin(req.Observation, p.ID, req.Item, req.Action); err != nil {
 			s.observationError(w, 409, err)
 			return
 		}
 	}
-	message, err := detail.Act(r.Context(), p, req.Item, req.Action)
+	message, err := detail.Act(actionContext, p, req.Item, req.Action)
 	if req.Observation != "" {
 		result, notice := "returned", message
 		if err != nil {

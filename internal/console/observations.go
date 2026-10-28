@@ -25,7 +25,7 @@ import (
 // capability. Jobs additionally require the shipped scripts: arbitrary detail
 // output must never become authority to open a file on the console's behalf.
 func observationKind(p plugin.Plugin) string {
-	for _, kind := range []string{"jobs"} {
+	for _, kind := range []string{"jobs", "listeners", "manual"} {
 		manifest, err := fs.ReadFile(examples.Files, kind+"/plugin.yaml")
 		if err != nil {
 			continue
@@ -188,7 +188,35 @@ func (s *server) resolveObservation(ctx context.Context, p plugin.Plugin, kind, 
 		if target.Identity.PID > 1 {
 			target.State = "running"
 		}
-		target.Reason = "external"
+		if target.Identity.PID <= 1 || target.Identity.Started.IsZero() {
+			target.Reason = "identity_changed"
+			return target, nil
+		}
+		// Associate only an exact PID and kernel start identity from a verified job.
+		for _, jobPlugin := range s.loaded().Plugins {
+			if observationKind(jobPlugin) != "jobs" {
+				continue
+			}
+			jobs := detail.Read(ctx, jobPlugin)
+			if jobs.Error != nil {
+				continue
+			}
+			for _, job := range jobs.Items {
+				for _, field := range job.Fields {
+					if textEnglish(field.Name) != "PID" || field.Value.String() != strconv.Itoa(target.Identity.PID) {
+						continue
+					}
+					associated, err := s.resolveObservation(ctx, jobPlugin, "jobs", job.ID, observation.Identity{})
+					if err == nil && associated.Identity.Equal(target.Identity) && (len(associated.Files) > 0 || associated.Text != "") {
+						return associated, nil
+					}
+				}
+			}
+		}
+		target.Files, target.Reason = observation.ProcessFiles(ctx, target.Identity)
+		if target.Reason == "identity_changed" {
+			target.State = "unknown"
+		}
 		return target, nil
 	}
 	return observation.Target{Identity: bound, State: "unknown", Reason: "gone"}, nil

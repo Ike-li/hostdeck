@@ -103,3 +103,28 @@ esac
 	}
 	request("GET", "/api/operations/jobs", "")
 }
+
+func TestNativeExecutionConfigurationGrantsObservationEvenWithAnotherFolderName(t *testing.T) {
+	for _, kind := range []string{"manual", "listeners"} {
+		root := t.TempDir()
+		path, err := catalog.Add(examples.Files, root, kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		renamed := filepath.Join(root, "renamed")
+		if err = os.Rename(path, renamed); err != nil {
+			t.Fatal(err)
+		}
+		p, err := plugin.ReadFolder(renamed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := observationKind(p); got != kind {
+			t.Fatalf("kind %s, got %s", kind, got)
+		}
+		p.Detail.Exec.Command = []string{"custom-program"}
+		if observationKind(p) != "" {
+			t.Fatal("modified execution retained observation capability")
+		}
+	}
+}

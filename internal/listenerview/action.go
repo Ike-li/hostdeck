@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Ike-li/hostdeck/internal/observation"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,6 +68,9 @@ func act(ctx context.Context, op operator, dir, action, item string) ([]byte, er
 	}
 	if refusal, ok := h.note(); ok {
 		return refusal, nil
+	}
+	if expected, ok := observation.ExpectedIdentity(ctx); ok && !expected.Equal(observation.Identity{PID: h.pid, Started: h.started}) {
+		return refused("That process changed, so it was left alone.", "这个进程已经变了，所以没有动它。")
 	}
 	name := h.name
 	if name == "" {

@@ -337,5 +337,6 @@
   "observation.source.identity_changed": "The process identity changed. Following this PID was refused.",
   "observation.source.gone": "The entry is no longer listed; its current state is unknown.",
   "error.observation_failed": "Could not observe this service: {detail}",
-  "observation.existing": "Existing content before the operation"
+  "observation.existing": "Existing content before the operation",
+  "observation.source.terminal": "Output remains in the original terminal. Hostdeck does not read terminal output."
 }

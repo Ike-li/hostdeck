@@ -337,5 +337,6 @@
   "observation.source.identity_changed": "进程身份已改变，已拒绝接续此 PID。",
   "observation.source.gone": "条目已不在当前列表，运行状态未知。",
   "error.observation_failed": "无法观察此服务：{detail}",
-  "observation.existing": "操作前已有内容"
+  "observation.existing": "操作前已有内容",
+  "observation.source.terminal": "输出仍在原终端，Hostdeck 不读取终端输出。"
 }
