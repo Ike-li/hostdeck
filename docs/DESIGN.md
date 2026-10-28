@@ -412,7 +412,7 @@ Use:
 
 - Text: names and the like.
 - Address: `type="text"` with `inputmode="url"`, not `type="url"`. Why: it has to take `127.0.0.1:8080` without a scheme. Address fields also turn off `autocomplete` and `spellcheck`.
-- Search: `type="search"`, at most 360px wide, shown from ten plugins.
+- Search: `type="search"`, at most 360px wide, shown from eleven plugins.
 - Long read-only text: 13px monospace, leading 1.65, at least 180px tall, resizable vertically only.
 
 **Widths in the add form**: fields flex at `1 1 160px`, the address at `2 1 260px`, wrapping when narrow.
@@ -623,7 +623,7 @@ All three use the same 8px box, so the column does not move. A dot has `role="im
 | View | Structure |
 | --- | --- |
 | Overview | Header (a 16px `h1` on the left; "Reset layout", "Add content" and "Refresh" on the right, Refresh the only primary; 12px gap when it wraps, 16px below; the header scrolls with the page; "Add content" opens the same add area as the plus card) → the card grid (the plus card last) |
-| Pages & plugins | Header (`h1` and "Add content") → search (from ten plugins) → Enabled → Disabled → Needs attention → Trash → Add content (the form, built-in plugins, the connection help) → the plugins folder (collapsed) |
+| Pages & plugins | Header (`h1` and "Add content") → search (from eleven plugins) → Enabled → Disabled → Needs attention → Trash → Add content (the form, built-in plugins, the connection help) → the plugins folder (collapsed) |
 | Service | Toolbar (padding 12px 16px, `--panel`, an edge below; the name as a 16px `h1`; Refresh, open in a new tab, More actions) → the iframe filling the rest |
 | Detail and monitor | A list of items, see 3.11; a monitor view's card is at most 720px wide |
 
