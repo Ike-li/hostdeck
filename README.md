@@ -249,7 +249,7 @@ Add **Services started by hand** under Pages & plugins → Add content. It lists
 
 ## Listening ports
 
-Add **Listening ports** under Pages & plugins → Add content. It lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID and process name. The detail page is searchable. hostdeck itself and the ports it forwards are marked and still listed. This slice is read-only: it does not stop a process. UDP is not listed. Enrichment beyond the list (command line, working directory grouping) and Stop remain later M1 work.
+Add **Listening ports** under Pages & plugins → Add content. It lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID, process name, working directory and command line (truncated past 512 characters). The detail page is searchable and grouped by bind address. hostdeck itself and the ports it forwards are marked and still listed. This slice is read-only: it does not stop a process. UDP and Stop remain later M1 work.
 
 ## Scheduled script tasks
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -237,4 +238,111 @@ func fieldText(it itemDoc, name string) text {
 		}
 	}
 	return nil
+}
+
+func TestDetailEnrichesListenersWithDirectoryAndCommand(t *testing.T) {
+	got := decodeDetail(t, []Socket{
+		{
+			PID:       90,
+			Port:      3000,
+			Addr:      "127.0.0.1",
+			Command:   "node",
+			Dir:       "/Users/raylee/project",
+			KnowsDir:  true,
+			Args:      []string{"node", "server.js", "--port", "3000"},
+			KnowsArgs: true,
+		},
+		{
+			PID:       1,
+			Port:      80,
+			Addr:      "0.0.0.0",
+			Command:   "httpd",
+			KnowsDir:  false,
+			KnowsArgs: false,
+		},
+	}, Marks{})
+	if len(got.Items) != 2 {
+		t.Fatalf("items %d, want 2", len(got.Items))
+	}
+	// Sorted by port: port 80 (httpd, PID 1) then port 3000 (node, PID 90)
+	httpd := got.Items[0]
+	node := got.Items[1]
+
+	// Known dir and args
+	if field(node, "Directory") != "/Users/raylee/project" {
+		t.Fatalf("node Directory %q, want /Users/raylee/project", field(node, "Directory"))
+	}
+	if field(node, "Command") != "node server.js --port 3000" {
+		t.Fatalf("node Command %q, want node server.js --port 3000", field(node, "Command"))
+	}
+
+	// Unknown dir and args fallback
+	httpdDir := fieldText(httpd, "Directory")
+	if httpdDir["en"] != "Could not read the working directory." || httpdDir["zh-CN"] != "读不到工作目录。" {
+		t.Fatalf("httpd Directory fallback %+v", httpdDir)
+	}
+	httpdCmd := fieldText(httpd, "Command")
+	if httpdCmd["en"] != "Could not read the command." || httpdCmd["zh-CN"] != "读不到启动命令。" {
+		t.Fatalf("httpd Command fallback %+v", httpdCmd)
+	}
+}
+
+func TestCommandTruncationAt512RunesWithBilingualEllipsis(t *testing.T) {
+	longArg := strings.Repeat("a", 600)
+	got := decodeDetail(t, []Socket{
+		{
+			PID:         42,
+			Port:        8080,
+			Addr:        "127.0.0.1",
+			Command:     "app",
+			CommandLine: "/usr/local/bin/app --flag=" + longArg,
+			KnowsArgs:   true,
+		},
+	}, Marks{})
+	if len(got.Items) != 1 {
+		t.Fatalf("items %d", len(got.Items))
+	}
+	cmd := fieldText(got.Items[0], "Command")
+	if cmd == nil {
+		t.Fatalf("want bilingual truncated command, got string %q", field(got.Items[0], "Command"))
+	}
+	wantPrefix := ("/usr/local/bin/app --flag=" + longArg)[:512] + "…"
+	if cmd["en"] != wantPrefix+" (truncated)" {
+		t.Fatalf("cmd en %q, want %q", cmd["en"], wantPrefix+" (truncated)")
+	}
+	if cmd["zh-CN"] != wantPrefix+"（已截断）" {
+		t.Fatalf("cmd zh-CN %q, want %q", cmd["zh-CN"], wantPrefix+"（已截断）")
+	}
+}
+
+func TestEnrichSocketsCachesInspectionByPID(t *testing.T) {
+	called := 0
+	fakeInspect := func(pid int) inspection {
+		called++
+		return inspection{
+			Dir:         "/var/run",
+			KnowsDir:    true,
+			CommandLine: "proxy",
+			KnowsArgs:   true,
+		}
+	}
+	sockets := []Socket{
+		{PID: 100, Port: 80, Addr: "127.0.0.1", Command: "proxy"},
+		{PID: 100, Port: 443, Addr: "127.0.0.1", Command: "proxy"},
+		{PID: 200, Port: 8080, Addr: "127.0.0.1", Command: "web"},
+	}
+	enriched := enrichSockets(sockets, fakeInspect)
+	if len(enriched) != 3 {
+		t.Fatalf("sockets %d", len(enriched))
+	}
+	// PID 100 called once, PID 200 called once -> called == 2
+	if called != 2 {
+		t.Fatalf("inspect called %d times, want 2 (cached per PID)", called)
+	}
+	if !enriched[0].KnowsDir || enriched[0].Dir != "/var/run" || enriched[0].CommandLine != "proxy" {
+		t.Fatalf("enriched[0] %+v", enriched[0])
+	}
+	if !enriched[1].KnowsDir || enriched[1].Dir != "/var/run" || enriched[1].CommandLine != "proxy" {
+		t.Fatalf("enriched[1] %+v", enriched[1])
+	}
 }

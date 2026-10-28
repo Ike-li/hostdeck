@@ -13,10 +13,50 @@ import (
 
 // Socket is one TCP listen endpoint.
 type Socket struct {
-	PID     int
-	Port    int
-	Addr    string
-	Command string
+	PID         int
+	Port        int
+	Addr        string
+	Command     string
+	Dir         string
+	KnowsDir    bool
+	CommandLine string
+	Args        []string
+	KnowsArgs   bool
+}
+
+type inspection struct {
+	Dir         string
+	KnowsDir    bool
+	CommandLine string
+	Args        []string
+	KnowsArgs   bool
+}
+
+type inspector func(pid int) inspection
+
+func enrichSockets(sockets []Socket, inspect inspector) []Socket {
+	if inspect == nil {
+		return sockets
+	}
+	cache := make(map[int]inspection)
+	for i := range sockets {
+		pid := sockets[i].PID
+		in, ok := cache[pid]
+		if !ok {
+			in = inspect(pid)
+			cache[pid] = in
+		}
+		if in.KnowsDir {
+			sockets[i].Dir = in.Dir
+			sockets[i].KnowsDir = true
+		}
+		if in.KnowsArgs {
+			sockets[i].CommandLine = in.CommandLine
+			sockets[i].Args = in.Args
+			sockets[i].KnowsArgs = true
+		}
+	}
+	return sockets
 }
 
 // Proc is a process name from the platform snapshot. Uptime is unused in S1.
@@ -145,12 +185,56 @@ func detailItem(s Socket, marks Marks) itemDoc {
 			{Name: words("Address", "地址"), Value: s.Addr},
 			{Name: words("PID", "PID"), Value: strconv.Itoa(s.PID)},
 			{Name: words("Process", "进程"), Value: name},
+			{Name: words("Directory", "目录"), Value: directoryValue(s)},
+			{Name: words("Command", "命令"), Value: commandValue(s)},
 		},
 	}
 	if mark != nil {
 		item.Fields = append(item.Fields, fieldDoc{Name: words("Mark", "标记"), Value: mark})
 	}
 	return item
+}
+
+func directoryValue(s Socket) any {
+	if s.KnowsDir && s.Dir != "" {
+		return s.Dir
+	}
+	return words("Could not read the working directory.", "读不到工作目录。")
+}
+
+func commandValue(s Socket) any {
+	if !s.KnowsArgs {
+		return words("Could not read the command.", "读不到启动命令。")
+	}
+	cmd := s.CommandLine
+	if cmd == "" {
+		cmd = quoteArgs(s.Args)
+	}
+	if cmd == "" {
+		return words("Could not read the command.", "读不到启动命令。")
+	}
+	const limit = 512
+	r := []rune(cmd)
+	if len(r) <= limit {
+		return cmd
+	}
+	cut := string(r[:limit]) + "…"
+	return words(cut+" (truncated)", cut+"（已截断）")
+}
+
+func quoteArgs(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	parts := make([]string, len(args))
+	for i, arg := range args {
+		if arg == "" || strings.ContainsAny(arg, " \t\n\"\\") {
+			parts[i] = strconv.Quote(arg)
+		} else {
+			parts[i] = arg
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func classify(s Socket, marks Marks) (string, text) {

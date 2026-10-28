@@ -47,8 +47,11 @@ func Execute(ctx context.Context, dir string, args []string, r run.Runner) ([]by
 	if args[1] == "card" {
 		return Card(sockets, marks), nil
 	}
+	sockets = enrichSockets(sockets, defaultInspector)
 	return Detail(sockets, marks), nil
 }
+
+var defaultInspector inspector = platformInspect
 
 func fillCommands(sockets []Socket, procs map[int]Proc) []Socket {
 	out := make([]Socket, 0, len(sockets))

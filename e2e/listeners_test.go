@@ -58,4 +58,10 @@ func TestListeningPortsPluginShowsCountAndDetailRows(t *testing.T) {
 	if len(rows) > 0 && !strings.Contains(body, "127.0.0.1") && !strings.Contains(body, "0.0.0.0") && !strings.Contains(body, "::") {
 		t.Fatalf("detail missing bind address markers: %s", body)
 	}
+	if len(rows) > 0 && !strings.Contains(body, "Directory") && !strings.Contains(body, "目录") {
+		t.Fatalf("detail missing Directory field: %s", body)
+	}
+	if len(rows) > 0 && !strings.Contains(body, "Command") && !strings.Contains(body, "命令") {
+		t.Fatalf("detail missing Command field: %s", body)
+	}
 }

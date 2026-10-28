@@ -61,6 +61,66 @@ func TestExecuteCardAndDetailMarkForwardedPortsFromPortsJSON(t *testing.T) {
 	if len(detail.Items) != 1 || fieldText(detail.Items[0], "Mark")["en"] != "hostdeck forwarding (app)" {
 		t.Fatalf("detail %+v", detail.Items)
 	}
+	if fieldText(detail.Items[0], "Directory")["en"] != "Could not read the working directory." {
+		t.Fatalf("detail Directory %+v", detail.Items[0].Fields)
+	}
+	if fieldText(detail.Items[0], "Command")["en"] != "Could not read the command." {
+		t.Fatalf("detail Command %+v", detail.Items[0].Fields)
+	}
+}
+
+func TestExecuteDetailEnrichesDirectoryAndCommand(t *testing.T) {
+	if !unixReader {
+		t.Skip("windows read path does not use the command runner")
+	}
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "plugins", "listeners")
+	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runCmd := func(ctx context.Context, cmd run.Command) ([]byte, error) {
+		argv := cmd.Args
+		switch {
+		case len(argv) > 0 && strings.Contains(argv[0], "lsof"):
+			return []byte("p55\ncnode\nn127.0.0.1:3000\n"), nil
+		case len(argv) > 0 && strings.Contains(argv[0], "ps"):
+			return []byte("   55     1       00:01:00 node\n"), nil
+		default:
+			return nil, errors.New("unexpected " + strings.Join(argv, " "))
+		}
+	}
+	oldInspector := defaultInspector
+	defaultInspector = func(pid int) inspection {
+		if pid == 55 {
+			return inspection{
+				Dir:         "/Users/raylee/app",
+				KnowsDir:    true,
+				CommandLine: "node server.js",
+				KnowsArgs:   true,
+			}
+		}
+		return inspection{}
+	}
+	defer func() { defaultInspector = oldInspector }()
+
+	out, err := Execute(context.Background(), pluginDir, []string{"listeners", "detail"}, runCmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail detailDoc
+	if err := json.Unmarshal(out, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Items) != 1 {
+		t.Fatalf("items %d, want 1", len(detail.Items))
+	}
+	it := detail.Items[0]
+	if field(it, "Directory") != "/Users/raylee/app" {
+		t.Fatalf("Directory %q, want /Users/raylee/app", field(it, "Directory"))
+	}
+	if field(it, "Command") != "node server.js" {
+		t.Fatalf("Command %q, want node server.js", field(it, "Command"))
+	}
 }
 
 func TestUnknownListenersCommandIsAnError(t *testing.T) {
