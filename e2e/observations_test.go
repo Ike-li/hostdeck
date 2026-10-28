@@ -34,7 +34,7 @@ func TestAnOpenObservationFollowsWithoutReplacingTheFocusedAction(t *testing.T) 
 		jsonReply(w, map[string]any{"observation": true, "items": []any{map[string]any{"id": "short", "name": "Short task", "actions": []any{map[string]any{"id": "start", "label": "Run"}}}}})
 	})
 	mux.HandleFunc("POST /api/observations/jobs", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, map[string]string{"id": "session"}) })
-	mux.HandleFunc("GET /api/observations/session/session", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/observations/session/session/read", func(w http.ResponseWriter, r *http.Request) {
 		n := reads.Add(1)
 		jsonReply(w, map[string]any{"id": "session", "state": "idle", "collectedAt": time.Now(), "reset": true, "cursor": fmt.Sprint(n), "log": strings.Repeat("line\n", 160) + fmt.Sprintf("delayed-%d", n), "sources": []any{map[string]string{"state": "available"}}})
 	})

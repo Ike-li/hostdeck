@@ -59,6 +59,34 @@ func act(ctx context.Context, op operator, action, item string) ([]byte, error) 
 		env = []string{}
 	}
 	exe, dir, cmdline, name := launchExe(h), h.dir, h.cmdline, h.command
+	var prepared *observation.Prepared
+	if action == "restart" {
+		prepared, err = observation.PrepareFrom(ctx, observation.Launch{Executable: exe, Arguments: argv, CommandLine: cmdline, Directory: dir, Environment: env})
+		if err != nil {
+			if errors.Is(err, observation.ErrCapacity) {
+				return refused("Capture storage has reached its 128 MiB budget. Active runs were retained and the original service was left running.", "日志采集存储已达到 128 MiB 上限。已保留活动记录，原服务仍保持运行。")
+			}
+			return refused("Capture could not be prepared; the original service was left running. "+err.Error(), "日志采集准备失败，原服务仍保持运行。"+err.Error())
+		}
+		if prepared == nil {
+			if _, real := op.(osOperator); real {
+				return refused("A capture session is required; the service was left running.", "缺少日志采集会话，原服务仍保持运行。")
+			}
+		}
+		defer prepared.Close()
+	}
+	// Preparation can take time. Reconfirm the original identity before signals.
+	again, latest, checkErr := confirmed(ctx, op, pid)
+	if checkErr != nil {
+		return nil, checkErr
+	}
+	if refusal, ok := again.note(); ok {
+		return refusal, nil
+	}
+	if !again.started.Equal(h.started) {
+		return refused("That process changed, so it was left alone.", "这个进程已经变了，所以没有动它。")
+	}
+	procs = latest
 	if err := stopPIDs(ctx, op, descendantsFirst(pid, procs)); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -68,7 +96,16 @@ func act(ctx context.Context, op operator, action, item string) ([]byte, error) 
 	if action == "stop" {
 		return told(fmt.Sprintf("Stopped %s.", name), fmt.Sprintf("已结束 %s。", name))
 	}
-	if err := op.Spawn(exe, argv, cmdline, dir, env); err != nil {
+	var spawnErr error
+	if prepared != nil {
+		_, spawnErr = prepared.Start()
+	} else {
+		spawnErr = op.Spawn(exe, argv, cmdline, dir, env)
+	}
+	if errors.Is(spawnErr, observation.ErrStartupUnknown) {
+		return refused("The old service stopped, but the new startup result is unknown. Check Recent operations before trying again.", "原服务已结束，新进程的启动结果未知。再次操作前先查看最近操作。")
+	}
+	if spawnErr != nil {
 		return refused(
 			fmt.Sprintf("Stopped %s, but it could not be started again.", name),
 			fmt.Sprintf("已结束 %s，但没有重新启动。", name),

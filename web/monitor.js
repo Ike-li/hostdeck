@@ -63,6 +63,7 @@ export async function loadDetail(p, view) {
 
 export function renderDetail(p, view) {
   view.detailPlugin = p;
+  view.resumeObservations=()=>{if(!view.observationDeferred)return;view.observationDeferred=false;refreshObservedItems(p,view,actionButton).then(()=>recentOperations(p,view));};
   if(view.lang && view.lang!==state.lang){
     view.observationCarry=new Map([...(view.observationPanels||[])].map(([key,node])=>[key,{id:node.observation.id,snapshot:{...node.observation.saved,log:node.querySelector('.observation-log').textContent,reset:true},open:node.open,following:node.observation.following}]));
     view.detailRows=new Map();view.observationPanels=new Map();
@@ -272,10 +273,12 @@ function replaceFields(section, item) {
 }
 
 export function actionButton(p, item, action, view) {
-  const label = pick(action.label);
+  let label = pick(action.label);
   const btn = el('button', 'btn action', label);
   btn.type = 'button';
-  twoClicks(btn, t('action.confirm', { label }), async () => {
+  btn.actionID=action.id;
+  btn.setAction=(next)=>{action=next;label=pick(next.label);btn.actionID=next.id;btn.textContent=label;};
+  twoClicks(btn, () => t('action.confirm', { label }), async () => {
     btn.disabled = true;
     btn.textContent = t('action.running');
     let note;
@@ -284,7 +287,9 @@ export function actionButton(p, item, action, view) {
     const panel = view.data.observation ? observationPanel(p, item, view) : null;
     try {
       if (panel) observation = await panel.observation.submit(action);
-      const body = await postJSON(`/api/action/${encodeURIComponent(p.id)}`, { item: item.id, action: action.id, observation });
+      const request=postJSON(`/api/action/${encodeURIComponent(p.id)}`, { item: item.id, action: action.id, observation });
+      panel?.observation.followSubmission();
+      const body=await request;
       note = body.message ? pick(body.message) : t('action.done', { label, name: pick(item.name) });
     } catch (err) {
       note = err instanceof TypeError ? t('action.interrupted') : explain(err);
@@ -298,7 +303,7 @@ export function actionButton(p, item, action, view) {
     if (panel) {
       panel.observation.returned(note, failed);
       btn.disabled = false; btn.textContent = label;
-      await refreshObservedItems(p,view);
+      await refreshObservedItems(p,view,actionButton);
       recentOperations(p, view);
     } else await loadDetail(p, view);
   });

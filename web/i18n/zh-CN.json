@@ -338,5 +338,13 @@
   "observation.source.gone": "条目已不在当前列表，运行状态未知。",
   "error.observation_failed": "无法观察此服务：{detail}",
   "observation.existing": "操作前已有内容",
-  "observation.source.terminal": "输出仍在原终端，Hostdeck 不读取终端输出。"
+  "observation.source.terminal": "输出仍在原终端，Hostdeck 不读取终端输出。",
+  "observation.source.captured": "Hostdeck 为本次运行采集的输出。",
+  "observation.source.capture_failed": "日志采集失败或无法确认，服务运行状态未知。",
+  "observation.result.unknown": "操作结果未知，再次操作前先查看运行状态。",
+  "observation.source.configuration_unreadable": "读不到任务配置，无法确认日志路径。",
+  "observation.source.configuration_missing": "已加载任务没有提供配置路径或输出文件。",
+  "observation.source.events_empty": "没有匹配的近期服务管理事件。这不是应用业务日志。",
+  "observation.source.events_unreadable": "无法读取服务管理事件。这不是应用业务日志。",
+  "observation.lastState": "最后观察状态："
 }

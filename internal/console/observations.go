@@ -100,6 +100,19 @@ func (s *server) serveObservationCreate(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]string{"id": id})
 }
 func (s *server) serveObservationRead(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	var req struct {
+		Cursor string `json:"cursor"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		s.observationError(w, 400, err)
+		return
+	}
 	id := r.PathValue("session")
 	pluginID, item, _, identity, err := s.observations.Binding(id)
 	if err != nil {
@@ -111,12 +124,15 @@ func (s *server) serveObservationRead(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	target, err := s.resolveObservation(r.Context(), p, kind, item, identity)
+	target, captured, err := s.observations.SessionCaptureTarget(id)
+	if err == nil && !captured {
+		target, err = s.resolveObservation(r.Context(), p, kind, item, identity)
+	}
 	if err != nil {
 		s.observationError(w, 502, err)
 		return
 	}
-	snap, err := s.observations.Read(r.Context(), id, r.URL.Query().Get("cursor"), target)
+	snap, err := s.observations.Read(r.Context(), id, req.Cursor, target)
 	if err != nil {
 		s.observationError(w, 500, err)
 		return
@@ -145,7 +161,7 @@ func (s *server) resolveObservation(ctx context.Context, p plugin.Plugin, kind, 
 		if it.ID != item {
 			continue
 		}
-		target := observation.Target{State: "unknown"}
+		target := observation.Target{Name: it.Name, State: "unknown"}
 		fields := map[string]string{}
 		for _, f := range it.Fields {
 			fields[textEnglish(f.Name)] = f.Value.String()
@@ -173,10 +189,27 @@ func (s *server) resolveObservation(ctx context.Context, p plugin.Plugin, kind, 
 			if runtime.GOOS == "windows" {
 				target.Reason = "events"
 				target.Text = it.Log
+				if it.Log == "" {
+					target.Reason = "events_empty"
+				}
+				if note := strings.ToLower(fields["Log reading"]); strings.Contains(note, "could not read") {
+					target.Reason = "events_unreadable"
+					if strings.Contains(note, "access is denied") || strings.Contains(note, "unauthorized") {
+						target.Reason = "permission"
+					}
+				}
 			} else {
 				for _, key := range []string{"Standard output", "Standard error"} {
 					if path := fields[key]; filepath.IsAbs(path) {
 						target.Files = append(target.Files, path)
+					}
+				}
+				if len(target.Files) == 0 {
+					note := strings.ToLower(fields["Configuration"])
+					if strings.Contains(note, "could not read") {
+						target.Reason = "configuration_unreadable"
+					} else if strings.Contains(note, "no configuration path") {
+						target.Reason = "configuration_missing"
 					}
 				}
 			}
@@ -191,6 +224,11 @@ func (s *server) resolveObservation(ctx context.Context, p plugin.Plugin, kind, 
 		if target.Identity.PID <= 1 || target.Identity.Started.IsZero() {
 			target.Reason = "identity_changed"
 			return target, nil
+		}
+		if captured, ok, err := s.observations.FindCapture(target.Identity); err != nil {
+			return target, err
+		} else if ok {
+			return captured, nil
 		}
 		// Associate only an exact PID and kernel start identity from a verified job.
 		for _, jobPlugin := range s.loaded().Plugins {

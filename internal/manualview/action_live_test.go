@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Ike-li/hostdeck/internal/observation"
 	"net"
 	"os"
 	"os/exec"
@@ -15,6 +16,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) == 2 && os.Args[1] == "--internal-service-collector" {
+		os.Exit(observation.Collector())
+	}
 	if len(os.Args) > 1 && os.Args[1] == "hostdeck-manual-listen" {
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -58,7 +62,10 @@ func TestStopAndRestartOnlyTheListenerThisTestStarted(t *testing.T) {
 
 	pid, file = listenUnderShell(t, op)
 	waitListed(t, op, pid)
-	out, err = act(context.Background(), op, "restart", strconv.Itoa(pid))
+	store := observation.New(t.TempDir())
+	id, _ := store.Create("manual", strconv.Itoa(pid), "restart", observation.Target{})
+	ctx := observation.WithCapture(context.Background(), store.Root(), id)
+	out, err = act(ctx, op, "restart", strconv.Itoa(pid))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +80,18 @@ func TestStopAndRestartOnlyTheListenerThisTestStarted(t *testing.T) {
 		t.Fatalf("old pid %d still running", pid)
 	}
 	next := waitReplacement(t, file, pid)
-	t.Cleanup(func() { _ = op.Kill(next) })
+	t.Cleanup(func() {
+		_ = op.Kill(next)
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			record, err := observation.ReadCapture(store.Root(), id)
+			if err == nil && record.Worker.PID > 1 && !record.Worker.Equal(observation.ProcessIdentity(record.Worker.PID)) {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Error("collector did not finish after temporary service cleanup")
+	})
 	if !op.Alive(next) {
 		t.Fatalf("restarted pid %d is not running", next)
 	}

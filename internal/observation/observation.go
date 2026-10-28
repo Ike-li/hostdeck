@@ -37,6 +37,8 @@ func (a Identity) Equal(b Identity) bool {
 }
 
 type Target struct {
+	Name     plugin.Text
+	SourceID string
 	Identity Identity
 	State    string
 	ExitCode *int
@@ -52,6 +54,9 @@ type Source struct {
 	State string `json:"state"`
 }
 type Snapshot struct {
+	CaptureID      string      `json:"capture,omitempty"`
+	Schema         int         `json:"schema"`
+	Name           plugin.Text `json:"name,omitzero"`
 	ID             string      `json:"id"`
 	Plugin         string      `json:"plugin"`
 	Item           string      `json:"item"`
@@ -80,11 +85,12 @@ type fileState struct {
 	anchor []byte
 }
 type session struct {
-	snap    Snapshot
-	files   map[string]fileState
-	target  Target
-	used    bool
-	touched time.Time
+	snap      Snapshot
+	files     map[string]fileState
+	target    Target
+	persisted bool
+	used      bool
+	touched   time.Time
 }
 type Store struct {
 	mu       sync.Mutex
@@ -92,7 +98,14 @@ type Store struct {
 	sessions map[string]*session
 }
 
-func New(root string) *Store { return &Store{root: root, sessions: map[string]*session{}} }
+func New(root string) *Store {
+	store := &Store{root: root, sessions: map[string]*session{}}
+	// Startup may reclaim completed data; API reads never run this maintenance.
+	if _, err := os.Stat(root); err == nil {
+		_ = store.collectCompleted()
+	}
+	return store
+}
 func token() string {
 	var b [24]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -129,7 +142,7 @@ func (s *Store) Create(plugin, item, action string, t Target) (string, error) {
 		return "", errors.New("too many observations")
 	}
 	id := token()
-	s.sessions[id] = &session{snap: Snapshot{ID: id, Plugin: plugin, Item: item, Action: action, State: "unknown"}, target: t, files: map[string]fileState{}, touched: time.Now()}
+	s.sessions[id] = &session{snap: Snapshot{CaptureID: t.SourceID, Schema: 1, Name: t.Name, ID: id, Plugin: plugin, Item: item, Action: action, State: t.State, Identity: t.Identity, CollectedAt: time.Now().UTC()}, target: t, files: map[string]fileState{}, touched: time.Now()}
 	return id, nil
 }
 func (s *Store) Binding(id string) (string, string, string, Identity, error) {
@@ -158,6 +171,9 @@ func (s *Store) Begin(id, plugin, item, action string) error {
 	v.used = true
 	v.snap.OperationTime = time.Now().UTC()
 	v.snap.Result = "submitting"
+	if v.target.Text != "" {
+		v.snap.ExistingLog = tail(v.target.Text)
+	}
 	// Capture the identity and position before the action, including files that
 	// have not been created yet. A replacement is a new generation, never an offset.
 	for _, path := range v.target.Files {
@@ -193,14 +209,33 @@ func (s *Store) save(v *session) error {
 	if v.snap.OperationTime.IsZero() {
 		return nil
 	}
-	if err := os.MkdirAll(s.root, 0700); err != nil {
+	owner, err := budgetLock(s.root)
+	if err != nil {
 		return err
+	}
+	defer owner.Close()
+	if v.persisted {
+		if _, err := os.Stat(filepath.Join(s.root, v.snap.ID+".json")); err != nil {
+			return ErrSession
+		}
 	}
 	data, err := json.Marshal(v.snap)
 	if err != nil {
 		return err
 	}
-	return atomicfile.Write(filepath.Join(s.root, v.snap.ID+".json"), data)
+	if err = reclaim(s.root, int64(len(data))*2); err != nil {
+		return err
+	}
+	if v.persisted {
+		if _, err = os.Stat(filepath.Join(s.root, v.snap.ID+".json")); err != nil {
+			return ErrSession
+		}
+	}
+	if err = atomicfile.Write(filepath.Join(s.root, v.snap.ID+".json"), data); err != nil {
+		return err
+	}
+	v.persisted = true
+	return nil
 }
 func (s *Store) load(id string) (*session, error) {
 	if !validID(id) {
@@ -214,10 +249,13 @@ func (s *Store) load(id string) (*session, error) {
 		return nil, ErrSession
 	}
 	var snap Snapshot
-	if json.Unmarshal(data, &snap) != nil || snap.ID != id {
+	if json.Unmarshal(data, &snap) != nil || snap.ID != id || (snap.Schema != 0 && snap.Schema != 1) {
 		return nil, ErrSession
 	}
-	v := &session{snap: snap, used: true, files: map[string]fileState{}, touched: time.Now()}
+	if snap.Result == "submitting" {
+		snap.Result = "unknown"
+	}
+	v := &session{snap: snap, used: true, persisted: true, files: map[string]fileState{}, touched: time.Now()}
 	s.sessions[id] = v
 	return v, nil
 }
@@ -231,7 +269,7 @@ func (s *Store) Read(ctx context.Context, id, cursor string, t Target) (Snapshot
 	if err = ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
-	if v.target.Identity.PID > 1 && v.snap.Plugin != "" && !t.Identity.Started.IsZero() && v.target.Identity.PID == t.Identity.PID && !v.target.Identity.Equal(t.Identity) {
+	if t.SourceID == "" && v.target.Identity.PID > 1 && v.snap.Plugin != "" && !t.Identity.Started.IsZero() && v.target.Identity.PID == t.Identity.PID && !v.target.Identity.Equal(t.Identity) {
 		t = Target{Identity: v.target.Identity, State: "unknown", Reason: "identity_changed"}
 	}
 	before := v.snap.Log
@@ -317,16 +355,27 @@ func (s *Store) Read(ctx context.Context, id, cursor string, t Target) (Snapshot
 	if !v.used && previewRead && !previewFailed {
 		body = preview
 	}
+	if t.SourceID != "" {
+		v.snap.CaptureID = t.SourceID
+	}
 	if t.Text != "" {
-		body = tail(t.Text)
-		sources = append(sources, Source{State: "events"})
+		text := tail(t.Text)
+		if v.used && v.snap.ExistingLog != "" && strings.HasPrefix(text, v.snap.ExistingLog) {
+			text = strings.TrimPrefix(text, v.snap.ExistingLog)
+		}
+		body = text
+		kind := t.Reason
+		if kind == "" {
+			kind = "events"
+		}
+		sources = append(sources, Source{ID: t.SourceID, State: kind})
 	}
 	if len(sources) == 0 {
 		reason := t.Reason
 		if reason == "" {
 			reason = "unconfigured"
 		}
-		sources = append(sources, Source{State: reason})
+		sources = append(sources, Source{ID: t.SourceID, State: reason})
 	}
 	v.snap.Sources = sources
 	v.snap.Log = tail(body)
@@ -347,6 +396,9 @@ func (s *Store) Read(ctx context.Context, id, cursor string, t Target) (Snapshot
 	return out, nil
 }
 func (s *Store) Recent(plugin string) ([]Snapshot, error) {
+	if _, err := os.Stat(s.root); os.IsNotExist(err) {
+		return []Snapshot{}, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entries, err := os.ReadDir(s.root)
@@ -366,8 +418,18 @@ func (s *Store) Recent(plugin string) ([]Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
-		if v.snap.Plugin == plugin && !v.snap.OperationTime.IsZero() {
-			out = append(out, v.snap)
+		retained := time.Since(v.snap.OperationTime) <= 7*24*time.Hour
+		if capture, captureErr := ReadCapture(s.root, v.snap.ID); captureErr == nil {
+			retained = capture.Completed.IsZero() || time.Since(capture.Completed) <= 7*24*time.Hour
+		} else if !os.IsNotExist(captureErr) {
+			return nil, captureErr
+		}
+		if v.snap.Plugin == plugin && !v.snap.OperationTime.IsZero() && retained {
+			snap := v.snap
+			if err = s.ApplyCapture(v.snap.ID, &snap); err != nil {
+				return nil, err
+			}
+			out = append(out, snap)
 		}
 	}
 	slices.SortFunc(out, func(a, b Snapshot) int { return b.OperationTime.Compare(a.OperationTime) })

@@ -24,3 +24,16 @@ func ProcessIdentity(pid int) Identity {
 	}
 	return Identity{pid, time.Unix(0, created.Nanoseconds())}
 }
+
+func launchIdentity(pid int) Identity {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return Identity{}
+	}
+	defer windows.CloseHandle(h)
+	var created, exit, kernel, user windows.Filetime
+	if windows.GetProcessTimes(h, &created, &exit, &kernel, &user) != nil {
+		return Identity{}
+	}
+	return Identity{pid, time.Unix(0, created.Nanoseconds())}
+}

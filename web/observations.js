@@ -42,6 +42,7 @@ export function observationPanel(p, item, view, saved = null) {
     model.active = active;
     clearTimeout(model.timer);
     if (!active) model.abort?.abort();
+    else if(model.busy) model.resumeImmediately=true;
     else read();
   };
   pre.addEventListener('scroll', () => {
@@ -63,6 +64,8 @@ export function observationPanel(p, item, view, saved = null) {
     if (model.following) pre.scrollTop = pre.scrollHeight;
     else pre.scrollTop = top;
     if (snap.result) progress.textContent = `${t(`observation.result.${snap.result}`)} ${pick(snap.message)}`;
+    const recent=node.closest('[data-operation]');
+    if(recent){paintRecentSummary(recent,snap);const pill=recent.querySelector('.pill');if(pill)pill.textContent=t(`observation.state.${snap.state||'unknown'}`);}
   };
   async function read() {
     if (model.busy || model.submitting || !visible()) return;
@@ -74,20 +77,24 @@ export function observationPanel(p, item, view, saved = null) {
         model.id = session.id;
       }
       if (!visible()) return;
-      const resp = await fetch(`/api/observations/session/${encodeURIComponent(model.id)}?cursor=${encodeURIComponent(model.cursor)}`, { cache: 'no-store', signal: model.abort.signal });
+      const resp = await fetch(`/api/observations/session/${encodeURIComponent(model.id)}/read`, { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cursor:model.cursor}),cache: 'no-store', signal: model.abort.signal });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       model.cursor = data.cursor;
       model.paint(data);
-      model.failures = 0; warning.textContent = '';
+      model.failures = 0; if(warning.textContent)warning.textContent = '';
     } catch (err) {
       if (err.name !== 'AbortError') {
         model.failures++;
-        warning.textContent = t('observation.failed');
+        status.textContent=t('observation.state')+t('observation.state.unknown');
+        if(warning.textContent!==t('observation.failed'))warning.textContent = t('observation.failed');
       }
     } finally {
       model.busy = false;
-      if (visible() && !model.submitting) model.timer = setTimeout(read, model.failures ? backoff[Math.min(model.failures - 1, 2)] : 1000);
+      if (visible() && !model.submitting) {
+        if(model.resumeImmediately){model.resumeImmediately=false;queueMicrotask(read);}
+        else model.timer = setTimeout(read, model.failures ? backoff[Math.min(model.failures - 1, 2)] : 1000);
+      }
     }
   }
   node.addEventListener('toggle', model.wake);
@@ -105,6 +112,7 @@ export function observationPanel(p, item, view, saved = null) {
     model.id = session.id; model.cursor = '';
     return session.id;
   };
+  model.followSubmission=()=>{model.submitting=false;model.active=visible();if(!model.busy)read();};
   model.returned = (note, failed) => {
     progress.textContent = `${t(failed ? 'observation.result.failed' : 'observation.result.returned')} ${note}`;
     model.submitting = false;
@@ -119,6 +127,7 @@ export function observationPanel(p, item, view, saved = null) {
 export function wakeObservations() {
   for (const model of panels) {
     if (!model.view.isConnected) { clearTimeout(model.timer); model.abort?.abort(); panels.delete(model); continue; }
+    if(model.view.observationDeferred && !document.hidden && state.current?.id===model.p.id && !model.view.closest('[hidden]'))model.view.resumeObservations?.();
     model.wake();
   }
 }
@@ -126,18 +135,22 @@ document.addEventListener('visibilitychange', wakeObservations);
 new MutationObserver(wakeObservations).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['hidden'], childList: true });
 
 export async function recentOperations(p, view) {
-  if (!view.data?.observation) return;
+  if (!view.data?.observation || document.hidden || state.current?.id!==p.id) return;
+  const sequence=view.recentRequest=(view.recentRequest||0)+1;
   let area = view.querySelector('.recent-operations');
   if (!area) { area = el('section', 'recent-operations'); view.append(area); }
   try {
     const recent = await getJSON(`/api/operations/${encodeURIComponent(p.id)}`);
+    if(sequence!==view.recentRequest)return;
     // Keep open regions mounted while updating the surrounding history.
     const title = area.querySelector('h2') || el('h2', null, t('observation.recent'));
-    area.append(title);
+    area.prepend(title);
     for (const record of recent) {
-      if (area.querySelector(`[data-operation="${CSS.escape(record.id)}"]`)) continue;
+      const existingRow=area.querySelector(`[data-operation="${CSS.escape(record.id)}"]`);
+      if(existingRow){paintRecentSummary(existingRow,record);continue;}
       const row = el('section', 'detail-item'); row.dataset.operation = record.id;
-      row.append(el('h3', 'detail-name', record.item), el('p', null, new Date(record.operationTime).toLocaleString(state.lang)));
+      row.append(el('h3', 'detail-name', pick(record.name)||record.item), el('p', null, new Date(record.operationTime).toLocaleString(state.lang)));
+      paintRecentSummary(row,record);
       row.append(observationPanel(p, { id: record.item }, view, record));
       area.append(row);
     }
@@ -147,7 +160,8 @@ export async function recentOperations(p, view) {
 
 // Reconcile current membership once after an operation. Surviving row and
 // control objects are reused; retired observations move to history.
-export async function refreshObservedItems(p,view) {
+export async function refreshObservedItems(p,view,makeAction) {
+  if(document.hidden||state.current?.id!==p.id){view.observationDeferred=true;return;}
   try {
     const fresh=await getJSON(`/api/detail/${encodeURIComponent(p.id)}`);
     if(fresh.error) return;
@@ -155,7 +169,23 @@ export async function refreshObservedItems(p,view) {
     let area=view.querySelector('.recent-operations');
     if(!area){area=el('section','recent-operations');area.append(el('h2',null,t('observation.recent')));view.append(area);}
     for(const [id,row] of view.detailRows||[]) {
-      if(ids.has(id)) continue;
+      if(ids.has(id)) {
+        const item=fresh.items.find(it=>it.id===id);
+        const pill=row.querySelector('.detail-status');
+        if(pill) pill.textContent=item.value!=null?pick(item.value):t(`card.status.${item.status}`);
+        if(item.status) row.dataset.status=item.status;
+        const controls=row.querySelector('.detail-actions');
+        if(controls && !controls.querySelector('.armed')) {
+          const available=[...controls.querySelectorAll('.action')];
+          for(const action of item.actions||[]){
+            let button=available.find(b=>b.actionID===action.id)||available.shift();
+            if(button){const index=available.indexOf(button);if(index>=0)available.splice(index,1);button.setAction?.(action);button.disabled=false;}
+            else if(makeAction) controls.append(makeAction(p,item,action,view));
+          }
+          for(const button of available) button.disabled=true;
+        }
+        continue;
+      }
       const model=row.querySelector('.observation')?.observation;
       if(!model?.id) continue;
       area.querySelector(`[data-operation="${CSS.escape(model.id)}"]`)?.remove();
@@ -171,4 +201,11 @@ export async function refreshObservedItems(p,view) {
       for(const row of view.querySelectorAll('.detail-list > .detail-item')) if(!ids.has(row.dataset.item)) row.remove();
     }
   }catch { /* The observation independently reports a failed latest reading. */ }
+}
+
+function paintRecentSummary(row,record){
+ let result=row.querySelector('.recent-operation-result');let status=row.querySelector('.recent-operation-state');
+ if(!result){result=el('p','recent-operation-result');status=el('p','recent-operation-state');row.append(result,status);}
+ if(record.result)result.textContent=`${t(`observation.result.${record.result}`)} ${pick(record.message)}`;
+ status.textContent=`${t('observation.lastState')}${t(`observation.state.${record.state||'unknown'}`)}${record.collectedAt?' · '+t('observation.at',{time:new Date(record.collectedAt).toLocaleString(state.lang)}):''}`;
 }

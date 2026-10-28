@@ -285,3 +285,14 @@ func TestAnObservationCannotStopAReplacementAlreadyPresentAtSubmission(t *testin
 		t.Fatalf("out %s err %v signals %v", out, err, op.signals)
 	}
 }
+
+func TestCapturePreparationFailureLeavesTheOriginalServiceRunning(t *testing.T) {
+	op := readyOp(t)
+	op.dieOnTerm = true
+	store := observation.New(t.TempDir())
+	id, _ := store.Create("manual", "4", "restart", observation.Target{})
+	out, err := act(observation.WithCapture(context.Background(), store.Root(), id), op, "restart", "4")
+	if err != nil || len(op.signals) != 0 || len(op.spawned) != 0 || !strings.Contains(string(out), "left running") {
+		t.Fatalf("out %s err %v signals %v", out, err, op.signals)
+	}
+}

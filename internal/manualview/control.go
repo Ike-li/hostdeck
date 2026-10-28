@@ -2,6 +2,7 @@ package manualview
 
 import (
 	"context"
+	"errors"
 	"os"
 	"time"
 )
@@ -22,3 +23,7 @@ func (o osOperator) Snapshot(ctx context.Context) (map[int]Listener, map[int]Pro
 func (osOperator) Self() int { return os.Getpid() }
 
 func (osOperator) Sleep(d time.Duration) { time.Sleep(d) }
+
+func (osOperator) Spawn(string, []string, string, string, []string) error {
+	return errors.New("manual restart requires a prepared collector")
+}

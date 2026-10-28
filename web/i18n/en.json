@@ -338,5 +338,13 @@
   "observation.source.gone": "The entry is no longer listed; its current state is unknown.",
   "error.observation_failed": "Could not observe this service: {detail}",
   "observation.existing": "Existing content before the operation",
-  "observation.source.terminal": "Output remains in the original terminal. Hostdeck does not read terminal output."
+  "observation.source.terminal": "Output remains in the original terminal. Hostdeck does not read terminal output.",
+  "observation.source.captured": "Output collected by Hostdeck for this run.",
+  "observation.source.capture_failed": "Log capture failed or could not be confirmed; service health is unknown.",
+  "observation.result.unknown": "The operation result is unknown. Check its state before trying again.",
+  "observation.source.configuration_unreadable": "Could not read the task configuration, so log paths cannot be confirmed.",
+  "observation.source.configuration_missing": "The loaded task provides no configuration path or output file.",
+  "observation.source.events_empty": "No matching recent service management events. These are not application logs.",
+  "observation.source.events_unreadable": "Could not read service management events. These are not application logs.",
+  "observation.lastState": "Last observed state: "
 }

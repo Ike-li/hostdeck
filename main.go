@@ -29,6 +29,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/listenerview"
 	"github.com/Ike-li/hostdeck/internal/manualview"
+	"github.com/Ike-li/hostdeck/internal/observation"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/ports"
@@ -47,6 +48,9 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--internal-service-collector" {
+		os.Exit(observation.Collector())
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--internal-task-worker" {
 		os.Exit(process.Worker())
 	}

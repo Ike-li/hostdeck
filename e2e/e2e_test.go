@@ -32,6 +32,10 @@ import (
 var binary string
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 2 && os.Args[1] == "manual-capture" {
+		manualCapture(os.Args)
+		return
+	}
 	if strings.EqualFold(strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe"), "docker") {
 		fakeDockerCLI(os.Args[1:])
 		return

@@ -4,7 +4,9 @@ package manualview
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"github.com/Ike-li/hostdeck/internal/observation"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,7 +76,14 @@ func TestSpawnRunsTheAbsoluteProgramAndKeepsArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := filepath.Join(t.TempDir(), "args")
-	if err := (osOperator{}).Spawn(exe, []string{"renamed", "hostdeck-manual-args", file}, "", t.TempDir(), []string{}); err != nil {
+	store := observation.New(t.TempDir())
+	id, _ := store.Create("manual", "test", "restart", observation.Target{})
+	prepared, err := observation.Prepare(context.Background(), store.Root(), id, observation.Launch{Executable: exe, Arguments: []string{"renamed", "hostdeck-manual-args", file}, Directory: t.TempDir(), Environment: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	if _, err := prepared.Start(); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -88,13 +97,23 @@ func TestSpawnRunsTheAbsoluteProgramAndKeepsArgv(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	args := strings.Split(text, "\x00")
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		record, err := observation.ReadCapture(store.Root(), id)
+		if err == nil && record.Worker.PID > 1 && !record.Worker.Equal(observation.ProcessIdentity(record.Worker.PID)) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	if len(args) < 3 || args[0] != "renamed" || args[1] != "hostdeck-manual-args" || args[2] != file {
 		t.Fatalf("argv %q", args)
 	}
 }
 
 func TestSpawnRefusesABareProgramName(t *testing.T) {
-	err := (osOperator{}).Spawn("sleep", []string{"sleep", "0"}, "", t.TempDir(), []string{"PATH=/bin"})
+	store := observation.New(t.TempDir())
+	id, _ := store.Create("manual", "test", "restart", observation.Target{})
+	_, err := observation.Prepare(context.Background(), store.Root(), id, observation.Launch{Executable: "sleep", Arguments: []string{"sleep", "0"}, Directory: t.TempDir()})
 	if err == nil {
 		t.Fatal("a bare program name was started")
 	}

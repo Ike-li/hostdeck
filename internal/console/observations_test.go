@@ -2,6 +2,7 @@ package console
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/Ike-li/hostdeck/internal/catalog"
@@ -93,7 +94,7 @@ esac
 	f, _ := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
 	f.WriteString("delayed\n")
 	f.Close()
-	w = request("GET", "/api/observations/session/"+created.ID, "")
+	w = request("POST", "/api/observations/session/"+created.ID+"/read", "{}")
 	var snap observation.Snapshot
 	if err = json.Unmarshal(w.Body.Bytes(), &snap); err != nil {
 		t.Fatal(err)
@@ -126,5 +127,48 @@ func TestNativeExecutionConfigurationGrantsObservationEvenWithAnotherFolderName(
 		if observationKind(p) != "" {
 			t.Fatal("modified execution retained observation capability")
 		}
+	}
+}
+
+func TestObservationReadsThatRetainFragmentsRequireTheConsoleOrigin(t *testing.T) {
+	h := Handler(Config{Origin: "http://127.0.0.1:4678", PluginDir: filepath.Join(t.TempDir(), "plugins")})
+	for _, origin := range []string{"", "http://other"} {
+		req := httptest.NewRequest("POST", "http://127.0.0.1:4678/api/observations/session/unknown/read", strings.NewReader("{}"))
+		req.Header.Set("Origin", origin)
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, req)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("origin %q: %d %s", origin, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestAnUnreadableJobConfigurationDoesNotClaimThereIsNoLogConfiguration(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd process boundary")
+	}
+	root := t.TempDir()
+	plugins := filepath.Join(root, "plugins")
+	os.Mkdir(plugins, 0700)
+	installed, err := catalog.Add(examples.Files, plugins, "jobs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := plugin.ReadFolder(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(root, "bin")
+	os.Mkdir(bin, 0700)
+	script := `#!/bin/sh
+case "$2" in */com.example.test) printf '\tstate = not running\n\tpath = /missing/job.plist\n';;*) printf 'services = {\n0 0 com.example.test\n}\n';;esac
+`
+	os.WriteFile(filepath.Join(bin, "launchctl"), []byte(script), 0700)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s := &server{cfg: Config{PluginDir: plugins}}
+	s.use(Loaded{Plugins: []plugin.Plugin{p}})
+	target, err := s.resolveObservation(context.Background(), p, "jobs", "com.example.test", observation.Identity{})
+	if err != nil || target.Reason != "configuration_unreadable" {
+		t.Fatalf("target %+v err %v", target, err)
 	}
 }

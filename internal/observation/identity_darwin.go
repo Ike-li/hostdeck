@@ -15,3 +15,11 @@ func ProcessIdentity(pid int) Identity {
 	}
 	return Identity{pid, time.Unix(info.Proc.P_starttime.Sec, int64(info.Proc.P_starttime.Usec)*1000)}
 }
+
+func launchIdentity(pid int) Identity {
+	info, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		return Identity{}
+	}
+	return Identity{pid, time.Unix(info.Proc.P_starttime.Sec, int64(info.Proc.P_starttime.Usec)*1000)}
+}

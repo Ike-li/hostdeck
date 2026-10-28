@@ -4,12 +4,13 @@ import { ARMED_FOR } from './state.js';
 // for a few seconds and shows armedText. A double-click is one gesture, so its
 // second click does not confirm.
 export function twoClicks(btn, armedText, confirmed) {
-  const label = btn.textContent;
+  let label = btn.textContent;
   let armed = null;
   btn.addEventListener('click', (e) => {
     if (e.detail > 1 || btn.disabled) return;
     if (!armed) {
-      btn.textContent = armedText;
+      label=btn.textContent;
+      btn.textContent = typeof armedText==='function'?armedText():armedText;
       btn.classList.add('armed');
       armed = setTimeout(() => {
         armed = null;

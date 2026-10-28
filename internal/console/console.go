@@ -111,7 +111,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/clear/{id}", s.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
 	mux.HandleFunc("POST /api/observations/{id}", s.serveObservationCreate)
-	mux.HandleFunc("GET /api/observations/session/{session}", s.serveObservationRead)
+	mux.HandleFunc("POST /api/observations/session/{session}/read", s.serveObservationRead)
 	mux.HandleFunc("GET /api/operations/{id}", s.serveOperations)
 	mux.HandleFunc("GET /api/disk-history/{id}", s.serveDiskHistory)
 	mux.HandleFunc("POST /api/action/{id}", s.serveAction)
@@ -404,6 +404,18 @@ func (s *server) serveAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
 		return
 	}
+	if req.Observation == "" && observationKind(p) == "manual" && req.Action == "restart" {
+		target, err := s.resolveObservation(r.Context(), p, "manual", req.Item, observation.Identity{})
+		if err != nil {
+			s.observationError(w, 502, err)
+			return
+		}
+		req.Observation, err = s.observations.Create(p.ID, req.Item, req.Action, target)
+		if err != nil {
+			s.observationError(w, 409, err)
+			return
+		}
+	}
 	actionContext := r.Context()
 	if req.Observation != "" {
 		if observationKind(p) == "" {
@@ -422,6 +434,12 @@ func (s *server) serveAction(w http.ResponseWriter, r *http.Request) {
 			s.observationError(w, 409, err)
 			return
 		}
+	}
+	if req.Observation != "" && observationKind(p) == "manual" && req.Action == "restart" {
+		actionContext = observation.WithCapture(actionContext, s.observations.Root(), req.Observation)
+	}
+	if req.Observation != "" {
+		w.Header().Set("X-Hostdeck-Observation", req.Observation)
 	}
 	message, err := detail.Act(actionContext, p, req.Item, req.Action)
 	if req.Observation != "" {
@@ -444,8 +462,9 @@ func (s *server) serveAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 	default:
 		writeJSON(w, struct {
-			Message plugin.Text `json:"message,omitzero"`
-		}{message})
+			Message     plugin.Text `json:"message,omitzero"`
+			Observation string      `json:"observation,omitempty"`
+		}{message, req.Observation})
 	}
 }
 
