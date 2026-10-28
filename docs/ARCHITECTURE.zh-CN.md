@@ -55,7 +55,7 @@ flowchart LR
 | `internal/detail` | 运行插件的详情程序和操作。执行操作前会重新读一次详情，这个操作仍然出现在那个条目上才执行。 |
 | `internal/run` | 在插件文件夹里带时限运行插件程序，限制输出大小，结束时连同它启动的所有进程一起结束：Unix 上用进程组（`Setpgid`，再对该组 `kill`），子进程若调用 `setsid` 或以其它方式 daemonize 则可离开该组；Windows 上用 Job Object，会保住整棵进程树。严格解析程序打印的 JSON。 |
 | `internal/manualview` | 从 shell 启动的 TCP 监听进程：一张卡片和紧凑详情，显示工作目录和命令，并可结束或重启其中一条。 |
-| `internal/listenerview` | 本机每一个 TCP 监听端口（只读）：端口、绑定地址、PID 和进程名，并标记 hostdeck 自身及其转发端口。 |
+| `internal/listenerview` | 本机每一个 TCP 监听端口：端口、绑定地址、PID、进程名、工作目录与命令行，并标记 hostdeck 自身及其转发端口，支持二次确认的结束操作。 |
 | `internal/console` | 控制台的 HTTP 处理：`web/` 里的页面、API，以及每个请求都要过的检查。 |
 | `internal/proxy` | 在单独的端口上重新提供一个本机网页界面，让控制台可以把它嵌进来。清除缓存和通知的地址由它自己应答。 |
 | `internal/ports` | 给每个内嵌服务分配转发端口，并记在 `ports.json` 里。 |

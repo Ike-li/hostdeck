@@ -17,6 +17,9 @@ const maxInspectArgs = 1 << 20
 
 func platformInspect(pid int) inspection {
 	var out inspection
+	if info, err := unix.SysctlKinfoProc("kern.proc.pid", pid); err == nil {
+		out.Started = time.Unix(info.Proc.P_starttime.Sec, int64(info.Proc.P_starttime.Usec)*1000)
+	}
 	if buf, err := unix.SysctlRaw("kern.procargs2", pid); err == nil && len(buf) <= maxInspectArgs {
 		if _, args, _, ok := parseProcArgs(buf); ok {
 			out.Args, out.KnowsArgs = args, true

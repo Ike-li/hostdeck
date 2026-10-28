@@ -346,3 +346,36 @@ func TestEnrichSocketsCachesInspectionByPID(t *testing.T) {
 		t.Fatalf("enriched[1] %+v", enriched[1])
 	}
 }
+
+func TestDetailOffersStopActionForRegularListeners(t *testing.T) {
+	got := decodeDetail(t, []Socket{
+		{PID: 100, Port: 8080, Addr: "127.0.0.1", Command: "app"},
+	}, Marks{})
+	if len(got.Items) != 1 {
+		t.Fatalf("items %d, want 1", len(got.Items))
+	}
+	it := got.Items[0]
+	if len(it.Actions) != 1 {
+		t.Fatalf("actions %+v, want 1 stop action", it.Actions)
+	}
+	wantAction := actionDoc{ID: "stop", Label: text{"en": "Stop", "zh-CN": "结束"}}
+	if !reflect.DeepEqual(it.Actions[0], wantAction) {
+		t.Fatalf("action %+v, want %+v", it.Actions[0], wantAction)
+	}
+}
+
+func TestDetailDoesNotOfferStopActionForConsoleForwardedOrInit(t *testing.T) {
+	got := decodeDetail(t, []Socket{
+		{PID: 1, Port: 80, Addr: "0.0.0.0", Command: "launchd"},
+		{PID: 50, Port: 4678, Addr: "127.0.0.1", Command: "hostdeck"},
+		{PID: 50, Port: 18080, Addr: "127.0.0.1", Command: "hostdeck"},
+	}, Marks{SelfPID: 50, Forwarded: map[int]string{18080: "grafana"}})
+	if len(got.Items) != 3 {
+		t.Fatalf("items %d, want 3", len(got.Items))
+	}
+	for _, it := range got.Items {
+		if len(it.Actions) != 0 {
+			t.Errorf("item %s has actions %+v, want none", it.ID, it.Actions)
+		}
+	}
+}

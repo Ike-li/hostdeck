@@ -130,6 +130,36 @@ func TestUnknownListenersCommandIsAnError(t *testing.T) {
 	}
 }
 
+func TestExecuteActionRequiresFourArguments(t *testing.T) {
+	for _, argv := range [][]string{
+		{"listeners", "action"},
+		{"listeners", "action", "stop"},
+		{"listeners", "action", "stop", "42", "extra"},
+	} {
+		_, err := Execute(context.Background(), t.TempDir(), argv, nil)
+		if err == nil || !strings.Contains(err.Error(), "unknown") {
+			t.Fatalf("argv %v err %v, want unknown command", argv, err)
+		}
+	}
+}
+
+func TestExecuteActionRefusesUnknownProcess(t *testing.T) {
+	if !unixReader {
+		t.Skip("windows read path does not use the command runner")
+	}
+	runCmd := func(ctx context.Context, cmd run.Command) ([]byte, error) {
+		return nil, nil
+	}
+	out, err := Execute(context.Background(), t.TempDir(), []string{"listeners", "action", "stop", "9999"}, runCmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct{ Error text }
+	if err := json.Unmarshal(out, &got); err != nil || got.Error["en"] == "" || got.Error["zh-CN"] == "" {
+		t.Fatalf("out %s", out)
+	}
+}
+
 func TestARealMachineCardIsACountOrBilingualErrorNeverBoth(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real machine listen table")

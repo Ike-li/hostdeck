@@ -57,7 +57,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/dockerview` | Native Docker monitoring through a bounded CLI runner, local endpoint pinning and selected inspect fields. |
 | `internal/diskhistory` | Native disk-history operations, bounded rooted filesystem traversal, atomic JSON history, process-held writer locks, cancellable scans and opt-in hourly tracking. |
 | `internal/manualview` | TCP listeners started from a shell: a card and a compact detail that shows the working directory and command, and can stop or restart one. |
-| `internal/listenerview` | Every TCP listener on this machine (read-only): port, bind address, PID and process name, with hostdeck and its forwarded ports marked. |
+| `internal/listenerview` | Every TCP listener on this machine: port, bind address, PID, process name, working directory and command line, with hostdeck and its forwarded ports marked, and a confirmed Stop action. |
 | `internal/console` | The console's HTTP handler: the page from `web/`, the API, and the checks every request passes. |
 | `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache and notifications addresses itself. |
 | `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |

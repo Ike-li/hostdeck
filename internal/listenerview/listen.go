@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Socket is one TCP listen endpoint.
@@ -30,6 +31,7 @@ type inspection struct {
 	CommandLine string
 	Args        []string
 	KnowsArgs   bool
+	Started     time.Time
 }
 
 type inspector func(pid int) inspection
@@ -59,10 +61,11 @@ func enrichSockets(sockets []Socket, inspect inspector) []Socket {
 	return sockets
 }
 
-// Proc is a process name from the platform snapshot. Uptime is unused in S1.
+// Proc is a process name from the platform snapshot.
 type Proc struct {
-	PPID int
-	Name string
+	PPID    int
+	Name    string
+	Started time.Time
 }
 
 // Marks names the console itself and ports hostdeck is forwarding.
@@ -94,11 +97,17 @@ type groupDoc struct {
 }
 
 type itemDoc struct {
-	ID     string     `json:"id"`
-	Name   string     `json:"name"`
-	Group  string     `json:"group"`
-	Value  text       `json:"value"`
-	Fields []fieldDoc `json:"fields"`
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Group   string      `json:"group"`
+	Value   text        `json:"value"`
+	Fields  []fieldDoc  `json:"fields"`
+	Actions []actionDoc `json:"actions,omitempty"`
+}
+
+type actionDoc struct {
+	ID    string `json:"id"`
+	Label text   `json:"label"`
 }
 
 type fieldDoc struct {
@@ -192,7 +201,23 @@ func detailItem(s Socket, marks Marks) itemDoc {
 	if mark != nil {
 		item.Fields = append(item.Fields, fieldDoc{Name: words("Mark", "标记"), Value: mark})
 	}
+	if canStop(s, marks) {
+		item.Actions = []actionDoc{{ID: "stop", Label: words("Stop", "结束")}}
+	}
 	return item
+}
+
+func canStop(s Socket, marks Marks) bool {
+	if s.PID <= 1 {
+		return false
+	}
+	if marks.SelfPID > 0 && s.PID == marks.SelfPID {
+		return false
+	}
+	if _, ok := marks.Forwarded[s.Port]; ok {
+		return false
+	}
+	return true
 }
 
 func directoryValue(s Socket) any {

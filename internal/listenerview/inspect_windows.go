@@ -4,6 +4,7 @@ package listenerview
 
 import (
 	"encoding/binary"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -20,6 +21,9 @@ func platformInspect(pid int) inspection {
 		return out
 	}
 	defer windows.CloseHandle(handle)
+	if started, ok := processStarted(handle); ok {
+		out.Started = started
+	}
 	params, ok := processParams(handle)
 	if !ok {
 		return out
@@ -76,4 +80,12 @@ func readAt(handle windows.Handle, addr uintptr, dst unsafe.Pointer, n uintptr) 
 	}
 	var got uintptr
 	return windows.ReadProcessMemory(handle, addr, (*byte)(dst), n, &got) == nil && got == n
+}
+
+func processStarted(handle windows.Handle) (time.Time, bool) {
+	var created, exit, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(handle, &created, &exit, &kernel, &user); err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(0, created.Nanoseconds()), true
 }

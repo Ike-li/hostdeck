@@ -24,11 +24,19 @@ func Execute(ctx context.Context, dir string, args []string, r run.Runner) ([]by
 		}
 		return got, 0, runErr
 	}
-	if len(args) != 2 || args[0] != "listeners" {
+	if len(args) < 2 || args[0] != "listeners" {
 		return nil, errors.New("unknown listeners command")
 	}
 	switch args[1] {
 	case "card", "detail":
+		if len(args) != 2 {
+			return nil, errors.New("unknown listeners command")
+		}
+	case "action":
+		if len(args) != 4 {
+			return nil, errors.New("unknown listeners command")
+		}
+		return act(ctx, osOperator{run: runCmd}, dir, args[2], args[3])
 	default:
 		return nil, errors.New("unknown listeners command")
 	}

@@ -249,7 +249,7 @@ Add **Services started by hand** under Pages & plugins → Add content. It lists
 
 ## Listening ports
 
-Add **Listening ports** under Pages & plugins → Add content. It lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID, process name, working directory and command line (truncated past 512 characters). The detail page is searchable and grouped by bind address. hostdeck itself and the ports it forwards are marked and still listed. This slice is read-only: it does not stop a process. UDP and Stop remain later M1 work.
+Add **Listening ports** under Pages & plugins → Add content. It lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID, process name, working directory and command line (truncated past 512 characters). The detail page is searchable and grouped by bind address. hostdeck itself, its ancestors, and the ports it forwards are marked and still listed. Confirmed Stop ends a listening process and its children; hostdeck itself, its ancestors, forwarded ports and PID 1 are protected and cannot be stopped here. UDP remains later M1 work.
 
 ## Scheduled script tasks
 
