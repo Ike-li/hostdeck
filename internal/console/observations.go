@@ -1,0 +1,202 @@
+package console
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"os"
+	"path/filepath"
+	"reflect"
+	"runtime"
+	"strconv"
+	"strings"
+
+	"github.com/Ike-li/hostdeck/examples"
+	"github.com/Ike-li/hostdeck/internal/card"
+	"github.com/Ike-li/hostdeck/internal/detail"
+	"github.com/Ike-li/hostdeck/internal/observation"
+	"github.com/Ike-li/hostdeck/internal/plugin"
+	"go.yaml.in/yaml/v3"
+)
+
+// Execution configurations, not display names or ids, grant this private
+// capability. Jobs additionally require the shipped scripts: arbitrary detail
+// output must never become authority to open a file on the console's behalf.
+func observationKind(p plugin.Plugin) string {
+	for _, kind := range []string{"jobs"} {
+		manifest, err := fs.ReadFile(examples.Files, kind+"/plugin.yaml")
+		if err != nil {
+			continue
+		}
+		var expected plugin.Plugin
+		if yaml.Unmarshal(manifest, &expected) != nil {
+			continue
+		}
+		if !reflect.DeepEqual(p.Detail, expected.Detail) || !reflect.DeepEqual(p.Actions, expected.Actions) {
+			continue
+		}
+		if kind == "jobs" {
+			entries, _ := fs.ReadDir(examples.Files, kind)
+			matches := true
+			for _, entry := range entries {
+				if entry.Name() == "plugin.yaml" || entry.IsDir() {
+					continue
+				}
+				want, _ := fs.ReadFile(examples.Files, kind+"/"+entry.Name())
+				got, err := os.ReadFile(filepath.Join(p.Dir, entry.Name()))
+				if err != nil || string(got) != string(want) {
+					matches = false
+					break
+				}
+			}
+			if !matches {
+				continue
+			}
+		}
+		return kind
+	}
+	return ""
+}
+func (s *server) observationPlugin(id string) (plugin.Plugin, string, bool) {
+	p, ok := s.plugin(id)
+	kind := observationKind(p)
+	return p, kind, ok && kind != ""
+}
+func (s *server) observationError(w http.ResponseWriter, status int, err error) {
+	writeError(w, status, &card.Error{Code: "observation_failed", Detail: err.Error()})
+}
+func (s *server) serveObservationCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	p, kind, ok := s.observationPlugin(r.PathValue("id"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	var req struct {
+		Item   string `json:"item"`
+		Action string `json:"action"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		s.observationError(w, 400, err)
+		return
+	}
+	target, err := s.resolveObservation(r.Context(), p, kind, req.Item, observation.Identity{})
+	if err != nil {
+		s.observationError(w, 502, err)
+		return
+	}
+	id, err := s.observations.Create(p.ID, req.Item, req.Action, target)
+	if err != nil {
+		s.observationError(w, 409, err)
+		return
+	}
+	writeJSON(w, map[string]string{"id": id})
+}
+func (s *server) serveObservationRead(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("session")
+	pluginID, item, _, identity, err := s.observations.Binding(id)
+	if err != nil {
+		s.observationError(w, 404, err)
+		return
+	}
+	p, kind, ok := s.observationPlugin(pluginID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	target, err := s.resolveObservation(r.Context(), p, kind, item, identity)
+	if err != nil {
+		s.observationError(w, 502, err)
+		return
+	}
+	snap, err := s.observations.Read(r.Context(), id, r.URL.Query().Get("cursor"), target)
+	if err != nil {
+		s.observationError(w, 500, err)
+		return
+	}
+	writeJSON(w, snap)
+}
+func (s *server) serveOperations(w http.ResponseWriter, r *http.Request) {
+	_, _, ok := s.observationPlugin(r.PathValue("id"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	recent, err := s.observations.Recent(r.PathValue("id"))
+	if err != nil {
+		s.observationError(w, 500, err)
+		return
+	}
+	writeJSON(w, recent)
+}
+func (s *server) resolveObservation(ctx context.Context, p plugin.Plugin, kind, item string, bound observation.Identity) (observation.Target, error) {
+	view := detail.ReadItem(ctx, p, item)
+	if view.Error != nil {
+		return observation.Target{}, fmt.Errorf("%s: %s", view.Error.Code, view.Error.Detail)
+	}
+	for _, it := range view.Items {
+		if it.ID != item {
+			continue
+		}
+		target := observation.Target{State: "unknown"}
+		fields := map[string]string{}
+		for _, f := range it.Fields {
+			fields[textEnglish(f.Name)] = f.Value.String()
+		}
+		pid, _ := strconv.Atoi(fields["PID"])
+		target.Identity = observation.ProcessIdentity(pid)
+		if kind == "jobs" {
+			switch strings.ToLower(fields["State"]) {
+			case "running":
+				target.State = "running"
+			case "idle", "not running", "stopped", "disabled", "exited":
+				target.State = "idle"
+			}
+			if strings.HasPrefix(strings.ToLower(fields["State"]), "not running") || it.Group == "idle" || it.Group == "disabled" {
+				target.State = "idle"
+			}
+			if it.Group == "running" {
+				target.State = "running"
+			}
+			if n, err := strconv.Atoi(fields["Last exit"]); err == nil {
+				target.ExitCode = &n
+			}
+			target.Signal = fields["Last signal"]
+			target.Runs = fields["Runs"]
+			if runtime.GOOS == "windows" {
+				target.Reason = "events"
+				target.Text = it.Log
+			} else {
+				for _, key := range []string{"Standard output", "Standard error"} {
+					if path := fields[key]; filepath.IsAbs(path) {
+						target.Files = append(target.Files, path)
+					}
+				}
+			}
+			return target, nil
+		}
+		if !bound.Started.IsZero() && !bound.Equal(target.Identity) {
+			return observation.Target{Identity: bound, State: "unknown", Reason: "identity_changed"}, nil
+		}
+		if target.Identity.PID > 1 {
+			target.State = "running"
+		}
+		target.Reason = "external"
+		return target, nil
+	}
+	return observation.Target{Identity: bound, State: "unknown", Reason: "gone"}, nil
+}
+
+func textEnglish(t plugin.Text) string {
+	if t.All != "" {
+		return t.All
+	}
+	return t.ByLang["en"]
+}

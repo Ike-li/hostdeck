@@ -37,6 +37,9 @@ func TestMain(m *testing.M) {
 }
 
 func TestStopAndRestartOnlyTheListenerThisTestStarted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real process integration test")
+	}
 	op := osOperator{run: execCommand}
 	pid, file := listenUnderShell(t, op)
 	waitListed(t, op, pid)

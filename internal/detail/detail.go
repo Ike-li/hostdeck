@@ -46,6 +46,7 @@ var ActTimeout = 30 * time.Second
 
 // View is a detail page as the page receives it.
 type View struct {
+	Observation  bool        `json:"observation,omitempty"`
 	Items        []Item      `json:"items,omitempty"`
 	Presentation string      `json:"presentation,omitempty"`
 	Groups       []Group     `json:"groups,omitempty"`

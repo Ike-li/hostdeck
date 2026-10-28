@@ -11,7 +11,7 @@ import (
 
 func startShell(t *testing.T, file string) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command("/bin/bash", "-c", `"$1" hostdeck-manual-listen "$2"`, "bash", os.Args[0], file)
+	cmd := exec.Command("/bin/bash", "-c", `"$1" hostdeck-manual-listen "$2"; result=$?; exit "$result"`, "bash", os.Args[0], file)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	return cmd
 }

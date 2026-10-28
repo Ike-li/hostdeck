@@ -1375,3 +1375,7 @@ body:has(.page-editor[open]) main { overflow: hidden; }
     animation-iteration-count: 1 !important;
   }
 }
+
+.observation p { margin: var(--space-2) 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.observation-time, .observation-scope { color: var(--muted); font-size: var(--text-sm); }
+.recent-operations { margin-top: var(--space-6); }

@@ -4,6 +4,7 @@ import { t, pick, explain } from './i18n.js';
 import { twoClicks } from './confirm.js';
 import { cardElement } from './overview.js';
 import { scheduledTaskTools } from './tasks.js';
+import { observationPanel, recentOperations } from './observations.js';
 import { PENDING_AGAIN, state } from './state.js';
 
 let monitorTimer = null;
@@ -70,6 +71,7 @@ export function renderDetail(p, view) {
     return;
   }
   view.detailStale = false;
+  recentOperations(p, view);
   view.scriptFiles = null;
   clearTimeout(view.scriptTimer);
   view.classList.toggle('detail-compact', view.data.presentation === 'compact');
@@ -176,7 +178,8 @@ function detailItem(p, item, view) {
     for (const f of item.fields) fields.append(el('dt', null, pick(f.name)), el('dd', null, pick(f.value)));
     section.append(fields);
   }
-  if (item.log || item.logAvailable) section.append(detailLog(p, item, view));
+  if (view.data.observation) section.append(observationPanel(p, item, view));
+  else if (item.log || item.logAvailable) section.append(detailLog(p, item, view));
   if (item.actions?.length) {
     const actions = el('div', 'detail-actions');
     actions.append(...item.actions.map((action) => actionButton(p, item, action, view)));
@@ -262,8 +265,11 @@ export function actionButton(p, item, action, view) {
     btn.textContent = t('action.running');
     let note;
     let failed = false;
+    let observation;
+    const panel = view.data.observation ? observationPanel(p, item, view) : null;
     try {
-      const body = await postJSON(`/api/action/${encodeURIComponent(p.id)}`, { item: item.id, action: action.id });
+      if (panel) observation = await panel.observation.submit(action);
+      const body = await postJSON(`/api/action/${encodeURIComponent(p.id)}`, { item: item.id, action: action.id, observation });
       note = body.message ? pick(body.message) : t('action.done', { label, name: pick(item.name) });
     } catch (err) {
       note = err instanceof TypeError ? t('action.interrupted') : explain(err);
@@ -274,7 +280,11 @@ export function actionButton(p, item, action, view) {
       if (!view.openLogs) view.openLogs = new Set();
       view.openLogs.add(item.id);
     }
-    await loadDetail(p, view);
+    if (panel) {
+      panel.observation.returned(note, failed);
+      btn.disabled = false; btn.textContent = label;
+      recentOperations(p, view);
+    } else await loadDetail(p, view);
   });
   return btn;
 }

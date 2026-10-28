@@ -24,6 +24,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
 	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/local"
+	"github.com/Ike-li/hostdeck/internal/observation"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/ports"
@@ -67,7 +68,8 @@ type server struct {
 	current atomic.Pointer[state]
 	// changing lets one change to the plugins folder, with its reload, run
 	// at a time.
-	changing sync.Mutex
+	changing     sync.Mutex
+	observations *observation.Store
 }
 
 // state is the plugins in use, with a card cache of their own: a plugin
@@ -97,7 +99,7 @@ type Served struct {
 }
 
 func Handler(cfg Config) http.Handler {
-	s := &server{cfg: cfg}
+	s := &server{cfg: cfg, observations: observation.New(filepath.Join(filepath.Dir(cfg.PluginDir), "data", "service-observations"))}
 	s.use(Loaded{cfg.Plugins, cfg.Broken, cfg.Served})
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServerFS(web.Files))
@@ -108,6 +110,9 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/cards/refresh", s.serveRefresh)
 	mux.HandleFunc("POST /api/clear/{id}", s.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
+	mux.HandleFunc("POST /api/observations/{id}", s.serveObservationCreate)
+	mux.HandleFunc("GET /api/observations/session/{session}", s.serveObservationRead)
+	mux.HandleFunc("GET /api/operations/{id}", s.serveOperations)
 	mux.HandleFunc("GET /api/disk-history/{id}", s.serveDiskHistory)
 	mux.HandleFunc("POST /api/action/{id}", s.serveAction)
 	mux.HandleFunc("GET /api/catalog", s.serveCatalog)
@@ -373,7 +378,9 @@ func (s *server) serveDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, detail.ReadItem(r.Context(), p, item))
 		return
 	}
-	writeJSON(w, detail.Read(r.Context(), p))
+	v := detail.Read(r.Context(), p)
+	v.Observation = observationKind(p) != ""
+	writeJSON(w, v)
 }
 
 // serveAction runs an action that the console page asked for. Every other
@@ -389,14 +396,38 @@ func (s *server) serveAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Item   string `json:"item"`
-		Action string `json:"action"`
+		Item        string `json:"item"`
+		Action      string `json:"action"`
+		Observation string `json:"observation,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
 		return
 	}
+	if req.Observation != "" {
+		if observationKind(p) == "" {
+			s.observationError(w, 403, observation.ErrSession)
+			return
+		}
+		if err := s.observations.Begin(req.Observation, p.ID, req.Item, req.Action); err != nil {
+			s.observationError(w, 409, err)
+			return
+		}
+	}
 	message, err := detail.Act(r.Context(), p, req.Item, req.Action)
+	if req.Observation != "" {
+		result, notice := "returned", message
+		if err != nil {
+			result, notice = "failed", err.Text
+			if notice.IsZero() {
+				notice = plugin.Text{All: err.Code + ": " + err.Detail}
+			}
+		}
+		if saveErr := s.observations.Finish(req.Observation, result, notice); saveErr != nil {
+			s.observationError(w, 500, saveErr)
+			return
+		}
+	}
 	switch {
 	case err != nil && err.Code == "not_offered":
 		writeError(w, http.StatusNotFound, err)
