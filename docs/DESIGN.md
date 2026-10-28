@@ -239,7 +239,7 @@ Interaction timings live in `web/state.js`, and count as tokens too:
 | `LAYOUT_NOTE_FOR` | 8000ms | "Layout saved." and its undo close after eight idle seconds, pausing while the pointer or focus is on them |
 | `PENDING_AGAIN` | 2000ms | How soon a card still being read is asked for again |
 | `STATUS_EVERY` | 15000ms | How often the sidebar's status dots are read |
-| `SEARCH_AFTER` | 9 | The plugins page shows its search from ten plugins |
+| `SEARCH_AFTER` | 10 | The plugins page shows its search from eleven plugins |
 
 A detail view's action result closes after eight seconds (`web/monitor.js`).
 
