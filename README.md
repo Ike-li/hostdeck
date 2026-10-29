@@ -21,7 +21,7 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 - **Linux** before v1, a Docker image, multiple users.
 - **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page adds only the plugins built into hostdeck, plugins that embed a web page on this machine or the local network from its address, and links.
 - **Hundreds of built-in integrations.** Common services are covered by example plugins.
-- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, moving one to the trash and purging it from there, arranging, hiding or resetting the sidebar and the cards, and the scheduled script tasks page writing its `tasks.json` and scripts.
+- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, moving one to the trash and purging it from there, arranging, hiding or resetting the sidebar and the cards, the scheduled script tasks page writing its `tasks.json` and scripts, and watching a card or no longer watching it, which writes only the `watch` list of `notifications.json`.
 - **Electron.**
 
 ## Roadmap
@@ -187,9 +187,10 @@ osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDEC
 | `HOSTDECK_TIME` | when the reading that runs the command was made, in UTC, such as `2026-10-29T13:01:00Z` |
 
 - What the command was told is kept in `data/notifications/sent.json`, so a restart does not tell it again. A command that cannot start or exits with an error has not told anything: it runs again at the card's next reading, and hostdeck's log says why it failed.
-- `notifications.json` is read when hostdeck starts and by `hostdeck plugin reload`. A file with a mistake, such as an unknown key or a `watch` without a `command`, is refused with a line in hostdeck's log, and what was loaded before stays in use. Neither the console page nor the API writes it.
+- `notifications.json` is read when hostdeck starts and by `hostdeck plugin reload`. A file with a mistake, such as an unknown key or a `watch` without a `command`, is refused with a line in hostdeck's log, and what was loaded before stays in use.
+- The console writes only the `watch` list: a card's More actions offer **Watch** and **Stop watching**, which take effect at once and write the file back with two-space indentation. They are refused, and write nothing, while `notifications.json` has no `command` or cannot be read; the console never writes a command or creates the file. Cards that only open a page or a link, and plugins whose manifest has a mistake, have nothing to watch.
 - The overview says, on each watched card, when it was last checked, what the command was last told and when, and why the command last failed. Above the cards it says when `notifications.json` was refused or watches a card that is not there. It reads this every 15 seconds.
-- Not yet there: choosing a card to watch from the card itself, a webhook, and the system's notifications.
+- Not yet there: a webhook, and the system's notifications.
 
 ## Processes
 

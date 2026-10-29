@@ -153,6 +153,7 @@ func run(args []string) error {
 		Reload:    reload,
 
 		Notifications: watcher.Status,
+		Watch:         watcher.Watch,
 	})
 	server := &http.Server{Handler: cards}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -58,6 +58,9 @@ type Config struct {
 	// Notifications says what the background checks of notifications.json
 	// know; nil when nothing watches the cards.
 	Notifications func() notify.Status
+	// Watch puts a plugin in the watch list of notifications.json, or takes
+	// it out; nil refuses.
+	Watch func(id string, on bool) error
 }
 
 // Loaded is what one reading of the plugins folder gave.
@@ -133,6 +136,7 @@ func Handler(cfg Config) *Console {
 	mux.HandleFunc("GET /api/cards/{id}", s.serveCard)
 	mux.HandleFunc("POST /api/cards/refresh", s.serveRefresh)
 	mux.HandleFunc("GET /api/notifications", s.serveNotifications)
+	mux.HandleFunc("POST /api/notifications/watch", s.serveWatch)
 	mux.HandleFunc("POST /api/clear/{id}", s.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
 	mux.HandleFunc("POST /api/observations/{id}", s.serveObservationCreate)
@@ -241,6 +245,40 @@ func (s *server) serveNotifications(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, status)
 }
 
+// serveWatch watches a card, or stops, writing only the watch list of
+// notifications.json. A card is watched only when a loaded plugin has one.
+func (s *server) serveWatch(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != s.cfg.Origin {
+		writeError(w, http.StatusForbidden, &card.Error{Code: "not_console"})
+		return
+	}
+	var req struct {
+		ID    string `json:"id"`
+		Watch bool   `json:"watch"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, &card.Error{Code: "bad_request", Detail: err.Error()})
+		return
+	}
+	if req.Watch && !slices.ContainsFunc(s.loaded().Plugins, func(p plugin.Plugin) bool { return p.ID == req.ID && p.Card != nil }) {
+		writeError(w, http.StatusNotFound, &card.Error{Code: "no_card"})
+		return
+	}
+	if s.cfg.Watch == nil {
+		writeError(w, http.StatusConflict, &card.Error{Code: "notifications_no_command"})
+		return
+	}
+	switch err := s.cfg.Watch(req.ID, req.Watch); {
+	case errors.Is(err, notify.ErrNoCommand):
+		writeError(w, http.StatusConflict, &card.Error{Code: "notifications_no_command"})
+		return
+	case err != nil:
+		writeError(w, http.StatusConflict, &card.Error{Code: "notifications_failed", Detail: err.Error()})
+		return
+	}
+	s.serveNotifications(w, r)
+}
+
 func (s *server) serveStatus(w http.ResponseWriter, r *http.Request) {
 	status := map[string]string{}
 	var mu sync.Mutex
@@ -285,7 +323,7 @@ func (s *server) serveCards(w http.ResponseWriter, r *http.Request) {
 	for i, p := range now.Plugins {
 		wg.Go(func() {
 			if p.Card != nil {
-				cards[i].View = now.cards.Get(ctx, p)
+				cards[i].View, cards[i].Watchable = now.cards.Get(ctx, p), true
 				return
 			}
 			c := workspaceCard{View: card.View{ID: p.ID, Name: p.Name, Icon: p.Icon}}
@@ -333,6 +371,7 @@ type workspaceCard struct {
 	Destination string `json:"destination,omitempty"`
 	Address     string `json:"address,omitempty"`
 	Wide        bool   `json:"wide,omitempty"`
+	Watchable   bool   `json:"watchable,omitempty"` // a card notifications.json can watch
 }
 
 // The generated monitor view uses the same cache and pending contract as the

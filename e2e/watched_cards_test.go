@@ -185,3 +185,72 @@ func TestAboveTheCardsTheOverviewSaysWhatIsWatchedButNotThereAndWhyNotifications
 	do(t, ctx, chromedp.Reload(), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="svc"]`)))
 	waitText(t, ctx, `#watch-error`, "a command")
 }
+
+func readNotifications(t *testing.T, dir string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "notifications.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestTheWatchToggleOnACardWritesOnlyTheWatchListAndIsRefusedWithoutACommand(t *testing.T) {
+	dir := t.TempDir()
+	runs := filepath.Join(dir, "runs.txt")
+	watchedService(t, dir, []string{}, os.Args[0], "notify-record", runs)
+	writePlugin(t, dir, "notes", "schema: 1\nname: Notes\npage:\n  link: https://example.com/\n")
+	url := startConsole(t, dir)
+	ctx := openBrowser(t, "en")
+	svc := `.card[data-id="svc"]`
+	toggle := func() {
+		do(t, ctx, chromedp.Click(chromedp.CSS(svc+` .more-trigger`)), chromedp.Click(chromedp.CSS(svc+` .watch-toggle`)))
+	}
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(svc)), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="notes"]`)))
+	if evalBool(t, ctx, `!!document.querySelector('.card[data-id="notes"] .watch-toggle')`) {
+		t.Fatal("a card that only opens a link offers Watch")
+	}
+
+	toggle()
+	waitText(t, ctx, svc+` .card-watch`, "Watching")
+	var cfg struct {
+		Watch   []string `json:"watch"`
+		Command []string `json:"command"`
+	}
+	if err := json.Unmarshal([]byte(readNotifications(t, dir)), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.Watch, ",") != "svc" || len(cfg.Command) != 3 || cfg.Command[2] != runs {
+		t.Fatalf("notifications.json became %+v, want svc watched and the command kept", cfg)
+	}
+
+	toggle()
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!document.querySelector('.card[data-id="svc"] .card-watch')`, chromedp.WithPollingTimeout(10*time.Second))); err != nil {
+		t.Fatal("the watch line stayed after Stop watching")
+	}
+	if got := readNotifications(t, dir); strings.Contains(got, `"svc"`) {
+		t.Fatalf("notifications.json still watches svc: %s", got)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "notifications.json"), []byte(`{"watch": []}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	toggle()
+	waitText(t, ctx, svc+` .card-note`, "command")
+	if got := readNotifications(t, dir); got != `{"watch": []}` {
+		t.Fatalf("a refused watch rewrote notifications.json as %s", got)
+	}
+
+	response, err := http.Post(url+"/api/notifications/watch", "application/json", strings.NewReader(`{"id": "svc", "watch": true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden || readNotifications(t, dir) != `{"watch": []}` {
+		t.Fatalf("a request without the console's Origin answered %d and left %s", response.StatusCode, readNotifications(t, dir))
+	}
+
+	zh := openBrowser(t, "zh-CN")
+	do(t, zh, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(svc)), chromedp.Click(chromedp.CSS(svc+` .more-trigger`)))
+	waitText(t, zh, svc+` .watch-toggle`, "关注")
+}

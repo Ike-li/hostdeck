@@ -1,5 +1,5 @@
-import { $, announce, el } from './dom.js';
-import { getJSON } from './api.js';
+import { $, announce, el, feedback } from './dom.js';
+import { getJSON, postJSON } from './api.js';
 import { t, pick, explain, setStaticText } from './i18n.js';
 import { closePanel, moreActions, openPanelTrigger } from './panel.js';
 import { byOrder, hideButton, moveButton, placeMoves, saveLayout } from './layout.js';
@@ -55,7 +55,9 @@ export function cardElement(c, standalone = false) {
     callRender();
   });
   head.append(el('span', 'icon', c.icon || pick(c.name).slice(0, 1)), standalone ? el('h2', 'card-name', pick(c.name)) : cardTitle(c));
-  if (!standalone) head.append(moreActions(t('more.for', { name: pick(c.name) }), [moveButton('up'), moveButton('down'), hideButton(), width]));
+  const controls = [moveButton('up'), moveButton('down'), hideButton(), width];
+  if (c.watchable) controls.push(watchButton(c));
+  if (!standalone) head.append(moreActions(t('more.for', { name: pick(c.name) }), controls));
   card.append(head);
   card.addEventListener('click', (e) => {
     if (state.suppressClick || e.target.closest('button, a, summary, .action-panel')) return;
@@ -146,8 +148,40 @@ function showNotifications() {
   say($('watch-missing'), n.missing?.length ? t('overview.watch.missing', { ids: n.missing.join(', ') }) : '');
   for (const card of $('cards').querySelectorAll('.card[data-id]')) {
     const w = n.cards[card.dataset.id];
+    const toggle = card.querySelector('.watch-toggle');
+    if (toggle) toggle.textContent = t(w ? 'card.unwatch' : 'card.watch');
     watchLine(card, 'card-watch', w && watching(w));
     watchLine(card, 'card-watch-failed', w?.failed && t('card.watch.failed', { time: clock(w.failed.at), detail: w.failed.detail }));
+  }
+}
+
+function watchButton(c) {
+  const btn = el('button', 'watch-toggle', t(state.notifications?.cards[c.id] ? 'card.unwatch' : 'card.watch'));
+  btn.type = 'button';
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleWatch(c, btn.closest('.card'));
+  });
+  return btn;
+}
+
+// toggleWatch writes only the watch list of notifications.json; the result
+// shows as the card's watch line, and a refusal is said on the card.
+async function toggleWatch(c, card) {
+  const on = !state.notifications?.cards[c.id];
+  closePanel();
+  try {
+    state.notifications = await postJSON('/api/notifications/watch', { id: c.id, watch: on });
+    card.querySelector('.card-note')?.remove();
+    showNotifications();
+    announce(t(on ? 'card.watching' : 'card.unwatched', { name: pick(c.name) }));
+  } catch (error) {
+    let note = card.querySelector('.card-note');
+    if (!note) {
+      note = el('p', 'card-note');
+      card.querySelector('.card-head').after(note);
+    }
+    feedback(note, explain(error), true);
   }
 }
 

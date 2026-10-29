@@ -707,6 +707,15 @@ h1 {
   font-size: var(--text-xs);
 }
 
+.card-note {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--tint-accent);
+  overflow-wrap: anywhere;
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+
 .card-watch {
   margin: var(--space-1) 0 0;
   color: var(--muted);
@@ -1239,7 +1248,7 @@ body:has(.page-editor[open]) main { overflow: hidden; }
    nothing but opacity, because they sit outside the rules the sheet's own
    tests read. A browser without @starting-style simply shows the element. */
 @starting-style {
-  .note, .banner, .detail-note, .catalog-note { opacity: 0; }
+  .note, .banner, .overview-note, .detail-note, .catalog-note, .card-note { opacity: 0; }
   .action-panel:popover-open { opacity: 0; }
   .page-editor[open] { opacity: 0; }
 }

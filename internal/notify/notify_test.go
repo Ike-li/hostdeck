@@ -3,6 +3,7 @@ package notify_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -479,5 +480,83 @@ func TestTheStatusNamesWatchedCardsThatAreNotThereAndWhyNotificationsJSONWasRefu
 	}
 	if got := w.Status().Error; got != "" {
 		t.Fatalf("error %q after the file was put right, want none", got)
+	}
+}
+
+func (m *machine) notificationsFile() notify.Config {
+	m.t.Helper()
+	data, err := os.ReadFile(filepath.Join(m.dir, "notifications.json"))
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	var cfg notify.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		m.t.Fatal(err)
+	}
+	return cfg
+}
+
+func TestWatchingACardWritesOnlyTheWatchListAndTakesEffectAtOnce(t *testing.T) {
+	m := newMachine(t)
+	command := []string{os.Args[0], "record", m.runs}
+	written, err := json.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.write("notifications.json", fmt.Sprintf(`{"watch": [], "command": %s, "windows": ["notify.exe"]}`, written))
+	m.set("down")
+	w := m.watcher()
+
+	if err := w.Watch("svc", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.notificationsFile(); !slices.Equal(got.Watch, []string{"svc"}) || !slices.Equal(got.Command, command) || !slices.Equal(got.Windows, []string{"notify.exe"}) {
+		t.Fatalf("notifications.json became %+v, want svc watched and the commands kept", got)
+	}
+	for range 2 {
+		w.Check(context.Background())
+		m.wait(time.Minute)
+	}
+	if got := m.told(); len(got) != 1 {
+		t.Fatalf("told %q, want the watched card's change told without a reload", got)
+	}
+
+	if err := w.Watch("svc", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.notificationsFile(); len(got.Watch) != 0 || !slices.Equal(got.Command, command) {
+		t.Fatalf("notifications.json became %+v, want nothing watched and the command kept", got)
+	}
+	if _, ok := w.Status().Cards["svc"]; ok {
+		t.Fatal("the status still has the card no longer watched")
+	}
+}
+
+func TestWatchingIsRefusedWithoutACommandAndNeverOverwritesAFileThatCannotBeRead(t *testing.T) {
+	m := newMachine(t)
+	file := filepath.Join(m.dir, "notifications.json")
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	w := m.watcher()
+	if err := w.Watch("svc", true); !errors.Is(err, notify.ErrNoCommand) {
+		t.Fatalf("watching with no notifications.json said %v, want ErrNoCommand", err)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatalf("watching created notifications.json: %v", err)
+	}
+
+	for _, broken := range []string{`{"watch": []}`, `{"watch": ["svc"], "comand": ["notify"]}`} {
+		m.write("notifications.json", broken)
+		err := w.Watch("svc", true)
+		if broken == `{"watch": []}` && !errors.Is(err, notify.ErrNoCommand) {
+			t.Errorf("%s: watching said %v, want ErrNoCommand", broken, err)
+		}
+		if err == nil {
+			t.Errorf("%s: watching was not refused", broken)
+		}
+		if got, _ := os.ReadFile(file); string(got) != broken {
+			t.Errorf("%s: watching rewrote the file as %s", broken, got)
+		}
 	}
 }

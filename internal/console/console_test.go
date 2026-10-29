@@ -132,7 +132,7 @@ func TestCardsListTheOverviewAndThePluginFolder(t *testing.T) {
 	json.Unmarshal([]byte(`{
 		"pluginDir": "/somewhere/plugins",
 		"cards": [{"id": "demo", "name": "Demo", "icon": "D", "value": "ok",
-		           "label": {"en": "Database", "zh-CN": "数据库"}},
+		           "label": {"en": "Database", "zh-CN": "数据库"}, "watchable": true},
 		          {"id": "pageonly", "name": "Page only", "destination": "link", "address": "https://wiki.example/"}]
 	}`), &want)
 	if !reflect.DeepEqual(got, want) {

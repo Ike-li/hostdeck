@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -20,6 +21,10 @@ import (
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/run"
 )
+
+// ErrNoCommand refuses to watch a card while notifications.json has no
+// command: the console never writes one.
+var ErrNoCommand = errors.New("notifications.json has no command")
 
 // Timeout bounds one run of the command, as it bounds a plugin's program.
 const Timeout = 30 * time.Second
@@ -32,7 +37,7 @@ type Reader func(ctx context.Context, id string) (v card.View, interval time.Dur
 type Config struct {
 	Watch   []string `json:"watch"`
 	Command []string `json:"command"`
-	Windows []string `json:"windows"`
+	Windows []string `json:"windows,omitempty"`
 }
 
 func (c Config) check() error {
@@ -52,6 +57,7 @@ type Watcher struct {
 	read Reader
 	now  func() time.Time
 
+	writing sync.Mutex // one Watch at a time
 	mu      sync.Mutex
 	cfg     Config
 	loadErr error // why the last Load refused the files
@@ -103,24 +109,12 @@ func (w *Watcher) Load() error {
 }
 
 func (w *Watcher) load() error {
-	var cfg Config
-	data, err := os.ReadFile(filepath.Join(w.dir, "notifications.json"))
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-	case err != nil:
+	cfg, err := w.config()
+	if err != nil {
 		return err
-	default:
-		dec := json.NewDecoder(bytes.NewReader(data))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&cfg); err != nil {
-			return fmt.Errorf("notifications.json: %w", err)
-		}
-		if err := cfg.check(); err != nil {
-			return fmt.Errorf("notifications.json: %w", err)
-		}
 	}
 	told := sent{Version: 1}
-	data, err = os.ReadFile(w.sentFile())
+	data, err := os.ReadFile(w.sentFile())
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
@@ -140,6 +134,29 @@ func (w *Watcher) load() error {
 		w.card(id).sent, w.card(id).toldAt = c.Status, c.Time
 	}
 	return nil
+}
+
+func (w *Watcher) configFile() string { return filepath.Join(w.dir, "notifications.json") }
+
+// config reads notifications.json; one that is not there watches nothing.
+func (w *Watcher) config() (Config, error) {
+	var cfg Config
+	data, err := os.ReadFile(w.configFile())
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return cfg, nil
+	case err != nil:
+		return cfg, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return cfg, fmt.Errorf("notifications.json: %w", err)
+	}
+	if err := cfg.check(); err != nil {
+		return cfg, fmt.Errorf("notifications.json: %w", err)
+	}
+	return cfg, nil
 }
 
 func (w *Watcher) card(id string) *watched {
@@ -342,4 +359,34 @@ func (w *Watcher) Status() Status {
 		st.Cards[id] = CardStatus{Checked: c.seen, Told: c.sent, ToldAt: c.toldAt, Failed: c.failed}
 	}
 	return st
+}
+
+// Watch puts id in the watch list of notifications.json, or with on false
+// takes it out, keeping the commands, and loads the file. It reads the file
+// again first, so a hand edit since the last load is kept.
+func (w *Watcher) Watch(id string, on bool) error {
+	w.writing.Lock()
+	defer w.writing.Unlock()
+	cfg, err := w.config()
+	if err != nil {
+		return err
+	}
+	if len(cfg.Command) == 0 {
+		return ErrNoCommand
+	}
+	cfg.Watch = slices.DeleteFunc(cfg.Watch, func(watched string) bool { return watched == id })
+	if on {
+		cfg.Watch = append(cfg.Watch, id)
+	}
+	if cfg.Watch == nil {
+		cfg.Watch = []string{}
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := atomicfile.Write(w.configFile(), append(data, '\n')); err != nil {
+		return err
+	}
+	return w.Load()
 }
