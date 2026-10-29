@@ -21,12 +21,12 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 - **Linux** before v1, a Docker image, multiple users.
 - **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page adds only the plugins built into hostdeck, plugins that embed a web page on this machine or the local network from its address, and links.
 - **Hundreds of built-in integrations.** Common services are covered by example plugins.
-- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, moving one to the trash and purging it from there, arranging, hiding or resetting the sidebar and the cards, and, until the review under *Paused until review*, the scheduled script tasks page writing its `tasks.json` and scripts.
+- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, moving one to the trash and purging it from there, arranging, hiding or resetting the sidebar and the cards, and the scheduled script tasks page writing its `tasks.json` and scripts.
 - **Electron.**
 
 ## Roadmap
 
-Each milestone is released on its own. After M0, M2 comes next, before any further view of this machine.
+Each milestone is released on its own. After M0, M2 comes next, before anything new for M1.
 
 ### M0 Base
 
@@ -55,6 +55,10 @@ Each milestone is released on its own. After M0, M2 comes next, before any furth
 - Which process listens on which port
 - Docker containers, with restart
 - Every process on this machine, read-only
+- Services started from a shell, with stop and restart
+- Following a service's logs, and capturing a restarted service's output
+- Disk history: scanning folders now or every hour, and keeping what the scans found
+- Scheduled script tasks ([docs/TASKS.md](docs/TASKS.md))
 
 ### M2 Notifications
 
@@ -74,17 +78,6 @@ Each milestone is released on its own. After M0, M2 comes next, before any furth
 
 - Starlark plugins, for cards that need more than a few lines of YAML
 - Network and command access only when the plugin's manifest declares it
-
-### Paused until review
-
-These are built and sit outside the milestones above. They stay and receive fixes, but gain no new abilities, and until the review nothing new is added that runs, schedules or supervises programs on this machine or captures their output:
-
-- Disk history: scanning folders now or every hour, and keeping what the scans found
-- Scheduled script tasks ([docs/TASKS.md](docs/TASKS.md))
-- Restarting a service started from a shell
-- Service observations: following a service's logs, and capturing a restarted service's output
-
-The review comes two weeks after watched cards first notify through a command on main. We then ask of each whether it was used in those two weeks and what it solved. One that was not used moves to Not planned and receives fixes only.
 
 ## Run from source
 
