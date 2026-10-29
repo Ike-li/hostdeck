@@ -30,13 +30,12 @@ export function renderOverview() {
   // The cards are rebuilt only when they are read or rearranged or the
   // language changes: a periodic render would swallow a click on a card's
   // button that lands while the card is replaced.
-  if (!state.overview || state.overview.lang === state.lang) {
-    placeMoves($('cards'), '.card');
-    return;
+  if (state.overview && state.overview.lang !== state.lang) {
+    state.overview.lang = state.lang;
+    $('cards').replaceChildren(...cards.map((c) => cardElement(c)), $('empty-add'));
   }
-  state.overview.lang = state.lang;
-  $('cards').replaceChildren(...cards.map((c) => cardElement(c)), $('empty-add'));
   placeMoves($('cards'), '.card');
+  showNotifications();
 }
 
 export function cardElement(c, standalone = false) {
@@ -122,8 +121,60 @@ function cardTitle(c) {
 
 function stamp(card, c) {
   if (!c.updated) return;
-  const time = new Intl.DateTimeFormat(state.lang, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(c.updated));
-  card.append(el('p', 'card-updated', t('card.updated', { time })));
+  card.append(el('p', 'card-updated', t('card.updated', { time: clock(c.updated) })));
+}
+
+function clock(when) {
+  return new Intl.DateTimeFormat(state.lang, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(when));
+}
+
+// What the background checks of notifications.json know is read on its own
+// schedule, and written into the cards already shown: they are not rebuilt.
+export async function loadNotifications() {
+  try {
+    state.notifications = await getJSON('/api/notifications');
+  } catch {
+    return;
+  }
+  showNotifications();
+}
+
+function showNotifications() {
+  const n = state.notifications;
+  if (!n) return;
+  say($('watch-error'), n.error ? t('overview.watch.invalid', { detail: n.error }) : '');
+  say($('watch-missing'), n.missing?.length ? t('overview.watch.missing', { ids: n.missing.join(', ') }) : '');
+  for (const card of $('cards').querySelectorAll('.card[data-id]')) {
+    const w = n.cards[card.dataset.id];
+    watchLine(card, 'card-watch', w && watching(w));
+    watchLine(card, 'card-watch-failed', w?.failed && t('card.watch.failed', { time: clock(w.failed.at), detail: w.failed.detail }));
+  }
+}
+
+function watching(w) {
+  let words = w.checked ? t('card.watch.checked', { time: clock(w.checked) }) : t('card.watch.waiting');
+  if (w.toldAt) words += t('card.watch.told', { status: t(`card.status.${w.told}`), time: clock(w.toldAt) });
+  return words;
+}
+
+// Words are written only when they change, so an alert is not said again
+// every time the status is read.
+function say(node, words) {
+  if (node.textContent !== words) node.textContent = words;
+  node.hidden = !words;
+}
+
+function watchLine(card, className, words) {
+  let line = card.querySelector(`.${className}`);
+  if (!words) {
+    line?.remove();
+    return;
+  }
+  if (!line) {
+    line = el('p', className);
+    card.append(line);
+  }
+  if (line.textContent !== words) line.textContent = words;
 }
 
 export function onCardsMoved(order, previous) {

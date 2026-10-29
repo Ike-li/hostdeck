@@ -534,6 +534,7 @@ The pill's tint is 10% of its state colour. Why: its 12px word has to reach 4.5:
 | Result note | `.note` | What was just done has a result, with at most one Undo | `status` | Padding 8px 12px, 13px, `--tint-accent`, a 1px edge below | The layout note: eight idle seconds, paused under the pointer or focus |
 | Local note | `.detail-note`, `.catalog-note` | The result of an action on one row or form | `status`, or `alert` on failure | Padding 8px 12px, 8px corners, `--tint-accent`; on failure `--tint-error-panel` and `--error` words | Eight seconds on the detail view |
 | Card error | `.card-error` | A card could not be read | — | `--error` words, 12px above | Until the next reading |
+| Overview note | `#watch-error`, `#watch-missing` | `notifications.json` was refused, or watches a card that is not there | `alert`, its words written only when they change, so the 15-second reading does not say them again | As the banner, but inside the overview: margin 0 0 12px | Until the next reading of the notifications says otherwise |
 | Under way | Button words, `.card-pending` | An action or a reading has not finished | `aria-busy` on the container | 13px, `--muted` | Until it finishes |
 | Screen reader | `#live-region` | What cannot be seen, such as how many cards or search matches there are | `status` | Visually hidden | The same words are never said twice |
 
@@ -556,6 +557,7 @@ A card is the overview's unit.
 | Label | `--muted`, `flex: 1 1 8em`, wrapping when there is no room |
 | Rows | 13px; 4px above and below each, gap 8px: a 6px dot, the name (`--muted`), the value (at most 55% of the row) |
 | Read time | 12px, `--muted`, 16px above, 12px padding above, a 1px `--line` above |
+| Watch lines | Only on a card `notifications.json` watches, after the read time: 12px, 4px above, `--muted`; when the notification command last failed, a second line in `--error` words. Written into the card every 15 seconds without rebuilding it |
 | Under the pointer | `--line-strong` edge; a card that opens a view also gets `--tint-card-hover`, the lift shadow and a pointer cursor |
 | States | `[data-status="warn"]` and `[data-status="error"]` change the edge colour and draw the 3px rail |
 | Widened | `.wide` spans 2 columns, 1 when the grid is narrower than 455px |

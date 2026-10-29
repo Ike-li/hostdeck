@@ -151,6 +151,8 @@ func run(args []string) error {
 		Tokens:    tokens,
 		Layout:    arranged,
 		Reload:    reload,
+
+		Notifications: watcher.Status,
 	})
 	server := &http.Server{Handler: cards}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

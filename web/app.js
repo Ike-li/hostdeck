@@ -13,7 +13,7 @@ import {
 import { sortable, wireDragAndDrop } from './dnd.js';
 import { loadPlugins, onSidebarMoved, refreshStatus, renderNav } from './plugins.js';
 import {
-  flushOverview, loadCards, onCardsMoved, refreshOverview, renderOverview, stopCardsRetry,
+  flushOverview, loadCards, loadNotifications, onCardsMoved, refreshOverview, renderOverview, stopCardsRetry,
 } from './overview.js';
 import { loadMonitor, stopMonitorRetry } from './monitor.js';
 import { stopDiskPolling } from './disk-history.js';
@@ -145,6 +145,8 @@ async function init() {
   route();
   refreshStatus();
   setInterval(refreshStatus, STATUS_EVERY);
+  loadNotifications();
+  setInterval(loadNotifications, STATUS_EVERY);
   setInterval(releaseIdleFrames, 60_000);
   document.addEventListener('visibilitychange', refreshStatus);
 }

@@ -75,12 +75,12 @@ Built:
 
 - M0 apart from the release work below: the console, embedding with clear cache and notifications, cards, details and actions, the saved layout, the plugins page with editing, links and the trash, and the CLI with its agent prompts. The layout and CRUD pass and the UI/UX pass are finished, and DESIGN.md writes the design system down.
 - M1: background jobs (launchd, Windows services) with run, restart and their logs; every TCP listener, with a confirmed Stop; services started from a shell, with stop and restart; Docker containers, with start and restart; every process, read-only; disk history; scheduled script tasks; and service observations, which follow a service's logs and capture a restarted service's output.
-- M2's first slice: the cards `notifications.json` names are read in the background, and a change two readings in a row have seen runs the user's command with `HOSTDECK_*` variables (README, Notifications).
+- M2's first two slices: the cards `notifications.json` names are read in the background, and a change two readings in a row have seen runs the user's command with `HOSTDECK_*` variables (README, Notifications); the overview says on each watched card when it was last checked, what was told and why the command last failed, and above the cards when `notifications.json` was refused or watches a card that is not there.
 
 Left:
 
 - M0: a release workflow run by a `v*` tag; README notes on Gatekeeper (macOS) and SmartScreen (Windows) for the unsigned program; the size and memory report in CI.
-- The rest of M2, in this order: the console saying whether the checks run and when each watched card was last checked; a Watch toggle in a card's More actions that writes only the watch list, with that exception added to the README's Not planned in the same slice (the owner agreed on 2026-10-29); then a webhook and the system's notifications. Anything new for M1 waits behind it.
+- The rest of M2, in this order: a Watch toggle in a card's More actions that writes only the watch list, with that exception added to the README's Not planned in the same slice (the owner agreed on 2026-10-29); then a webhook and the system's notifications. Anything new for M1 waits behind it.
 - M3 and M4, as the README's roadmap has them.
 
 Known problems:

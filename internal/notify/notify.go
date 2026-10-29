@@ -52,9 +52,10 @@ type Watcher struct {
 	read Reader
 	now  func() time.Time
 
-	mu    sync.Mutex
-	cfg   Config
-	cards map[string]*watched
+	mu      sync.Mutex
+	cfg     Config
+	loadErr error // why the last Load refused the files
+	cards   map[string]*watched
 }
 
 // watched is what the watcher knows of one card.
@@ -64,6 +65,9 @@ type watched struct {
 	status string    // what the last reading said
 	count  int       // how many readings in a row said it
 	sent   string    // what the command was last told; "" before it was told anything
+	toldAt time.Time // when the reading it was told was read
+	failed *Failure  // the command's last run, when it failed
+	gone   bool      // no loaded plugin had a card of this ID at the last check
 }
 
 // sent is data/notifications/sent.json: what the command was last told of
@@ -74,7 +78,8 @@ type sent struct {
 }
 
 type sentCard struct {
-	Status string `json:"status"`
+	Status string    `json:"status"`
+	Time   time.Time `json:"time,omitzero"` // when the reading told was read; none for a card fine when first seen
 }
 
 func (w *Watcher) sentFile() string {
@@ -87,8 +92,17 @@ func New(dir string, read Reader, now func() time.Time) *Watcher {
 }
 
 // Load reads notifications.json, and what the command was told before.
-// Without notifications.json, nothing is watched.
+// Without notifications.json, nothing is watched. Files it refuses leave
+// what was loaded in use, and the status says why.
 func (w *Watcher) Load() error {
+	err := w.load()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.loadErr = err
+	return err
+}
+
+func (w *Watcher) load() error {
 	var cfg Config
 	data, err := os.ReadFile(filepath.Join(w.dir, "notifications.json"))
 	switch {
@@ -123,7 +137,7 @@ func (w *Watcher) Load() error {
 	defer w.mu.Unlock()
 	w.cfg = cfg
 	for id, c := range told.Cards {
-		w.card(id).sent = c.Status
+		w.card(id).sent, w.card(id).toldAt = c.Status, c.Time
 	}
 	return nil
 }
@@ -149,7 +163,7 @@ func (w *Watcher) write() error {
 	told := sent{Version: 1, Cards: map[string]sentCard{}}
 	for id, c := range w.cards {
 		if c.sent != "" {
-			told.Cards[id] = sentCard{c.sent}
+			told.Cards[id] = sentCard{c.sent, c.toldAt}
 		}
 	}
 	data, err := json.MarshalIndent(told, "", "  ")
@@ -199,11 +213,13 @@ func (w *Watcher) check(ctx context.Context, cfg Config, id string) {
 	reading, cancel := context.WithTimeout(ctx, card.FetchTimeout+time.Second)
 	v, interval, ok := w.read(reading, id)
 	cancel()
-	if !ok || v.Pending {
-		return
-	}
 	w.mu.Lock()
 	c := w.cards[id]
+	c.gone = !ok
+	if !ok || v.Pending {
+		w.mu.Unlock()
+		return
+	}
 	c.next = v.Updated.Add(interval)
 	// The cache may still hand out a reading it was kept past its interval, or
 	// one the overview asked for; a reading counts once.
@@ -229,13 +245,15 @@ func (w *Watcher) check(ctx context.Context, cfg Config, id string) {
 	if !tell {
 		return
 	}
-	if err := w.tell(ctx, cfg, id, v, from, status); err != nil {
-		log.Printf("notifications: %s changed to %s, and the command failed: %v", id, status, err)
-		return
-	}
+	err := w.tell(ctx, cfg, id, v, from, status)
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	c.sent = status
+	if err != nil {
+		log.Printf("notifications: %s changed to %s, and the command failed: %v", id, status, err)
+		c.failed = &Failure{At: v.Updated, Detail: err.Error()}
+		return
+	}
+	c.sent, c.toldAt, c.failed = status, v.Updated, nil
 	w.remember()
 }
 
@@ -284,4 +302,44 @@ func inLanguage(t plugin.Text, lang string) string {
 		}
 	}
 	return ""
+}
+
+// Status is what the watcher knows, for the console to show.
+type Status struct {
+	Error   string                `json:"error,omitempty"`   // why notifications.json or sent.json was not loaded
+	Missing []string              `json:"missing,omitempty"` // watched IDs no loaded plugin has a card for
+	Cards   map[string]CardStatus `json:"cards"`
+}
+
+// CardStatus is what the watcher knows of one watched card.
+type CardStatus struct {
+	Checked time.Time `json:"checked,omitzero"` // when the last reading it counted was read
+	Told    string    `json:"told,omitempty"`   // what the command was last told
+	ToldAt  time.Time `json:"toldAt,omitzero"`  // when the reading it was told was read
+	Failed  *Failure  `json:"failed,omitempty"` // the command's last run, when it failed
+}
+
+// Failure is a run of the command that did not succeed.
+type Failure struct {
+	At     time.Time `json:"at"` // when the reading it was to tell was read
+	Detail string    `json:"detail"`
+}
+
+// Status says what the watcher knows of every watched card.
+func (w *Watcher) Status() Status {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	st := Status{Cards: map[string]CardStatus{}}
+	if w.loadErr != nil {
+		st.Error = w.loadErr.Error()
+	}
+	for _, id := range w.cfg.Watch {
+		c := w.card(id)
+		if c.gone {
+			st.Missing = append(st.Missing, id)
+			continue
+		}
+		st.Cards[id] = CardStatus{Checked: c.seen, Told: c.sent, ToldAt: c.toldAt, Failed: c.failed}
+	}
+	return st
 }

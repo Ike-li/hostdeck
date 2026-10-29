@@ -188,7 +188,8 @@ osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDEC
 
 - 告诉过命令什么，记在 `data/notifications/sent.json` 里，重启后不会再推一次。命令启动不了或以错误退出，就算没推出去：卡片下次读取时会再运行，失败原因写在 hostdeck 的日志里。
 - `notifications.json` 在 hostdeck 启动时和 `hostdeck plugin reload` 时读取。文件有错，比如有不认识的键，或者写了 `watch` 却没写 `command`，就拒绝并在日志里写一行，之前加载的继续生效。控制台页面和 API 都不写这个文件。
-- 还没有的：控制台上显示检查是否在正常运行、在卡片上直接选择关注、Webhook 和系统通知。
+- 概览在每张关注的卡片上写明上次检查的时间、上次告诉命令什么以及什么时候，还有命令上次失败的原因。`notifications.json` 被拒绝，或者关注了不在这里的卡片时，卡片上方会说出来。这些每 15 秒读一次。
+- 还没有的：在卡片上直接选择关注、Webhook 和系统通知。
 
 ## 进程
 

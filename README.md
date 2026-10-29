@@ -188,7 +188,8 @@ osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDEC
 
 - What the command was told is kept in `data/notifications/sent.json`, so a restart does not tell it again. A command that cannot start or exits with an error has not told anything: it runs again at the card's next reading, and hostdeck's log says why it failed.
 - `notifications.json` is read when hostdeck starts and by `hostdeck plugin reload`. A file with a mistake, such as an unknown key or a `watch` without a `command`, is refused with a line in hostdeck's log, and what was loaded before stays in use. Neither the console page nor the API writes it.
-- Not yet there: the console saying whether the checks run, choosing a card to watch from the card itself, a webhook, and the system's notifications.
+- The overview says, on each watched card, when it was last checked, what the command was last told and when, and why the command last failed. Above the cards it says when `notifications.json` was refused or watches a card that is not there. It reads this every 15 seconds.
+- Not yet there: choosing a card to watch from the card itself, a webhook, and the system's notifications.
 
 ## Processes
 

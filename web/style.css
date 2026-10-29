@@ -467,6 +467,14 @@ main {
 
 .overview-head h1 { margin: 0; }
 
+.overview-note {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--tint-error-soft);
+  overflow-wrap: anywhere;
+}
+
 #overview h1 { font-size: var(--text-lg); }
 
 .overview-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
@@ -697,6 +705,19 @@ h1 {
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: var(--text-xs);
+}
+
+.card-watch {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.card-watch-failed {
+  margin: var(--space-1) 0 0;
+  color: var(--error);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
 }
 
 .card-destination { overflow-wrap: anywhere; }

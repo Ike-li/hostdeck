@@ -23,6 +23,7 @@ export const state = {
   catalogAddRequested: false, // the overview add card should land at the add form
   pendingOverview: null, // a reading waiting until card controls lose focus
   overview: null, // the last answer of /api/cards
+  notifications: null, // the last answer of /api/notifications
   failure: null, // why the backend could not be read
   detailFilters: new Map(), // plugin id -> session-only search and group choice
   frames: new Map(), // plugin id -> its iframe or detail view, kept so each page keeps its state

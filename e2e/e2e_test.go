@@ -44,6 +44,10 @@ func TestMain(m *testing.M) {
 		fakePlugin(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "notify-fail" {
+		fmt.Fprintln(os.Stderr, "no notifier here")
+		os.Exit(3)
+	}
 	if len(os.Args) > 2 && os.Args[1] == "notify-record" {
 		notifyRecord(os.Args[2])
 		return

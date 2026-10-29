@@ -534,6 +534,7 @@ gap: var(--space-4);
 | 结果提示 | `.note` | 刚做的操作有了结果，可以附带一个撤销 | `status` | 内边距 8px 12px，13px，`--tint-accent` 底，下边框 1px | 布局提示：无操作 8 秒后关闭，悬停或聚焦时暂停 |
 | 就地提示 | `.detail-note`、`.catalog-note` | 某一行或某个表单的操作结果 | 成功是 `status`，失败是 `alert` | 内边距 8px 12px，圆角 8px，`--tint-accent` 底；失败时 `--tint-error-panel` 底、`--error` 字 | 详情页 8 秒后关闭 |
 | 卡片错误 | `.card-error` | 某张卡片读不到数据 | — | `--error` 字，上边距 12px | 直到下次读到 |
+| 概览提示 | `#watch-error`、`#watch-missing` | `notifications.json` 被拒绝，或者关注了不在这里的卡片 | `alert`，文字只在变化时才写，所以每 15 秒的读取不会让它再说一遍 | 和全局横幅一样，但放在概览里：外边距 0 0 12px | 直到下一次读取推送状态时情况变了 |
 | 进行中 | 按钮文字、`.card-pending` | 操作或读取还没完成 | 容器 `aria-busy` | 13px，`--muted` | 完成就消失 |
 | 读屏播报 | `#live-region` | 屏幕上看不到的事，比如有几张卡片、搜索命中几项 | `status` | 视觉隐藏 | 同一句话不重复播报 |
 
@@ -556,6 +557,7 @@ gap: var(--space-4);
 | 标签 | `--muted`，`flex: 1 1 8em`，空间不够时换行 |
 | 明细行 | 13px；每行上下 4px，间隙 8px：6px 状态点、名称（`--muted`）、数值（最多占 55% 宽） |
 | 读取时间 | 12px，`--muted`，上边距 16px，上内边距 12px，上边框 1px `--line` |
+| 关注行 | 只出现在 `notifications.json` 关注的卡片上，在读取时间之后：12px，上边距 4px，`--muted`；推送命令上次失败时再加一行 `--error` 字。每 15 秒写进卡片，不重建卡片 |
 | 悬停 | 边框 `--line-strong`；能打开详情的卡片再加 `--tint-card-hover` 底和抬起阴影，光标变成手形 |
 | 状态 | `[data-status="warn"]`、`[data-status="error"]` 换边框色，并在左侧画 3px 状态条 |
 | 加宽 | `.wide` 跨 2 列，容器窄于 455px 时退回 1 列 |

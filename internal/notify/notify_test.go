@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -372,6 +373,15 @@ func TestAnUnreadableRecordOfWhatWasToldIsRefusedRatherThanToldAgain(t *testing.
 // The README is where the command's contract is written down.
 func TestTheReadmesNameEveryVariableTheCommandGetsAndEveryKeyOfNotificationsJSON(t *testing.T) {
 	m := newMachine(t)
+	// The test's own HOSTDECK_ variables, such as HOSTDECK_E2E, are not the
+	// command's to document.
+	for _, kv := range os.Environ() {
+		k, v, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(k, "HOSTDECK_") && k != "HOSTDECK_FAKE_NOTIFY" && k != "HOSTDECK_FROM" {
+			os.Unsetenv(k)
+			t.Cleanup(func() { os.Setenv(k, v) })
+		}
+	}
 	got := filepath.Join(m.dir, "names.txt")
 	m.notifications([]string{"svc"}, []string{os.Args[0], "names", got})
 	m.set("down")
@@ -399,5 +409,75 @@ func TestTheReadmesNameEveryVariableTheCommandGetsAndEveryKeyOfNotificationsJSON
 				t.Errorf("%s does not name `%s`", readme, name)
 			}
 		}
+	}
+}
+
+func TestTheStatusSaysWhenEachWatchedCardWasCheckedAndWhatItWasLastToldAlsoAfterARestart(t *testing.T) {
+	m := newMachine(t)
+	m.set("down")
+	w := m.watcher()
+	if got := w.Status().Cards["svc"]; !got.Checked.IsZero() || got.Told != "" {
+		t.Fatalf("before any reading the status said %+v", got)
+	}
+	w.Check(context.Background())
+	m.wait(time.Minute)
+	w.Check(context.Background())
+
+	read := time.Date(2026, 10, 29, 13, 1, 0, 0, time.UTC)
+	got := w.Status().Cards["svc"]
+	if !got.Checked.Equal(read) || got.Told != "error" || !got.ToldAt.Equal(read) {
+		t.Fatalf("status %+v, want checked and told error at %s", got, read)
+	}
+	got = m.watcher().Status().Cards["svc"]
+	if got.Told != "error" || !got.ToldAt.Equal(read) {
+		t.Fatalf("after a restart the status was %+v, want told error at %s", got, read)
+	}
+}
+
+func TestTheStatusSaysWhenAndWhyTheCommandLastFailedUntilItSucceeds(t *testing.T) {
+	m := newMachine(t)
+	m.notifications([]string{"svc"}, []string{os.Args[0], "fail"})
+	m.set("down")
+	w := m.watcher()
+	w.Check(context.Background())
+	m.wait(time.Minute)
+	w.Check(context.Background())
+
+	failed := w.Status().Cards["svc"].Failed
+	if failed == nil || !failed.At.Equal(time.Date(2026, 10, 29, 13, 1, 0, 0, time.UTC)) || !strings.Contains(failed.Detail, "no notifier here") {
+		t.Fatalf("failure %+v, want one at 13:01 saying what the command wrote to stderr", failed)
+	}
+
+	m.notifications([]string{"svc"}, []string{os.Args[0], "record", m.runs})
+	if err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	m.wait(time.Minute)
+	w.Check(context.Background())
+	if got := w.Status().Cards["svc"]; got.Failed != nil || got.Told != "error" {
+		t.Fatalf("after the command succeeded the status was %+v, want it told and no failure", got)
+	}
+}
+
+func TestTheStatusNamesWatchedCardsThatAreNotThereAndWhyNotificationsJSONWasRefused(t *testing.T) {
+	m := newMachine(t)
+	m.notifications([]string{"svc", "gone"}, []string{os.Args[0], "record", m.runs})
+	w := m.watcher()
+	w.Check(context.Background())
+	if got := w.Status().Missing; !slices.Equal(got, []string{"gone"}) {
+		t.Fatalf("missing %q, want [gone]", got)
+	}
+
+	m.write("notifications.json", `{"watch": ["svc"]}`)
+	w.Load()
+	if got := w.Status().Error; !strings.Contains(got, "notifications.json") || !strings.Contains(got, "a command") {
+		t.Fatalf("error %q, want why notifications.json was refused", got)
+	}
+	m.notifications([]string{"svc"}, []string{os.Args[0], "record", m.runs})
+	if err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Status().Error; got != "" {
+		t.Fatalf("error %q after the file was put right, want none", got)
 	}
 }

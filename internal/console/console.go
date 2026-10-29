@@ -24,6 +24,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
 	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/local"
+	"github.com/Ike-li/hostdeck/internal/notify"
 	"github.com/Ike-li/hostdeck/internal/observation"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
@@ -54,6 +55,9 @@ type Config struct {
 	// Reload reads the plugins folder again after the plugins page changed
 	// it. Nil leaves Plugins, Broken and Served as they are.
 	Reload func() (Loaded, error)
+	// Notifications says what the background checks of notifications.json
+	// know; nil when nothing watches the cards.
+	Notifications func() notify.Status
 }
 
 // Loaded is what one reading of the plugins folder gave.
@@ -128,6 +132,7 @@ func Handler(cfg Config) *Console {
 	mux.HandleFunc("GET /api/cards", s.serveCards)
 	mux.HandleFunc("GET /api/cards/{id}", s.serveCard)
 	mux.HandleFunc("POST /api/cards/refresh", s.serveRefresh)
+	mux.HandleFunc("GET /api/notifications", s.serveNotifications)
 	mux.HandleFunc("POST /api/clear/{id}", s.serveClear)
 	mux.HandleFunc("GET /api/detail/{id}", s.serveDetail)
 	mux.HandleFunc("POST /api/observations/{id}", s.serveObservationCreate)
@@ -226,6 +231,14 @@ func (s *server) servePlugins(w http.ResponseWriter, r *http.Request) {
 var probe = &http.Client{
 	Timeout:       2 * time.Second,
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+func (s *server) serveNotifications(w http.ResponseWriter, _ *http.Request) {
+	status := notify.Status{Cards: map[string]notify.CardStatus{}}
+	if s.cfg.Notifications != nil {
+		status = s.cfg.Notifications()
+	}
+	writeJSON(w, status)
 }
 
 func (s *server) serveStatus(w http.ResponseWriter, r *http.Request) {

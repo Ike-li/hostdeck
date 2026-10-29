@@ -2,15 +2,20 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/chromedp/chromedp"
 )
 
 // notifyRecord is the test binary playing a notification command: it appends
@@ -87,4 +92,96 @@ func TestNotificationsWrittenWhileTheConsoleRunsAreReadByPluginReload(t *testing
 		t.Fatalf("reload status %d", response.StatusCode)
 	}
 	waitForRun(t, runs, "svc ->unreadable")
+}
+
+// watchedService is a plugin whose card is read every second from a service
+// the test turns up or down, watched by notifications.json with command.
+func watchedService(t *testing.T, dir string, watch []string, command ...string) *atomic.Value {
+	t.Helper()
+	var state atomic.Value
+	state.Store("up")
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"state": %q}`, state.Load())
+	}))
+	t.Cleanup(svc.Close)
+	writePlugin(t, dir, "svc", fmt.Sprintf("schema: 1\nname: Service\ncard:\n  interval: 1s\n  http:\n    url: %s\n  value: state\n  error: {equals: down}\n", svc.URL))
+	data, err := json.Marshal(map[string]any{"watch": watch, "command": command})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notifications.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return &state
+}
+
+// waitForNotifications waits until the console's notification status says want.
+func waitForNotifications(t *testing.T, url, want string) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		var got []byte
+		if resp, err := http.Get(url + "/api/notifications"); err == nil {
+			got, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+		if strings.Contains(string(got), want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the notification status said %s within 20s, want %s in it", got, want)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func waitLong(t *testing.T, ctx context.Context, css, want string) {
+	t.Helper()
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](fmt.Sprintf(`document.querySelector(%q)?.textContent.includes(%q)`, css, want), chromedp.WithPollingInterval(200*time.Millisecond), chromedp.WithPollingTimeout(30*time.Second))); err != nil {
+		t.Fatalf("%s never said %q; it says %q", css, want, text(t, ctx, css))
+	}
+}
+
+func TestAWatchedCardSaysWhenItWasCheckedAndThatTheCommandFailedWithoutAReload(t *testing.T) {
+	dir := t.TempDir()
+	state := watchedService(t, dir, []string{"svc"}, os.Args[0], "notify-fail")
+	url := startConsole(t, dir)
+	waitForNotifications(t, url, `"checked"`)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="svc"]`)))
+	waitText(t, ctx, `.card[data-id="svc"] .card-watch`, "Watching · checked at")
+
+	state.Store("down")
+	waitLong(t, ctx, `.card[data-id="svc"] .card-watch-failed`, "no notifier here")
+
+	zh := openBrowser(t, "zh-CN")
+	do(t, zh, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="svc"]`)))
+	waitText(t, zh, `.card[data-id="svc"] .card-watch`, "关注中")
+	waitText(t, zh, `.card[data-id="svc"] .card-watch-failed`, "推送命令")
+}
+
+func TestAboveTheCardsTheOverviewSaysWhatIsWatchedButNotThereAndWhyNotificationsJSONWasRefused(t *testing.T) {
+	dir := t.TempDir()
+	watchedService(t, dir, []string{"svc", "gone"}, os.Args[0], "notify-record", filepath.Join(dir, "runs.txt"))
+	url := startConsole(t, dir)
+	waitForNotifications(t, url, `"gone"`)
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="svc"]`)))
+	waitText(t, ctx, `#watch-missing`, "gone")
+
+	if err := os.WriteFile(filepath.Join(dir, "notifications.json"), []byte(`{"watch": ["svc"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, url+"/api/plugins/reload", bytes.NewReader(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Origin", url)
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	do(t, ctx, chromedp.Reload(), chromedp.WaitVisible(chromedp.CSS(`.card[data-id="svc"]`)))
+	waitText(t, ctx, `#watch-error`, "a command")
 }
