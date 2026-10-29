@@ -187,7 +187,9 @@ func Expand(s string) (string, []string) {
 	return out, secrets
 }
 
-func checkEnv(field, s string) error {
+// CheckEnv says why s cannot be expanded: a ${...} that is not ${env:NAME},
+// or a variable that is not set.
+func CheckEnv(field, s string) error {
 	for _, ref := range envRef.FindAllStringSubmatch(s, -1) {
 		m := envName.FindStringSubmatch(ref[1])
 		if m == nil {
@@ -411,7 +413,7 @@ func (m manifest) validate() error {
 	case c.Value == "":
 		return errors.New("card.value is required")
 	}
-	if err := checkEnv("card.http.url", c.HTTP.URL); err != nil {
+	if err := CheckEnv("card.http.url", c.HTTP.URL); err != nil {
 		return err
 	}
 	// Checked with the references left unfilled, so that no value reaches
@@ -420,7 +422,7 @@ func (m manifest) validate() error {
 		return fmt.Errorf("card.http.url must be an http or https URL, not %q", c.HTTP.URL)
 	}
 	for name, v := range c.HTTP.Headers {
-		if err := checkEnv("card.http.headers."+name, v); err != nil {
+		if err := CheckEnv("card.http.headers."+name, v); err != nil {
 			return err
 		}
 	}

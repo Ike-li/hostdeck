@@ -265,12 +265,12 @@ func (s *server) serveWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.cfg.Watch == nil {
-		writeError(w, http.StatusConflict, &card.Error{Code: "notifications_no_command"})
+		writeError(w, http.StatusConflict, &card.Error{Code: "notifications_no_way_to_tell"})
 		return
 	}
 	switch err := s.cfg.Watch(req.ID, req.Watch); {
-	case errors.Is(err, notify.ErrNoCommand):
-		writeError(w, http.StatusConflict, &card.Error{Code: "notifications_no_command"})
+	case errors.Is(err, notify.ErrNoWayToTell):
+		writeError(w, http.StatusConflict, &card.Error{Code: "notifications_no_way_to_tell"})
 		return
 	case err != nil:
 		writeError(w, http.StatusConflict, &card.Error{Code: "notifications_failed", Detail: err.Error()})

@@ -54,7 +54,7 @@ flowchart LR
 | `internal/plugin` | 读取并检查 `plugin.yaml`：未知字段报错并给出行号。也定义其他包共用的类型：`Text`（一个字符串，或每种语言一个）、`Scalar`、阈值，以及 `${env:NAME}` 的展开。 |
 | `internal/card` | 把插件的卡片变成总览上显示的样子。`http` 卡片：发 GET 请求，用 gjson 路径取值，按阈值上色，报错里隐去令牌。`exec` 卡片：运行程序，读取它打印的卡片。`Cache` 按间隔保留每张卡片；超过总览等待时间还没读完的，先返回「读取中」。 |
 | `internal/detail` | 运行插件的详情程序和操作。执行操作前会重新读一次详情，这个操作仍然出现在那个条目上才执行。 |
-| `internal/notify` | 通过总览的卡片缓存读取 `notifications.json` 关注的卡片，连续两次读数看到同一个变化时运行其中的命令。告诉过什么记在 `data/notifications/sent.json`。 |
+| `internal/notify` | 通过总览的卡片缓存读取 `notifications.json` 关注的卡片，连续两次读数看到同一个变化时运行其中的命令、发给其中的 Webhook。各自告诉过什么记在 `data/notifications/sent.json`。 |
 | `internal/run` | 在插件文件夹里带时限运行插件程序，限制输出大小，结束时连同它启动的所有进程一起结束：Unix 上用进程组（`Setpgid`，再对该组 `kill`），子进程若调用 `setsid` 或以其它方式 daemonize 则可离开该组；Windows 上用 Job Object，会保住整棵进程树。严格解析程序打印的 JSON。 |
 | `internal/observation` | 绑定服务会话、验证来源、有界增量、独立采集与保留策略。 |
 | `internal/manualview` | 从 shell 启动的 TCP 监听进程：一张卡片和紧凑详情，显示工作目录和命令，并可结束或重启其中一条。 |
@@ -115,9 +115,9 @@ flowchart LR
 
 **执行操作。** 第一次点击进入待确认状态，双击只算一次点击。`POST /api/action/<id>` 必须来自控制台自己的 Origin。每个插件的操作一次只执行一个：详情程序会重新运行一次，这个操作仍然出现在那个条目上才执行。操作一旦开始，即使页面被关掉或刷新，也会一直运行到结束或 30 秒时限，免得重启之类的操作停在半途。
 
-**关注的卡片有变化。** `main` 里启动的循环每秒检查一次，读取距上次读数已过了自己间隔的关注卡片，用的是总览读的同一个缓存，所以开着的总览和这个循环共用读数；同一个读数只算一次。卡片的状态是 `ok`、`warn`、`error`，读取失败时是 `unreadable`。连续两次读数都是同一个状态，而且和上次告诉命令的不同，就在 hostdeck 的文件夹里运行命令，在 hostdeck 的环境变量上加上 `HOSTDECK_*` 变量，最多 30 秒，之后结束它的进程树。成功后把这个状态和那次读数的时间整份写进 `data/notifications/sent.json`，重启后不会再推一次。失败写进日志，下一次读数再试。第一次读到就是 `ok` 的卡片只记下来，不运行命令。停止 hostdeck 会结束正在运行的命令。命令的约定写在 README 的「推送」一节。概览在打开时和之后每 15 秒读一次 `GET /api/notifications`：每张关注的卡片上次计数的读数是什么时候读的、上次告诉命令什么以及什么时候、命令上次为什么失败；`notifications.json` 或 `sent.json` 为什么被拒绝；以及哪些关注的 ID 没有已加载插件的卡片。页面把这些写进已经显示的卡片，不重建卡片。
+**关注的卡片有变化。** `main` 里启动的循环每秒检查一次，读取距上次读数已过了自己间隔的关注卡片，用的是总览读的同一个缓存，所以开着的总览和这个循环共用读数；同一个读数只算一次。卡片的状态是 `ok`、`warn`、`error`，读取失败时是 `unreadable`。命令和 Webhook 各自记着上次告诉了什么。连续两次读数都是同一个状态，而且和上次告诉某一方的不同，就由那一方告知，两者同时进行：命令在 hostdeck 的文件夹里运行，在 hostdeck 的环境变量上加上 `HOSTDECK_*` 变量，最多 30 秒，之后结束它的进程树；Webhook 收到同一个变化的 JSON，`${env:NAME}` 已填好，要在 30 秒内回 2xx，重定向时不跟随。某一方成功后，把这个状态和那次读数的时间整份写进 `data/notifications/sent.json`，命令的记在 `cards` 下，Webhook 的记在 `webhook` 下，重启后不会再推一次。失败写进日志，`${env:NAME}` 填进去的值会隐藏，下一次读数只重试失败的那一方。第一次读到就是 `ok` 的卡片只记下来，不推送。停止 hostdeck 会结束正在运行的命令或正在发送的请求。命令和 Webhook 的约定写在 README 的「推送」一节。概览在打开时和之后每 15 秒读一次 `GET /api/notifications`：每张关注的卡片上次计数的读数是什么时候读的，以及 `notifications.json` 里有的命令和 Webhook 各自上次推送了什么、什么时候、上次为什么失败；`notifications.json` 或 `sent.json` 为什么被拒绝；以及哪些关注的 ID 没有已加载插件的卡片。页面把这些写进已经显示的卡片，不重建卡片。
 
-**在控制台上关注卡片。** 已加载插件读取的卡片（`/api/cards` 里带 `watchable`）在更多操作里提供「关注」或「取消关注」。`POST /api/notifications/watch` 会重新读一次 `notifications.json`，所以上次加载之后的手动修改会保留；文件没有命令（409 `notifications_no_command`）或读不了（409 `notifications_failed`）时拒绝，不写入；关注一个没有已加载插件卡片的 ID 返回 404 `no_card`。否则只改 `watch` 后把文件整份写回，加载它，并返回新的推送状态，页面把它写进卡片。被拒绝时在卡片上说明。
+**在控制台上关注卡片。** 已加载插件读取的卡片（`/api/cards` 里带 `watchable`）在更多操作里提供「关注」或「取消关注」。`POST /api/notifications/watch` 会重新读一次 `notifications.json`，所以上次加载之后的手动修改会保留；文件既没有命令也没有 Webhook（409 `notifications_no_way_to_tell`）或读不了（409 `notifications_failed`）时拒绝，不写入；关注一个没有已加载插件卡片的 ID 返回 404 `no_card`。否则只改 `watch` 后把文件整份写回，加载它，并返回新的推送状态，页面把它写进卡片。被拒绝时在卡片上说明。
 
 ## 控制台布局
 
@@ -158,7 +158,7 @@ hostdeck 读写的东西里，有一部分是它自己的代码之外的东西�
 | 插件文件夹和它的 `plugin.yaml` | [PLUGINS.zh-CN.md](PLUGINS.zh-CN.md) |
 | 插件的程序收到什么、打印什么 | [PLUGINS.zh-CN.md](PLUGINS.zh-CN.md#程序) |
 | CLI：命令、参数、JSON 结果、`error.code` 的取值和退出码 | [README](../README.zh-CN.md#给-agent-使用的-cli) |
-| 推送命令收到什么 | [README](../README.zh-CN.md#推送) |
+| 推送命令收到什么、Webhook 收到什么 | [README](../README.zh-CN.md#推送) |
 | hostdeck 文件夹里的文件：`layout.json`、`ports.json`、`notifications.json`、`data/notifications/sent.json`、`data/service-observations/`，插件文件夹以及以点开头和 `.trash` 里的名字，还有自带插件存在自己文件夹里的东西，比如磁盘变化的 `config.json` 和 `data/history.json` | 本文档 |
 
 其余都是 hostdeck 自己的，任何一次提交都可能改：`/api/*` 和它的 JSON、代理自己应答的 `/.well-known/hostdeck/` 下的地址、页面的结构、类名和词典键，以及 Go 包。CLI 和给 agent 的提示词都用 `/api/*`，但总是来自同一个 hostdeck：CLI 要和它连接的控制台同一版本，提示词由控制台自己生成。
@@ -188,7 +188,7 @@ hostdeck 读写的东西里，有一部分是它自己的代码之外的东西�
 - 新建、编辑或删除定时任务需要控制台 Origin 和同一把所有者锁。它只改写已启用且已加载的原生定时任务插件的 `tasks.json`，然后刷新本进程的调度，不补跑，也不重启。表单写入名称、启用、一种计划、超时和当前平台的参数数组，并保留 `exec.env`、`exec.dir` 和另一平台的参数。校验失败不改文件。删除留下运行历史，并取消正在跑的那一次。另一个控制台、损坏的状态或未确认的清理会拒绝写入。读取任务不加锁。手改的文件仍通过插件重载加载。
 - `${env:NAME}` 的值会发给服务，但在报错里替换成 `***`，加引号或经过 URL 转义的形式也会替换。令牌从不写进 `plugin.yaml`。
 - 插件程序不能超过时限运行：到时会结束它整个进程树。
-- `notifications.json` 和其中的命令在这台机器上写，手写或由 agent 写。唯一写这个文件的 API 调用 `POST /api/notifications/watch` 需要控制台的 Origin，只改它的 `watch` 列表，关注时只接受已加载插件有卡片的 ID；它保留命令，从不写命令、不创建这个文件，文件没有命令或读不了时什么都不写。后台读取关注的卡片，和总览的读取是同一种。命令以你的权限运行，和插件程序一样，最多 30 秒，之后结束它的进程树；它不能是 `@hostdeck`。`GET /api/notifications` 是和其他 GET 规则相同的读取，不写任何东西。
+- `notifications.json` 和其中的命令、Webhook 在这台机器上写，手写或由 agent 写。唯一写这个文件的 API 调用 `POST /api/notifications/watch` 需要控制台的 Origin，只改它的 `watch` 列表，关注时只接受已加载插件有卡片的 ID；它按原样保留命令和 Webhook，从不写命令、Webhook，也不创建这个文件，文件既没有命令也没有 Webhook 或读不了时什么都不写。后台读取关注的卡片，和总览的读取是同一种。命令以你的权限运行，和插件程序一样，最多 30 秒，之后结束它的进程树；它不能是 `@hostdeck`。Webhook 是把变化 POST 到文件里写的地址，这个地址不必在本机，带上文件里的请求头；`${env:NAME}` 的值会发出去，但在日志和状态里显示为 `***`，重定向不跟随。`GET /api/notifications` 是和其他 GET 规则相同的读取，不写任何东西。
 - 后台任务插件的重启和运行是这个插件自己的程序，和磁盘插件的「打开」一样。网页并没有因此多一条写命令的路。只有详情在那一刻重新读过、仍然提供这个操作时才会执行，而且名字只能由字母、数字、点、下划线和连字符组成。整个名称都必须通过校验，末尾换行也不例外。Windows 只为允许停止且可再次启动的运行中或已暂停服务提供重启；禁用和切换状态中的服务不提供操作。时限结束的是 `launchctl` 或 `sc.exe`。服务进程不在这个进程树里，不会被一起结束。
 - `GET /api/detail/{id}?item={id}` 读取一条详情。它和别的 GET 一样，只接受本机回环，并按 `Sec-Fetch-Site` 拒绝其他网站；不检查 Origin，也不写任何东西。条目 id 只通过环境变量 `HOSTDECK_DETAIL_ITEM` 传给这个插件自己的详情程序。它不能指定文件路径；后台任务程序只从已经列出的任务里解析路径。带换行或长过 256 字节的 id 会在程序运行前被拒绝。
 
@@ -244,7 +244,7 @@ Windows 程序路径先展开环境变量，规范化 SystemRoot 和原生前缀
 
 ## 还没有的
 
-M2 剩下的部分：Webhook 和系统通知；桌面窗口（M3）；以及声明权限的 Starlark 插件（M4）。见 README 里的路线图。
+M2 剩下的部分：系统通知；桌面窗口（M3）；以及声明权限的 Starlark 插件（M4）。见 README 里的路线图。
 
 详情程序可声明具名分类和可选的紧凑展示方式。控制台在浏览器内按名称/ID 和分类筛选返回条目；会话选择只存在页面状态中，不新增 API 或存储文件。无效分类声明拒绝本次读数，不静默丢弃条目。旧插件无需修改；新增的可选详情字段需要能够识别它们的 hostdeck 版本。
 

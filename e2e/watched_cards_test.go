@@ -160,6 +160,53 @@ func TestAWatchedCardSaysWhenItWasCheckedAndThatTheCommandFailedWithoutAReload(t
 	waitText(t, zh, `.card[data-id="svc"] .card-watch-failed`, "推送命令")
 }
 
+func TestAWatchedCardSaysWhichWayOfTellingFailedAndOnceBothToldTheSameSaysItOnce(t *testing.T) {
+	dir := t.TempDir()
+	runs := filepath.Join(dir, "runs.txt")
+	command := []string{os.Args[0], "notify-record", runs}
+	state := watchedService(t, dir, []string{"svc"}, command...)
+	var answer atomic.Int32
+	answer.Store(http.StatusServiceUnavailable)
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(int(answer.Load()))
+		io.WriteString(w, "busy")
+	}))
+	t.Cleanup(hook.Close)
+	data, err := json.Marshal(map[string]any{"watch": []string{"svc"}, "command": command, "webhook": map[string]any{"url": hook.URL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notifications.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	url := startConsole(t, dir)
+	waitForNotifications(t, url, `"checked"`)
+	ctx := openBrowser(t, "en")
+	svc := `.card[data-id="svc"]`
+	do(t, ctx, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(svc)))
+
+	state.Store("down")
+	waitLong(t, ctx, svc+` .card-watch-webhook-failed`, "The webhook failed at")
+	waitText(t, ctx, svc+` .card-watch-webhook-failed`, "503 Service Unavailable: busy")
+	waitText(t, ctx, svc+` .card-watch`, "command told Problem at")
+	if evalBool(t, ctx, `!!document.querySelector('.card[data-id="svc"] .card-watch-failed')`) {
+		t.Fatal("the command that succeeded shows as failed")
+	}
+
+	zh := openBrowser(t, "zh-CN")
+	do(t, zh, chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(svc)))
+	waitText(t, zh, svc+` .card-watch-webhook-failed`, "Webhook 在")
+
+	answer.Store(http.StatusOK)
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`!document.querySelector('.card[data-id="svc"] .card-watch-webhook-failed')`, chromedp.WithPollingInterval(200*time.Millisecond), chromedp.WithPollingTimeout(30*time.Second))); err != nil {
+		t.Fatalf("the webhook's failure stayed after it answered; the card says %q", text(t, ctx, svc+` .card-watch`))
+	}
+	waitText(t, ctx, svc+` .card-watch`, " · told Problem at")
+	if got := text(t, ctx, svc+` .card-watch`); strings.Contains(got, "command") || strings.Contains(got, "webhook") {
+		t.Fatalf("once both told the same the card says %q, want it said once", got)
+	}
+}
+
 func TestAboveTheCardsTheOverviewSaysWhatIsWatchedButNotThereAndWhyNotificationsJSONWasRefused(t *testing.T) {
 	dir := t.TempDir()
 	watchedService(t, dir, []string{"svc", "gone"}, os.Args[0], "notify-record", filepath.Join(dir, "runs.txt"))

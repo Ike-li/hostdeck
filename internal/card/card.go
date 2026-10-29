@@ -115,7 +115,7 @@ func get(ctx context.Context, h *plugin.HTTP) (body []byte, err error) {
 				msg = strings.ReplaceAll(msg, url, h.URL)
 				msg = strings.ReplaceAll(msg, quoted[1:len(quoted)-1], h.URL)
 			}
-			err = errors.New(redact(fmt.Sprintf("GET %s: %s", h.URL, msg), secrets))
+			err = errors.New(Redact(fmt.Sprintf("GET %s: %s", h.URL, msg), secrets))
 		}
 	}()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -152,9 +152,9 @@ func get(ctx context.Context, h *plugin.HTTP) (body []byte, err error) {
 	return body, nil
 }
 
-// redact hides each secret in msg, also as Go quotes it and as URLs escape
+// Redact hides each secret in msg, also as Go quotes it and as URLs escape
 // it, the forms in which error messages repeat a URL.
-func redact(msg string, secrets []string) string {
+func Redact(msg string, secrets []string) string {
 	for _, s := range secrets {
 		if len(s) < 3 {
 			continue

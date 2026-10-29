@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -126,6 +127,64 @@ func (m *machine) notifications(watch, command []string) {
 	m.write("notifications.json", string(data))
 }
 
+// hook is a webhook receiver that answers with status, sending to location
+// when it is set, and keeps what it was sent.
+type hook struct {
+	URL      string
+	mu       sync.Mutex
+	status   int
+	reply    string
+	location string
+	posts    []*http.Request
+	bodies   []string
+}
+
+func (m *machine) hook() *hook {
+	h := &hook{status: http.StatusOK}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		h.posts, h.bodies = append(h.posts, r), append(h.bodies, string(body))
+		if h.location != "" {
+			w.Header().Set("Location", h.location)
+		}
+		w.WriteHeader(h.status)
+		io.WriteString(w, h.reply)
+	}))
+	m.t.Cleanup(srv.Close)
+	h.URL = srv.URL
+	return h
+}
+
+func (h *hook) answer(status int, reply string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.status, h.reply = status, reply
+}
+
+// sent returns the bodies posted so far.
+func (h *hook) sent() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.bodies)
+}
+
+// webhook writes notifications.json watching svc with the command, if any,
+// and a webhook to url with headers.
+func (m *machine) webhook(command []string, url string, headers map[string]string) {
+	m.t.Helper()
+	cfg := map[string]any{"watch": []string{"svc"}, "webhook": map[string]any{"url": url, "headers": headers}}
+	if command != nil {
+		cfg["command"] = command
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	m.write("notifications.json", string(data))
+}
+
 func (m *machine) set(state string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -196,6 +255,66 @@ func TestAWatchedCardSeenRedTwiceInARowRunsTheCommandWithWhatChanged(t *testing.
 	want := "HOSTDECK_ID=svc HOSTDECK_NAME=Service HOSTDECK_NAME_ZH_CN=服务 HOSTDECK_FROM= HOSTDECK_TO=error HOSTDECK_VALUE=down HOSTDECK_TIME=2026-10-29T13:01:00Z"
 	if got := m.told(); len(got) != 1 || got[0] != want {
 		t.Fatalf("told %q, want one run with\n%s", got, want)
+	}
+}
+
+func TestAWatchedCardSeenRedTwiceInARowIsPostedToTheWebhookWithWhatChanged(t *testing.T) {
+	m := newMachine(t)
+	t.Setenv("HOOK_TOKEN", "s3cret")
+	h := m.hook()
+	m.webhook(nil, h.URL+"/hook", map[string]string{"Authorization": "Bearer ${env:HOOK_TOKEN}"})
+	m.set("down")
+	w := m.watcher()
+	for range 2 {
+		w.Check(context.Background())
+		m.wait(time.Minute)
+	}
+
+	got := h.sent()
+	if len(got) != 1 {
+		t.Fatalf("posted %q, want one change", got)
+	}
+	r := h.posts[0]
+	if r.Method != http.MethodPost || r.URL.Path != "/hook" || r.Header.Get("Content-Type") != "application/json" || r.Header.Get("Authorization") != "Bearer s3cret" {
+		t.Fatalf("got %s %s with %v, want a JSON POST to /hook with the token filled in", r.Method, r.URL.Path, r.Header)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(got[0]), &body); err != nil {
+		t.Fatalf("the body %s is not JSON: %v", got[0], err)
+	}
+	want := map[string]any{"id": "svc", "name": "Service", "nameZhCN": "服务", "from": "", "to": "error", "value": "down", "time": "2026-10-29T13:01:00Z"}
+	if !reflect.DeepEqual(body, want) {
+		t.Fatalf("posted %s, want %v", got[0], want)
+	}
+	if m.told() != nil {
+		t.Fatal("a notifications.json without a command ran one")
+	}
+}
+
+func TestOnlyTheWayOfTellingThatFailedIsToldAgainAtTheNextReading(t *testing.T) {
+	m := newMachine(t)
+	h := m.hook()
+	m.webhook([]string{os.Args[0], "fail"}, h.URL, nil)
+	m.set("down")
+	w := m.watcher()
+	for range 2 {
+		w.Check(context.Background())
+		m.wait(time.Minute)
+	}
+	if got := h.sent(); len(got) != 1 {
+		t.Fatalf("posted %q while the command failed, want the change posted once", got)
+	}
+
+	m.webhook([]string{os.Args[0], "record", m.runs}, h.URL, nil)
+	if err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	w.Check(context.Background())
+	if got := m.told(); len(got) != 1 || !strings.Contains(got[0], "HOSTDECK_FROM= HOSTDECK_TO=error ") {
+		t.Fatalf("told %q, want the change the failed command missed", got)
+	}
+	if got := h.sent(); len(got) != 1 {
+		t.Fatalf("posted %q, want the webhook that was told not told again", got)
 	}
 }
 
@@ -280,6 +399,41 @@ func TestWhatWasToldIsNotToldAgainAfterARestart(t *testing.T) {
 	}
 }
 
+func TestWhatTheWebhookWasToldIsKeptApartInSentJSONAndNotPostedAgainAfterARestart(t *testing.T) {
+	m := newMachine(t)
+	h := m.hook()
+	m.webhook(nil, h.URL, nil)
+	m.set("down")
+	w := m.watcher()
+	for range 2 {
+		w.Check(context.Background())
+		m.wait(time.Minute)
+	}
+	data, err := os.ReadFile(filepath.Join(m.dir, "data", "notifications", "sent.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		Cards   map[string]any
+		Webhook map[string]struct{ Status string }
+	}
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Cards) != 0 || record.Webhook["svc"].Status != "error" {
+		t.Fatalf("sent.json is %s, want error under webhook and nothing told by a command", data)
+	}
+
+	restarted := m.watcher()
+	for range 3 {
+		restarted.Check(context.Background())
+		m.wait(time.Minute)
+	}
+	if got := h.sent(); len(got) != 1 {
+		t.Fatalf("posted %q, want the change posted before the restart and nothing after it", got)
+	}
+}
+
 func TestACommandThatFailsIsRunAgainAtTheNextReading(t *testing.T) {
 	m := newMachine(t)
 	m.notifications([]string{"svc"}, []string{os.Args[0], "fail"})
@@ -345,6 +499,10 @@ func TestABrokenNotificationsFileIsRefusedNamingTheProblemAndWhatWasLoadedKeepsW
 		{`{"watch": ["svc"], "comand": ["notify"]}`, `unknown field "comand"`},
 		{`{"watch": ["svc"]}`, "a command"},
 		{`{"watch": ["svc"], "command": ["@hostdeck", "tasks"]}`, "@hostdeck"},
+		{`{"watch": ["svc"], "webhook": {}}`, "http or https"},
+		{`{"watch": ["svc"], "webhook": {"url": "ftp://example.com/"}}`, "http or https"},
+		{`{"watch": ["svc"], "webhook": {"url": "https://example.com/${env:HOOK_NOT_SET}"}}`, "HOOK_NOT_SET"},
+		{`{"watch": ["svc"], "webhook": {"url": "https://example.com/", "headers": {"Authorization": "${HOME}"}}}`, "${env:NAME}"},
 	} {
 		m.write("notifications.json", c.file)
 		if err := w.Load(); err == nil || !strings.Contains(err.Error(), "notifications.json") || !strings.Contains(err.Error(), c.problem) {
@@ -371,8 +529,9 @@ func TestAnUnreadableRecordOfWhatWasToldIsRefusedRatherThanToldAgain(t *testing.
 	}
 }
 
-// The README is where the command's contract is written down.
-func TestTheReadmesNameEveryVariableTheCommandGetsAndEveryKeyOfNotificationsJSON(t *testing.T) {
+// The README is where the contract of the command and the webhook is written
+// down.
+func TestTheReadmesNameEveryVariableTheCommandGetsEveryKeyTheWebhookIsSentAndEveryKeyOfNotificationsJSON(t *testing.T) {
 	m := newMachine(t)
 	// The test's own HOSTDECK_ variables, such as HOSTDECK_E2E, are not the
 	// command's to document.
@@ -384,7 +543,8 @@ func TestTheReadmesNameEveryVariableTheCommandGetsAndEveryKeyOfNotificationsJSON
 		}
 	}
 	got := filepath.Join(m.dir, "names.txt")
-	m.notifications([]string{"svc"}, []string{os.Args[0], "names", got})
+	h := m.hook()
+	m.webhook([]string{os.Args[0], "names", got}, h.URL, nil)
 	m.set("down")
 	w := m.watcher()
 	for range 2 {
@@ -396,9 +556,22 @@ func TestTheReadmesNameEveryVariableTheCommandGetsAndEveryKeyOfNotificationsJSON
 		t.Fatal(err)
 	}
 	names := strings.Split(string(data), "\n")
-	for f := range reflect.TypeFor[notify.Config]().Fields() {
-		key, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+	posted := h.sent()
+	if len(posted) != 1 {
+		t.Fatalf("posted %q, want one change", posted)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(posted[0]), &body); err != nil {
+		t.Fatal(err)
+	}
+	for key := range body {
 		names = append(names, key)
+	}
+	for _, typ := range []reflect.Type{reflect.TypeFor[notify.Config](), reflect.TypeFor[notify.Webhook]()} {
+		for f := range typ.Fields() {
+			key, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			names = append(names, key)
+		}
 	}
 	for _, readme := range []string{"README.md", "README.zh-CN.md"} {
 		text, err := os.ReadFile(filepath.Join("..", "..", readme))
@@ -417,7 +590,7 @@ func TestTheStatusSaysWhenEachWatchedCardWasCheckedAndWhatItWasLastToldAlsoAfter
 	m := newMachine(t)
 	m.set("down")
 	w := m.watcher()
-	if got := w.Status().Cards["svc"]; !got.Checked.IsZero() || got.Told != "" {
+	if got := w.Status().Cards["svc"]; !got.Checked.IsZero() || got.Command.Told != "" {
 		t.Fatalf("before any reading the status said %+v", got)
 	}
 	w.Check(context.Background())
@@ -426,11 +599,11 @@ func TestTheStatusSaysWhenEachWatchedCardWasCheckedAndWhatItWasLastToldAlsoAfter
 
 	read := time.Date(2026, 10, 29, 13, 1, 0, 0, time.UTC)
 	got := w.Status().Cards["svc"]
-	if !got.Checked.Equal(read) || got.Told != "error" || !got.ToldAt.Equal(read) {
-		t.Fatalf("status %+v, want checked and told error at %s", got, read)
+	if !got.Checked.Equal(read) || got.Command.Told != "error" || !got.Command.ToldAt.Equal(read) || got.Webhook != nil {
+		t.Fatalf("status %+v, want checked and told error at %s by the command alone", got, read)
 	}
 	got = m.watcher().Status().Cards["svc"]
-	if got.Told != "error" || !got.ToldAt.Equal(read) {
+	if got.Command.Told != "error" || !got.Command.ToldAt.Equal(read) {
 		t.Fatalf("after a restart the status was %+v, want told error at %s", got, read)
 	}
 }
@@ -444,7 +617,7 @@ func TestTheStatusSaysWhenAndWhyTheCommandLastFailedUntilItSucceeds(t *testing.T
 	m.wait(time.Minute)
 	w.Check(context.Background())
 
-	failed := w.Status().Cards["svc"].Failed
+	failed := w.Status().Cards["svc"].Command.Failed
 	if failed == nil || !failed.At.Equal(time.Date(2026, 10, 29, 13, 1, 0, 0, time.UTC)) || !strings.Contains(failed.Detail, "no notifier here") {
 		t.Fatalf("failure %+v, want one at 13:01 saying what the command wrote to stderr", failed)
 	}
@@ -455,8 +628,62 @@ func TestTheStatusSaysWhenAndWhyTheCommandLastFailedUntilItSucceeds(t *testing.T
 	}
 	m.wait(time.Minute)
 	w.Check(context.Background())
-	if got := w.Status().Cards["svc"]; got.Failed != nil || got.Told != "error" {
+	if got := w.Status().Cards["svc"].Command; got.Failed != nil || got.Told != "error" {
 		t.Fatalf("after the command succeeded the status was %+v, want it told and no failure", got)
+	}
+}
+
+func TestTheStatusSaysWhenAndWhyTheWebhookLastFailedWithoutTheValuesItFilledIn(t *testing.T) {
+	m := newMachine(t)
+	t.Setenv("HOOK_KEY", "k3y-secret")
+	t.Setenv("HOOK_TOKEN", "t0ken-secret")
+	h := m.hook()
+	h.answer(http.StatusServiceUnavailable, "busy, try later\nsecond line")
+	m.webhook(nil, h.URL+"/hook?key=${env:HOOK_KEY}", map[string]string{"Authorization": "Bearer ${env:HOOK_TOKEN}"})
+	m.set("down")
+	w := m.watcher()
+	for range 2 {
+		w.Check(context.Background())
+		m.wait(time.Minute)
+	}
+
+	got := w.Status().Cards["svc"]
+	if got.Command != nil || got.Webhook == nil || got.Webhook.Failed == nil {
+		t.Fatalf("status %+v, want only the webhook, failed", got)
+	}
+	failed := got.Webhook.Failed
+	if !failed.At.Equal(time.Date(2026, 10, 29, 13, 1, 0, 0, time.UTC)) || !strings.Contains(failed.Detail, "503 Service Unavailable: busy, try later") || strings.Contains(failed.Detail, "second line") {
+		t.Fatalf("failure %+v, want one at 13:01 with the status and the first line of the answer", failed)
+	}
+	if strings.Contains(failed.Detail, "k3y-secret") || strings.Contains(failed.Detail, "t0ken-secret") || !strings.Contains(failed.Detail, "/hook?key=${env:HOOK_KEY}") {
+		t.Fatalf("failure %q, want the address as notifications.json writes it and no value it filled in", failed.Detail)
+	}
+
+	h.answer(http.StatusOK, "")
+	w.Check(context.Background())
+	if got := w.Status().Cards["svc"].Webhook; got.Failed != nil || got.Told != "error" {
+		t.Fatalf("after the webhook answered the status was %+v, want it told and no failure", got)
+	}
+}
+
+func TestAWebhookThatRedirectsHasNotBeenToldAndIsNotFollowed(t *testing.T) {
+	m := newMachine(t)
+	elsewhere := m.hook()
+	h := m.hook()
+	h.answer(http.StatusTemporaryRedirect, "")
+	h.location = elsewhere.URL
+	m.webhook(nil, h.URL, nil)
+	m.set("down")
+	w := m.watcher()
+	for range 2 {
+		w.Check(context.Background())
+		m.wait(time.Minute)
+	}
+	if got := w.Status().Cards["svc"].Webhook.Failed; got == nil || !strings.Contains(got.Detail, "307") {
+		t.Fatalf("failure %+v, want the redirect named", got)
+	}
+	if got := elsewhere.sent(); got != nil {
+		t.Fatalf("the redirect was followed with %q", got)
 	}
 }
 
@@ -535,6 +762,35 @@ func TestWatchingACardWritesOnlyTheWatchListAndTakesEffectAtOnce(t *testing.T) {
 	}
 }
 
+func TestWatchingACardWithOnlyAWebhookKeepsTheWebhookAsWritten(t *testing.T) {
+	m := newMachine(t)
+	t.Setenv("HOOK_TOKEN", "s3cret")
+	h := m.hook()
+	written := fmt.Sprintf(`{"watch": [], "webhook": {"url": %q, "headers": {"Authorization": "Bearer ${env:HOOK_TOKEN}"}}}`, h.URL+"/hook")
+	m.write("notifications.json", written)
+	m.set("down")
+	w := m.watcher()
+
+	if err := w.Watch("svc", true); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(m.dir, "notifications.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := m.notificationsFile()
+	if !slices.Equal(got.Watch, []string{"svc"}) || got.Webhook == nil || got.Webhook.URL != h.URL+"/hook" || got.Webhook.Headers["Authorization"] != "Bearer ${env:HOOK_TOKEN}" || strings.Contains(string(data), `"command"`) {
+		t.Fatalf("notifications.json became %s, want svc watched and the webhook kept as written", data)
+	}
+	for range 2 {
+		w.Check(context.Background())
+		m.wait(time.Minute)
+	}
+	if got := h.sent(); len(got) != 1 {
+		t.Fatalf("posted %q, want the watched card's change posted without a reload", got)
+	}
+}
+
 func TestWatchingIsRefusedWithoutACommandAndNeverOverwritesAFileThatCannotBeRead(t *testing.T) {
 	m := newMachine(t)
 	file := filepath.Join(m.dir, "notifications.json")
@@ -542,8 +798,8 @@ func TestWatchingIsRefusedWithoutACommandAndNeverOverwritesAFileThatCannotBeRead
 		t.Fatal(err)
 	}
 	w := m.watcher()
-	if err := w.Watch("svc", true); !errors.Is(err, notify.ErrNoCommand) {
-		t.Fatalf("watching with no notifications.json said %v, want ErrNoCommand", err)
+	if err := w.Watch("svc", true); !errors.Is(err, notify.ErrNoWayToTell) {
+		t.Fatalf("watching with no notifications.json said %v, want ErrNoWayToTell", err)
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Fatalf("watching created notifications.json: %v", err)
@@ -552,8 +808,8 @@ func TestWatchingIsRefusedWithoutACommandAndNeverOverwritesAFileThatCannotBeRead
 	for _, broken := range []string{`{"watch": []}`, `{"watch": ["svc"], "comand": ["notify"]}`} {
 		m.write("notifications.json", broken)
 		err := w.Watch("svc", true)
-		if broken == `{"watch": []}` && !errors.Is(err, notify.ErrNoCommand) {
-			t.Errorf("%s: watching said %v, want ErrNoCommand", broken, err)
+		if broken == `{"watch": []}` && !errors.Is(err, notify.ErrNoWayToTell) {
+			t.Errorf("%s: watching said %v, want ErrNoWayToTell", broken, err)
 		}
 		if err == nil {
 			t.Errorf("%s: watching was not refused", broken)

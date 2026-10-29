@@ -558,7 +558,7 @@ A card is the overview's unit.
 | Rows | 13px; 4px above and below each, gap 8px: a 6px dot, the name (`--muted`), the value (at most 55% of the row) |
 | Read time | 12px, `--muted`, 16px above, 12px padding above, a 1px `--line` above |
 | Watch | In More actions, only on a card a plugin reads (`watchable`): Watch, or Stop watching when the last notification status has the card. Success shows as the watch lines appearing or going, a refusal as a local note |
-| Watch lines | Only on a card `notifications.json` watches, after the read time: 12px, 4px above, `--muted`; when the notification command last failed, a second line in `--error` words. Written into the card every 15 seconds without rebuilding it |
+| Watch lines | Only on a card `notifications.json` watches, after the read time: 12px, 4px above, `--muted`. What was told is said once while the command and the webhook have told the same, at the later of their times, and for each while they differ, so a card told by one way alone reads as before. Each way whose last try failed adds a line in `--error` words that names it. Written into the card every 15 seconds without rebuilding it |
 | Under the pointer | `--line-strong` edge; a card that opens a view also gets `--tint-card-hover`, the lift shadow and a pointer cursor |
 | States | `[data-status="warn"]` and `[data-status="error"]` change the edge colour and draw the 3px rail |
 | Widened | `.wide` spans 2 columns, 1 when the grid is narrower than 455px |

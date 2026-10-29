@@ -64,7 +64,7 @@
 
 - 由你选定关注哪些卡片；只有这些卡片在后台检查，没有打开控制台页面时也检查
 - 连续两次检查都看到变化才算数，恢复也一样
-- 先通过你指定的一条命令推送；Webhook 和系统通知随后加上
+- 通过你指定的一条命令或一个 Webhook 推送；系统通知随后加上
 - 记住上次推过什么，重启后不重复推
 - 控制台显示后台检查是否在正常运行，以及每张关注卡片上次检查的时间
 
@@ -157,7 +157,7 @@ card:
 
 ## 推送
 
-你关注的卡片有变化时，hostdeck 可以运行你指定的一条命令，没有打开控制台页面时也一样。在 hostdeck 的文件夹里放一个 `notifications.json`：
+你关注的卡片有变化时，hostdeck 可以运行你指定的一条命令，或者发给一个 Webhook，没有打开控制台页面时也一样。在 hostdeck 的文件夹里放一个 `notifications.json`：
 
 ```json
 {
@@ -186,11 +186,40 @@ osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDEC
 | `HOSTDECK_VALUE` | 卡片的值；`unreadable` 时为空 |
 | `HOSTDECK_TIME` | 让命令运行的那次读数的读取时间，UTC，例如 `2026-10-29T13:01:00Z` |
 
-- 告诉过命令什么，记在 `data/notifications/sent.json` 里，重启后不会再推一次。命令启动不了或以错误退出，就算没推出去：卡片下次读取时会再运行，失败原因写在 hostdeck 的日志里。
-- `notifications.json` 在 hostdeck 启动时和 `hostdeck plugin reload` 时读取。文件有错，比如有不认识的键，或者写了 `watch` 却没写 `command`，就拒绝并在日志里写一行，之前加载的继续生效。
-- 控制台只写 `watch` 列表：卡片的更多操作里有**关注**和**取消关注**，立即生效，文件会按两个空格缩进写回。`notifications.json` 没有 `command` 或者读不了时，这两个操作会被拒绝，什么都不写；控制台从不写命令，也不会创建这个文件。只打开页面或链接的卡片，以及清单有错的插件，没有可关注的东西。
-- 概览在每张关注的卡片上写明上次检查的时间、上次告诉命令什么以及什么时候，还有命令上次失败的原因。`notifications.json` 被拒绝，或者关注了不在这里的卡片时，卡片上方会说出来。这些每 15 秒读一次。
-- 还没有的：Webhook 和系统通知。
+Webhook 收到的是同一个变化，以 JSON 发送，可以代替命令，也可以和命令一起用：
+
+```json
+{
+  "watch": ["grafana", "jobs"],
+  "webhook": {
+    "url": "https://hooks.example.com/hostdeck",
+    "headers": {"Authorization": "Bearer ${env:HOOK_TOKEN}"}
+  }
+}
+```
+
+- `url` 是 http 或 https 地址；`headers` 随请求一起发送。两者都可以写 `${env:NAME}`，和 `plugin.yaml` 一样，整个 `url` 也可以就是一个：值会发出去，在任何错误里显示为 `***`，启动 hostdeck 时必须设好这个变量。
+- 请求体是一个 JSON 对象，`Content-Type: application/json`，每个键的值和命令拿到的变量相同，例如 `{"id": "grafana", "name": "Grafana", "nameZhCN": "Grafana", "from": "ok", "to": "error", "value": "", "time": "2026-10-29T13:01:00Z"}`：
+
+| 键 | 值 |
+| --- | --- |
+| `id` | 同 `HOSTDECK_ID` |
+| `name` | 同 `HOSTDECK_NAME` |
+| `nameZhCN` | 同 `HOSTDECK_NAME_ZH_CN` |
+| `from` | 同 `HOSTDECK_FROM`，指上次告诉 Webhook 的状态 |
+| `to` | 同 `HOSTDECK_TO` |
+| `value` | 同 `HOSTDECK_VALUE` |
+| `time` | 同 `HOSTDECK_TIME` |
+
+- Webhook 在 30 秒内回 2xx，就算推出去了。其他回应都算失败，重定向也算，而且不会跟随。回了 2xx 但响应体里写着错误的接收端，也算已推送。
+
+两者共同的：
+
+- 命令和 Webhook 各推过什么，分开记在 `data/notifications/sent.json` 里，重启后不会再推一次。命令启动不了或以错误退出，或者 Webhook 失败，就算没推出去：卡片下次读取时只重试失败的那个，失败原因写在 hostdeck 的日志里。
+- `notifications.json` 在 hostdeck 启动时和 `hostdeck plugin reload` 时读取。文件有错，比如有不认识的键、写了 `watch` 却既没有 `command` 也没有 `webhook`，或者 `${env:NAME}` 的变量没有设置，就拒绝并在日志里写一行，之前加载的继续生效。
+- 控制台只写 `watch` 列表：卡片的更多操作里有**关注**和**取消关注**，立即生效，文件会按两个空格缩进写回。`notifications.json` 既没有 `command` 也没有 `webhook`，或者读不了时，这两个操作会被拒绝，什么都不写；控制台从不写命令或 Webhook，也不会创建这个文件。只打开页面或链接的卡片，以及清单有错的插件，没有可关注的东西。
+- 概览在每张关注的卡片上写明上次检查的时间、上次推送了什么以及什么时候，还有命令或 Webhook 上次失败的原因；两者推送的内容不一样时，分别写明各自推送了什么。`notifications.json` 被拒绝，或者关注了不在这里的卡片时，卡片上方会说出来。这些每 15 秒读一次。
+- 还没有的：系统通知。
 
 ## 进程
 

@@ -722,7 +722,8 @@ h1 {
   font-size: var(--text-xs);
 }
 
-.card-watch-failed {
+.card-watch-failed,
+.card-watch-webhook-failed {
   margin: var(--space-1) 0 0;
   color: var(--error);
   font-size: var(--text-xs);

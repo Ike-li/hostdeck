@@ -64,7 +64,7 @@ Each milestone is released on its own. After M0, M2 comes next, before anything 
 
 - You choose which cards to watch; only those are checked in the background, also while no console page is open
 - A change counts once two checks in a row have seen it, recovery included
-- Delivered first through a command you name; a webhook and the system's notifications follow
+- Delivered through a command you name or a webhook; the system's notifications follow
 - What was last sent is remembered, so a restart does not send it again
 - The console shows whether the checks are running and when each watched card was last checked
 
@@ -157,7 +157,7 @@ The manifest format may still change before the first release. [docs/PLUGINS.md]
 
 ## Notifications
 
-hostdeck can run a command of yours when a card you watch changes, also while no console page is open. Put `notifications.json` in hostdeck's folder:
+hostdeck can run a command of yours, or post to a webhook, when a card you watch changes, also while no console page is open. Put `notifications.json` in hostdeck's folder:
 
 ```json
 {
@@ -186,11 +186,40 @@ osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDEC
 | `HOSTDECK_VALUE` | the card's value; empty when it is `unreadable` |
 | `HOSTDECK_TIME` | when the reading that runs the command was made, in UTC, such as `2026-10-29T13:01:00Z` |
 
-- What the command was told is kept in `data/notifications/sent.json`, so a restart does not tell it again. A command that cannot start or exits with an error has not told anything: it runs again at the card's next reading, and hostdeck's log says why it failed.
-- `notifications.json` is read when hostdeck starts and by `hostdeck plugin reload`. A file with a mistake, such as an unknown key or a `watch` without a `command`, is refused with a line in hostdeck's log, and what was loaded before stays in use.
-- The console writes only the `watch` list: a card's More actions offer **Watch** and **Stop watching**, which take effect at once and write the file back with two-space indentation. They are refused, and write nothing, while `notifications.json` has no `command` or cannot be read; the console never writes a command or creates the file. Cards that only open a page or a link, and plugins whose manifest has a mistake, have nothing to watch.
-- The overview says, on each watched card, when it was last checked, what the command was last told and when, and why the command last failed. Above the cards it says when `notifications.json` was refused or watches a card that is not there. It reads this every 15 seconds.
-- Not yet there: a webhook, and the system's notifications.
+A webhook is posted the same change as JSON, instead of the command or beside it:
+
+```json
+{
+  "watch": ["grafana", "jobs"],
+  "webhook": {
+    "url": "https://hooks.example.com/hostdeck",
+    "headers": {"Authorization": "Bearer ${env:HOOK_TOKEN}"}
+  }
+}
+```
+
+- `url` is an http or https address; `headers` are sent with it. `${env:NAME}` works in both, as in `plugin.yaml`, and the whole `url` may be one: the value is sent, shows as `***` in any error, and hostdeck must be started with the variable set.
+- The body is one JSON object, sent with `Content-Type: application/json`, whose keys hold what the command's variables hold, such as `{"id": "grafana", "name": "Grafana", "nameZhCN": "Grafana", "from": "ok", "to": "error", "value": "", "time": "2026-10-29T13:01:00Z"}`:
+
+| Key | Value |
+| --- | --- |
+| `id` | as `HOSTDECK_ID` |
+| `name` | as `HOSTDECK_NAME` |
+| `nameZhCN` | as `HOSTDECK_NAME_ZH_CN` |
+| `from` | as `HOSTDECK_FROM`, of what the webhook was last told |
+| `to` | as `HOSTDECK_TO` |
+| `value` | as `HOSTDECK_VALUE` |
+| `time` | as `HOSTDECK_TIME` |
+
+- The webhook has told the change when it answers 2xx within 30 seconds. Any other answer, a redirect included, is a failure, and a redirect is not followed. A receiver that answers 2xx with an error in its body counts as told.
+
+For both:
+
+- What the command and the webhook told is kept in `data/notifications/sent.json`, each apart, so a restart does not tell it again. A command that cannot start or exits with an error, or a webhook that fails, has not told anything: it is tried again at the card's next reading, without the other, and hostdeck's log says why it failed.
+- `notifications.json` is read when hostdeck starts and by `hostdeck plugin reload`. A file with a mistake, such as an unknown key, a `watch` with neither a `command` nor a `webhook`, or a `${env:NAME}` whose variable is not set, is refused with a line in hostdeck's log, and what was loaded before stays in use.
+- The console writes only the `watch` list: a card's More actions offer **Watch** and **Stop watching**, which take effect at once and write the file back with two-space indentation. They are refused, and write nothing, while `notifications.json` has neither a `command` nor a `webhook`, or cannot be read; the console never writes a command or a webhook, or creates the file. Cards that only open a page or a link, and plugins whose manifest has a mistake, have nothing to watch.
+- The overview says, on each watched card, when it was last checked, what was last told and when, and why the command or the webhook last failed; while the two have told different things, it says what each told. Above the cards it says when `notifications.json` was refused or watches a card that is not there. It reads this every 15 seconds.
+- Not yet there: the system's notifications.
 
 ## Processes
 

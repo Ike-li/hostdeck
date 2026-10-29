@@ -151,9 +151,18 @@ function showNotifications() {
     const toggle = card.querySelector('.watch-toggle');
     if (toggle) toggle.textContent = t(w ? 'card.unwatch' : 'card.watch');
     watchLine(card, 'card-watch', w && watching(w));
-    watchLine(card, 'card-watch-failed', w?.failed && t('card.watch.failed', { time: clock(w.failed.at), detail: w.failed.detail }));
+    for (const way of WAYS) {
+      const failed = w?.[way.key]?.failed;
+      watchLine(card, way.line, failed && t(way.failed, { time: clock(failed.at), detail: failed.detail }));
+    }
   }
 }
+
+// The ways notifications.json tells a change; each has its own failure line.
+const WAYS = [
+  { key: 'command', line: 'card-watch-failed', failed: 'card.watch.failed', told: 'card.watch.toldCommand' },
+  { key: 'webhook', line: 'card-watch-webhook-failed', failed: 'card.watch.webhookFailed', told: 'card.watch.toldWebhook' },
+];
 
 function watchButton(c) {
   const btn = el('button', 'watch-toggle', t(state.notifications?.cards[c.id] ? 'card.unwatch' : 'card.watch'));
@@ -185,9 +194,20 @@ async function toggleWatch(c, card) {
   }
 }
 
+// While every way has told the same, it is said once, at the latest of their
+// times; otherwise each way says what it told.
 function watching(w) {
   let words = w.checked ? t('card.watch.checked', { time: clock(w.checked) }) : t('card.watch.waiting');
-  if (w.toldAt) words += t('card.watch.told', { status: t(`card.status.${w.told}`), time: clock(w.toldAt) });
+  const ways = WAYS.filter((way) => w[way.key]);
+  const first = ways[0] && w[ways[0].key];
+  if (first && ways.every((way) => w[way.key].toldAt && w[way.key].told === first.told)) {
+    const at = Math.max(...ways.map((way) => Date.parse(w[way.key].toldAt)));
+    return words + t('card.watch.told', { status: t(`card.status.${first.told}`), time: clock(at) });
+  }
+  for (const way of ways) {
+    const s = w[way.key];
+    if (s.toldAt) words += t(way.told, { status: t(`card.status.${s.told}`), time: clock(s.toldAt) });
+  }
   return words;
 }
 

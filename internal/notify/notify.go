@@ -1,5 +1,5 @@
 // Package notify watches the cards the user chose in notifications.json and
-// runs the user's command when one of them changes.
+// tells the user's command and webhook when one of them changes.
 package notify
 
 import (
@@ -8,11 +8,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
+	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,11 +26,12 @@ import (
 	"github.com/Ike-li/hostdeck/internal/run"
 )
 
-// ErrNoCommand refuses to watch a card while notifications.json has no
-// command: the console never writes one.
-var ErrNoCommand = errors.New("notifications.json has no command")
+// ErrNoWayToTell refuses to watch a card while notifications.json has neither
+// a command nor a webhook: the console never writes one.
+var ErrNoWayToTell = errors.New("notifications.json has no command or webhook")
 
-// Timeout bounds one run of the command, as it bounds a plugin's program.
+// Timeout bounds one run of the command, as it bounds a plugin's program, and
+// one post to the webhook.
 const Timeout = 30 * time.Second
 
 // Reader reads a plugin's card as the overview does. ok is false when no
@@ -36,8 +41,16 @@ type Reader func(ctx context.Context, id string) (v card.View, interval time.Dur
 // Config is notifications.json in hostdeck's folder.
 type Config struct {
 	Watch   []string `json:"watch"`
-	Command []string `json:"command"`
+	Command []string `json:"command,omitempty"`
 	Windows []string `json:"windows,omitempty"`
+	Webhook *Webhook `json:"webhook,omitempty"`
+}
+
+// Webhook is where a change is posted. The URL and the header values may hold
+// ${env:NAME}, filled in at each post, as in plugin.yaml.
+type Webhook struct {
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 func (c Config) check() error {
@@ -46,8 +59,24 @@ func (c Config) check() error {
 			return errors.New("@hostdeck runs plugins, not a notification command")
 		}
 	}
-	if len(c.Watch) > 0 && len(c.Command) == 0 {
-		return errors.New("watch needs a command to run")
+	if len(c.Watch) > 0 && len(c.Command) == 0 && c.Webhook == nil {
+		return errors.New("watch needs a command or a webhook")
+	}
+	if h := c.Webhook; h != nil {
+		if err := plugin.CheckEnv("webhook.url", h.URL); err != nil {
+			return err
+		}
+		for name, v := range h.Headers {
+			if err := plugin.CheckEnv("webhook.headers."+name, v); err != nil {
+				return err
+			}
+		}
+		// The whole address may come from ${env:NAME}, so it is checked filled in
+		// and never repeated.
+		url, _ := plugin.Expand(h.URL)
+		if u, err := neturl.Parse(url); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return errors.New("webhook.url must be an http or https address")
+		}
 	}
 	return nil
 }
@@ -64,23 +93,51 @@ type Watcher struct {
 	cards   map[string]*watched
 }
 
-// watched is what the watcher knows of one card.
-type watched struct {
-	seen   time.Time // when the last reading it counted was read
-	next   time.Time // when to read the card again
-	status string    // what the last reading said
-	count  int       // how many readings in a row said it
-	sent   string    // what the command was last told; "" before it was told anything
-	toldAt time.Time // when the reading it was told was read
-	failed *Failure  // the command's last run, when it failed
-	gone   bool      // no loaded plugin had a card of this ID at the last check
+// The ways a change is told. Each keeps its own record of what it told, so
+// one that failed is told again without the other.
+const (
+	byCommand = iota
+	byWebhook
+	ways
+)
+
+var wayNames = [ways]string{"command", "webhook"}
+
+// ways lists the ways c tells a change.
+func (c Config) ways() []int {
+	var ws []int
+	if len(c.Command) > 0 {
+		ws = append(ws, byCommand)
+	}
+	if c.Webhook != nil {
+		ws = append(ws, byWebhook)
+	}
+	return ws
 }
 
-// sent is data/notifications/sent.json: what the command was last told of
-// each card, so that a restart does not tell it again.
+// watched is what the watcher knows of one card.
+type watched struct {
+	seen   time.Time  // when the last reading it counted was read
+	next   time.Time  // when to read the card again
+	status string     // what the last reading said
+	count  int        // how many readings in a row said it
+	told   [ways]told // what each way last told
+	gone   bool       // no loaded plugin had a card of this ID at the last check
+}
+
+// told is what one way of telling last told of a card.
+type told struct {
+	status string    // "" before it told anything
+	at     time.Time // when the reading it told was read
+	failed *Failure  // its last try, when it failed
+}
+
+// sent is data/notifications/sent.json: what each way last told of each
+// card, so that a restart does not tell it again.
 type sent struct {
 	Version int                 `json:"version"`
-	Cards   map[string]sentCard `json:"cards"`
+	Cards   map[string]sentCard `json:"cards"`             // by the command
+	Webhook map[string]sentCard `json:"webhook,omitempty"` // by the webhook
 }
 
 type sentCard struct {
@@ -97,7 +154,7 @@ func New(dir string, read Reader, now func() time.Time) *Watcher {
 	return &Watcher{dir: dir, read: read, now: now, cards: map[string]*watched{}}
 }
 
-// Load reads notifications.json, and what the command was told before.
+// Load reads notifications.json, and what each way told before.
 // Without notifications.json, nothing is watched. Files it refuses leave
 // what was loaded in use, and the status says why.
 func (w *Watcher) Load() error {
@@ -130,8 +187,10 @@ func (w *Watcher) load() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.cfg = cfg
-	for id, c := range told.Cards {
-		w.card(id).sent, w.card(id).toldAt = c.Status, c.Time
+	for way, cards := range [ways]map[string]sentCard{told.Cards, told.Webhook} {
+		for id, c := range cards {
+			w.card(id).told[way].status, w.card(id).told[way].at = c.Status, c.Time
+		}
 	}
 	return nil
 }
@@ -177,10 +236,12 @@ func (w *Watcher) remember() {
 }
 
 func (w *Watcher) write() error {
-	told := sent{Version: 1, Cards: map[string]sentCard{}}
+	told := sent{Version: 1, Cards: map[string]sentCard{}, Webhook: map[string]sentCard{}}
 	for id, c := range w.cards {
-		if c.sent != "" {
-			told.Cards[id] = sentCard{c.sent, c.toldAt}
+		for way, cards := range [ways]map[string]sentCard{told.Cards, told.Webhook} {
+			if t := c.told[way]; t.status != "" {
+				cards[id] = sentCard{t.status, t.at}
+			}
 		}
 	}
 	data, err := json.MarshalIndent(told, "", "  ")
@@ -251,27 +312,45 @@ func (w *Watcher) check(ctx context.Context, cfg Config, id string) {
 	} else {
 		c.status, c.count = status, 1
 	}
-	from := c.sent
-	tell := c.count >= 2 && status != from
-	if tell && from == "" && status == "ok" {
-		// A card fine from the start has nothing to say.
-		c.sent, tell = status, false
-		w.remember()
+	var tell []int
+	var from [ways]string
+	for _, way := range cfg.ways() {
+		t := &c.told[way]
+		switch {
+		case c.count < 2 || status == t.status:
+		case t.status == "" && status == "ok":
+			// A card fine from the start has nothing to say.
+			t.status = status
+			w.remember()
+		default:
+			tell, from[way] = append(tell, way), t.status
+		}
 	}
 	w.mu.Unlock()
-	if !tell {
+	if len(tell) == 0 {
 		return
 	}
-	err := w.tell(ctx, cfg, id, v, from, status)
+	var errs [ways]error
+	var wg sync.WaitGroup
+	for _, way := range tell {
+		wg.Go(func() { errs[way] = w.tell(ctx, cfg, way, changeOf(id, v, from[way], status)) })
+	}
+	wg.Wait()
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if err != nil {
-		log.Printf("notifications: %s changed to %s, and the command failed: %v", id, status, err)
-		c.failed = &Failure{At: v.Updated, Detail: err.Error()}
-		return
+	toldAny := false
+	for _, way := range tell {
+		t := &c.told[way]
+		if err := errs[way]; err != nil {
+			log.Printf("notifications: %s changed to %s, and the %s failed: %v", id, status, wayNames[way], err)
+			t.failed = &Failure{At: v.Updated, Detail: err.Error()}
+			continue
+		}
+		t.status, t.at, t.failed, toldAny = status, v.Updated, nil, true
 	}
-	c.sent, c.toldAt, c.failed = status, v.Updated, nil
-	w.remember()
+	if toldAny {
+		w.remember()
+	}
 }
 
 // statusOf is the card's colour on the overview, with a card that could not
@@ -286,25 +365,100 @@ func statusOf(v card.View) string {
 	return "ok"
 }
 
-func (w *Watcher) tell(ctx context.Context, cfg Config, id string, v card.View, from, to string) error {
-	vars := map[string]string{
-		"HOSTDECK_ID":         id,
-		"HOSTDECK_NAME":       inLanguage(v.Name, "en"),
-		"HOSTDECK_NAME_ZH_CN": inLanguage(v.Name, "zh-CN"),
-		"HOSTDECK_FROM":       from,
-		"HOSTDECK_TO":         to,
-		"HOSTDECK_VALUE":      v.Value,
-		"HOSTDECK_TIME":       v.Updated.UTC().Format(time.RFC3339),
+// change is what the command and the webhook are told of one card.
+type change struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	NameZhCN string `json:"nameZhCN"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Value    string `json:"value"`
+	Time     string `json:"time"`
+}
+
+func changeOf(id string, v card.View, from, to string) change {
+	return change{
+		ID:       id,
+		Name:     inLanguage(v.Name, "en"),
+		NameZhCN: inLanguage(v.Name, "zh-CN"),
+		From:     from,
+		To:       to,
+		Value:    v.Value,
+		Time:     v.Updated.UTC().Format(time.RFC3339),
 	}
-	// exec keeps the last of duplicate keys, so these win over the console's own.
-	env := os.Environ()
-	for k, v := range vars {
-		env = append(env, k+"="+v)
-	}
+}
+
+func (w *Watcher) tell(ctx context.Context, cfg Config, way int, ch change) error {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
+	if way == byWebhook {
+		return post(ctx, cfg.Webhook, ch)
+	}
+	return w.run(ctx, cfg, ch)
+}
+
+func (w *Watcher) run(ctx context.Context, cfg Config, ch change) error {
+	// exec keeps the last of duplicate keys, so these win over the console's own.
+	env := append(os.Environ(),
+		"HOSTDECK_ID="+ch.ID,
+		"HOSTDECK_NAME="+ch.Name,
+		"HOSTDECK_NAME_ZH_CN="+ch.NameZhCN,
+		"HOSTDECK_FROM="+ch.From,
+		"HOSTDECK_TO="+ch.To,
+		"HOSTDECK_VALUE="+ch.Value,
+		"HOSTDECK_TIME="+ch.Time,
+	)
 	_, err := run.External(ctx, run.Command{Dir: w.dir, Args: plugin.Exec{Command: cfg.Command, Windows: cfg.Windows}.Args(), Env: env})
 	return err
+}
+
+// hookClient does not follow redirects: a webhook answers where it is.
+var hookClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// post sends ch to the webhook as JSON; any answer but 2xx is a failure.
+// Errors name the URL as notifications.json writes it and never hold a value
+// that ${env:NAME} filled in.
+func post(ctx context.Context, hook *Webhook, ch change) (err error) {
+	url, secrets := plugin.Expand(hook.URL)
+	defer func() {
+		if err != nil {
+			err = errors.New(card.Redact(fmt.Sprintf("POST %s: %v", hook.URL, err), secrets))
+		}
+	}()
+	body, err := json.Marshal(ch)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for name, value := range hook.Headers {
+		value, s := plugin.Expand(value)
+		secrets = append(secrets, s...)
+		req.Header.Set(name, value)
+	}
+	resp, err := hookClient.Do(req)
+	if err != nil {
+		var ue *neturl.Error
+		if errors.As(err, &ue) {
+			return ue.Err // without the URL it would repeat, filled in
+		}
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		answer, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		line, _, _ := strings.Cut(string(answer), "\n")
+		if line = strings.TrimSpace(line); line != "" {
+			return fmt.Errorf("%s: %s", resp.Status, line)
+		}
+		return errors.New(resp.Status)
+	}
+	return nil
 }
 
 // inLanguage picks a name as the page does: the language, else English,
@@ -330,13 +484,19 @@ type Status struct {
 
 // CardStatus is what the watcher knows of one watched card.
 type CardStatus struct {
-	Checked time.Time `json:"checked,omitzero"` // when the last reading it counted was read
-	Told    string    `json:"told,omitempty"`   // what the command was last told
-	ToldAt  time.Time `json:"toldAt,omitzero"`  // when the reading it was told was read
-	Failed  *Failure  `json:"failed,omitempty"` // the command's last run, when it failed
+	Checked time.Time  `json:"checked,omitzero"`  // when the last reading it counted was read
+	Command *WayStatus `json:"command,omitempty"` // when notifications.json has a command
+	Webhook *WayStatus `json:"webhook,omitempty"` // when it has a webhook
 }
 
-// Failure is a run of the command that did not succeed.
+// WayStatus is what one way of telling last told of a card.
+type WayStatus struct {
+	Told   string    `json:"told,omitempty"`   // what it last told
+	ToldAt time.Time `json:"toldAt,omitzero"`  // when the reading it told was read
+	Failed *Failure  `json:"failed,omitempty"` // its last try, when it failed
+}
+
+// Failure is a try at telling that did not succeed.
 type Failure struct {
 	At     time.Time `json:"at"` // when the reading it was to tell was read
 	Detail string    `json:"detail"`
@@ -356,7 +516,17 @@ func (w *Watcher) Status() Status {
 			st.Missing = append(st.Missing, id)
 			continue
 		}
-		st.Cards[id] = CardStatus{Checked: c.seen, Told: c.sent, ToldAt: c.toldAt, Failed: c.failed}
+		cs := CardStatus{Checked: c.seen}
+		for _, way := range w.cfg.ways() {
+			t := c.told[way]
+			ws := &WayStatus{Told: t.status, ToldAt: t.at, Failed: t.failed}
+			if way == byWebhook {
+				cs.Webhook = ws
+			} else {
+				cs.Command = ws
+			}
+		}
+		st.Cards[id] = cs
 	}
 	return st
 }
@@ -371,8 +541,8 @@ func (w *Watcher) Watch(id string, on bool) error {
 	if err != nil {
 		return err
 	}
-	if len(cfg.Command) == 0 {
-		return ErrNoCommand
+	if len(cfg.ways()) == 0 {
+		return ErrNoWayToTell
 	}
 	cfg.Watch = slices.DeleteFunc(cfg.Watch, func(watched string) bool { return watched == id })
 	if on {
