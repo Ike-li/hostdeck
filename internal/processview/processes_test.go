@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Ike-li/hostdeck/internal/detail"
 	"github.com/Ike-li/hostdeck/internal/run"
@@ -143,4 +144,51 @@ func TestTheNativeProcessReaderIncludesThisTestProcess(t *testing.T) {
 		}
 	}
 	t.Fatal("current process is missing")
+}
+
+func TestProcessDetailsExplainTheExecutableParentAndLifetime(t *testing.T) {
+	started := time.Date(2026, 10, 29, 8, 0, 0, 0, time.UTC)
+	elapsed, cpuTime, threads := time.Duration(90061)*time.Second, time.Duration(3661)*time.Second, uint32(17)
+	read := func(context.Context, string, run.Runner, bool) ([]proc, error) {
+		return []proc{
+			{PID: 42, PPID: 1, Name: "Worker", Path: "/Applications/My Worker.app/Contents/MacOS/Worker", StartedAt: started, Elapsed: &elapsed, CPUTime: &cpuTime, Threads: &threads},
+			{PID: 1, Name: "launchd"},
+			{PID: 43, PPID: 999, Name: "unreadable"},
+		}, nil
+	}
+	out, err := execute(context.Background(), "", []string{"processes", "detail"}, nil, read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v detail.View
+	if err := run.Decode(out, &v); err != nil {
+		t.Fatal(err)
+	}
+	var found detail.Item
+	for _, it := range v.Items {
+		if it.ID == "42" {
+			found = it
+		}
+	}
+	values := map[string]string{}
+	for _, f := range found.Fields {
+		values[f.Name.ByLang["en"]] = f.Value.String()
+	}
+	for name, want := range map[string]string{"Executable path": "/Applications/My Worker.app/Contents/MacOS/Worker", "Parent process": "launchd", "Started": "2026-10-29 08:00:00 UTC", "Uptime": "25:01:01", "CPU time": "01:01:01", "Threads": "17"} {
+		if values[name] != want {
+			t.Errorf("%s = %q, want %q", name, values[name], want)
+		}
+	}
+	for _, it := range v.Items {
+		if it.ID != "43" {
+			continue
+		}
+		for _, f := range it.Fields {
+			for _, name := range []string{"Executable path", "Parent process", "Started", "Uptime", "CPU time", "Threads"} {
+				if f.Name.ByLang["en"] == name && (f.Value.ByLang["en"] == "" || f.Value.ByLang["zh-CN"] == "") {
+					t.Errorf("missing bilingual fallback %+v", f)
+				}
+			}
+		}
+	}
 }

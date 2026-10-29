@@ -70,7 +70,11 @@ func TestTheProcessesPluginInstallsSearchesAndRefreshesWithoutProcessActions(t *
 						t.Fatalf("%s %s %d overflow=%v err=%v", lang, theme, width, overflow, err)
 					}
 					body := evalString(t, ctx, `document.querySelector('#service').innerText`)
-					for _, word := range []string{"PID", "CPU", "MiB"} {
+					newFields := []string{"Executable path", "Parent process", "Started", "Uptime", "CPU time", "Threads"}
+					if lang == "zh-CN" {
+						newFields = []string{"可执行文件路径", "父进程名称", "启动时间", "运行时长", "累计 CPU 时间", "线程数"}
+					}
+					for _, word := range append([]string{"PID", "CPU", "MiB", "UTC"}, newFields...) {
 						if !strings.Contains(body, word) {
 							t.Fatalf("missing %s: %s", word, body)
 						}

@@ -3,6 +3,7 @@ package processview
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 	"unsafe"
 
@@ -49,7 +50,8 @@ func windowsSnapshot(ctx context.Context, metrics bool) ([]sample, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		p := sample{proc: proc{PID: int(entry.ProcessID), PPID: int(entry.ParentProcessID), Name: windows.UTF16ToString(entry.ExeFile[:])}}
+		threads := entry.Threads
+		p := sample{proc: proc{PID: int(entry.ProcessID), PPID: int(entry.ParentProcessID), Name: windows.UTF16ToString(entry.ExeFile[:]), Threads: &threads}}
 		// PID 0 is the idle-time pseudo process, not an executing program.
 		if p.PID != 0 {
 			if metrics {
@@ -82,6 +84,23 @@ func readWindowsMetrics(p *sample) {
 		p.Started = filetimeTicks(creation)
 		p.Ticks = filetimeTicks(kernel) + filetimeTicks(user)
 		p.At = time.Now()
+		if p.Started != 0 {
+			p.StartedAt = time.Unix(0, creation.Nanoseconds())
+			elapsed := p.At.Sub(p.StartedAt)
+			if elapsed >= 0 {
+				p.Elapsed = &elapsed
+			}
+		}
+		if p.Ticks <= math.MaxInt64/100 {
+			total := time.Duration(p.Ticks) * 100 * time.Nanosecond
+			p.CPUTime = &total
+		}
+	}
+	// The documented query-only API returns the executable without reading arguments.
+	path := make([]uint16, 32768)
+	size := uint32(len(path))
+	if windows.QueryFullProcessImageName(h, 0, &path[0], &size) == nil {
+		p.Path = windows.UTF16ToString(path[:size])
 	}
 	var memory memoryCounters
 	memory.Size = uint32(unsafe.Sizeof(memory))

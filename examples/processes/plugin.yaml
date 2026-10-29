@@ -2,8 +2,8 @@ schema: 1
 name: {en: Processes, zh-CN: 进程}
 icon: ⚙
 description:
-  en: A read-only list of the processes visible on this machine, including those without listening ports. Shows process name, PID, parent PID, user, CPU and resident memory. Search by name or PID and refresh for a new snapshot. Unavailable metrics are labelled. Does not end processes or collect energy history.
-  zh-CN: 只读查看本机可见的进程，包括没有监听端口的进程。显示进程名、PID、父进程 PID、用户、CPU 和驻留内存，可按名称或 PID 搜索，刷新获取新的快照。无法读取的指标会明确标注，不结束进程或采集耗能历史。
+  en: A read-only list of the processes visible on this machine, including those without listening ports. Shows process name, PID, parent PID/name, executable path, user, CPU, resident memory, UTC start time, uptime, threads and accumulated CPU time. Search by name or PID and refresh for a new snapshot. Unavailable metrics are labelled. Does not end processes or collect energy history.
+  zh-CN: 只读查看本机可见的进程，包括没有监听端口的进程。显示进程名、PID、父进程 PID/名称、可执行文件路径、用户、CPU、驻留内存、UTC 启动时间、运行时长、线程数和累计 CPU 时间，可按名称或 PID 搜索，刷新获取新的快照。无法读取的指标会明确标注，不结束进程或采集耗能历史。
 card:
   interval: 1m
   exec:
