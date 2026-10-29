@@ -498,19 +498,22 @@ func (m *machine) notificationsFile() notify.Config {
 
 func TestWatchingACardWritesOnlyTheWatchListAndTakesEffectAtOnce(t *testing.T) {
 	m := newMachine(t)
+	// Each system runs its own command, so both record; Windows's differs to
+	// show it is kept as it was.
 	command := []string{os.Args[0], "record", m.runs}
-	written, err := json.Marshal(command)
+	windows := []string{os.Args[0], "record", m.runs, "windows"}
+	written, err := json.Marshal(map[string]any{"watch": []string{}, "command": command, "windows": windows})
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.write("notifications.json", fmt.Sprintf(`{"watch": [], "command": %s, "windows": ["notify.exe"]}`, written))
+	m.write("notifications.json", string(written))
 	m.set("down")
 	w := m.watcher()
 
 	if err := w.Watch("svc", true); err != nil {
 		t.Fatal(err)
 	}
-	if got := m.notificationsFile(); !slices.Equal(got.Watch, []string{"svc"}) || !slices.Equal(got.Command, command) || !slices.Equal(got.Windows, []string{"notify.exe"}) {
+	if got := m.notificationsFile(); !slices.Equal(got.Watch, []string{"svc"}) || !slices.Equal(got.Command, command) || !slices.Equal(got.Windows, windows) {
 		t.Fatalf("notifications.json became %+v, want svc watched and the commands kept", got)
 	}
 	for range 2 {
