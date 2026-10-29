@@ -11,7 +11,7 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 - **One place for this machine.** A sidebar of your local web UIs (Grafana, a self-hosted tool on `localhost:3000`, …) that open full-page, and an overview of status cards.
 - **Embeds services that refuse to be embedded.** Many tools send `X-Frame-Options` or a CSP `frame-ancestors` to forbid framing. hostdeck serves each one again on its own local port with only that restriction relaxed, and only for the console itself. No per-service configuration.
 - **Knows the machine it runs on.** Built-in views of launchd jobs or Windows services, Docker containers, and which process listens on which port, with restart actions.
-- **Tells you when something changes.** A card turning yellow or red, or recovering, is pushed to a command, a webhook or a system notification, once the change has been seen twice in a row.
+- **Tells you when something changes.** A card you have chosen to watch turning yellow or red, or recovering, is pushed to a command, a webhook or a system notification, once the change has been seen twice in a row.
 - **Plugins, not a catalogue.** Every card is a plugin: a few lines of YAML for most, an external program for the rest.
 - **Small.** A single Go binary serving a plain web UI. It runs in your browser; a thin desktop shell comes later.
 
@@ -26,7 +26,7 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 
 ## Roadmap
 
-Each milestone is released on its own.
+Each milestone is released on its own. After M0, M2 comes next, before any further view of this machine.
 
 ### M0 Base
 
@@ -57,9 +57,11 @@ Each milestone is released on its own.
 
 ### M2 Notifications
 
+- You choose which cards to watch; only those are checked in the background, also while no console page is open
 - A change counts once two checks in a row have seen it, recovery included
-- Delivered through a command, a webhook or the system's notifications
+- Delivered first through a command you name; a webhook and the system's notifications follow
 - What was last sent is remembered, so a restart does not send it again
+- The console shows whether the checks are running and when each watched card was last checked
 
 ### M3 Desktop
 
@@ -71,6 +73,16 @@ Each milestone is released on its own.
 
 - Starlark plugins, for cards that need more than a few lines of YAML
 - Network and command access only when the plugin's manifest declares it
+
+### Paused until review
+
+These are built and sit outside the milestones above. They stay and receive fixes, but gain no new abilities, and until the review nothing new is added that runs, schedules or supervises programs on this machine or captures their output:
+
+- Scheduled script tasks ([docs/TASKS.md](docs/TASKS.md))
+- Restarting a service started from a shell
+- Service observations: following a service's logs, and capturing a restarted service's output
+
+The review comes two weeks after watched cards first notify through a command on main. We then ask of each whether it was used in those two weeks and what it solved. One that was not used moves to Not planned and receives fixes only.
 
 ## Run from source
 

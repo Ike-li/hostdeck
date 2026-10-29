@@ -80,8 +80,9 @@ Built:
 Left:
 
 - M0: a release workflow run by a `v*` tag; README notes on Gatekeeper (macOS) and SmartScreen (Windows) for the unsigned program; the size and memory report in CI.
-- M1: UDP listeners.
-- M2 to M4, as the README's roadmap has them.
+- M2 comes next, as the README's roadmap now has it: watched cards, checked in the background, notifying first through a command. UDP listeners (M1) and any other new view of this machine wait behind it.
+- M3 and M4, as the README's roadmap has them.
+- Paused until review, as the README's roadmap says: scheduled script tasks, restarting a service started from a shell, and service observations receive fixes but no new abilities.
 
 Known problems:
 
