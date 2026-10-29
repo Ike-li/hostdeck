@@ -34,6 +34,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/plugin"
 	"github.com/Ike-li/hostdeck/internal/ports"
 	"github.com/Ike-li/hostdeck/internal/process"
+	"github.com/Ike-li/hostdeck/internal/processview"
 	"github.com/Ike-li/hostdeck/internal/proxy"
 	runpkg "github.com/Ike-li/hostdeck/internal/run"
 	"github.com/Ike-li/hostdeck/internal/tasks"
@@ -45,6 +46,7 @@ func init() {
 	runpkg.Register("docker", dockerview.Execute)
 	runpkg.Register("listeners", listenerview.Execute)
 	runpkg.Register("manual", manualview.Execute)
+	runpkg.Register("processes", processview.Execute)
 }
 
 func main() {

@@ -943,3 +943,5 @@ Docker 详情在头部使用共享的二次确认操作控件：已创建/已停
 操作响应尚未返回时也可以继续读取观察。更新失败显示“未知”，同时保留上次成功的时间和正文。取消请求尚未结束便返回页面时，在该请求结束后立即补读，不再多等一轮。条目的可用操作变化时复用按钮，确认文字按当前操作生成。采集输出标明来自 Hostdeck，采集故障单独说明。`TestObservationPollingWaitsForCompletionBacksOffAndResumesImmediately` 和独立服务重新打开验收覆盖这些行为。
 
 仅用于阅读的观察区立即显示会话创建返回的首个快照，完成一秒后再读取增量，避免在展示内容前重复查询来源。确认和操作会话仍单独验证。
+
+进程复用已有紧凑分组详情列表，提供 hostdeck 与其他进程筛选、名称/PID 搜索和手动刷新。同名进程按 PID 分别列出。CPU 和内存作为说明字段，不据此臆造健康颜色；无法读取的指标使用本地化文字。不增加进程动作、视觉令牌或样式。`TestTheProcessesPluginInstallsSearchesAndRefreshesWithoutProcessActions` 覆盖原生安装、名称/PID 筛选、刷新后保留搜索、两种语言/主题及 1280/520px。

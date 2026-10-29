@@ -148,6 +148,12 @@ On Windows, the jobs count includes warnings and errors. Restart is offered only
 
 The manifest format may still change before the first release. [docs/PLUGINS.md](docs/PLUGINS.md) gives all of it: every field of `plugin.yaml`, how hostdeck runs a plugin's programs, and what they print.
 
+## Processes
+
+Add **Processes** under Pages & plugins → Add content to see the processes visible to hostdeck, including programs without listening ports. The overview counts processes; the detail page shows names, PID, parent PID, user, CPU and resident memory in MiB. Search matches names or PIDs, and the filters separate the console from other processes. Refresh reads a new snapshot and preserves the search and filter. The card caches its count for one minute; detail reads are on demand.
+
+This plugin is read-only. It never ends processes, requests administrator privileges, reads command arguments or environments, or saves process history. A denied optional read is labelled unavailable without losing the process; a failed process-table read reports an error instead of zero. macOS uses the CPU percentage reported by `ps` and RSS; Windows samples process CPU time over at least 250 ms and uses the working set. 100% CPU represents one fully used core and can be exceeded. These platform readings are estimates and need not match Activity Monitor or Task Manager. Windows shows owner SIDs without a network account lookup, and excludes the PID 0 idle-time pseudo process. A refresh is a live snapshot, so a process may exit while its fields are read.
+
 ## Disk history
 
 Add **Disk history** under Pages & plugins → Add content. This is separate from **Disk space**, which shows free capacity. It runs inside hostdeck on macOS and Windows; no Python, database server, extra port or disk-history installation is needed. Installing or opening it does not scan anything.

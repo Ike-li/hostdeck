@@ -30,6 +30,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/listenerview"
 	"github.com/Ike-li/hostdeck/internal/manualview"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/processview"
 	"github.com/Ike-li/hostdeck/internal/run"
 	"github.com/Ike-li/hostdeck/internal/tasks"
 )
@@ -40,6 +41,7 @@ func init() {
 	run.Register("docker", dockerview.Execute)
 	run.Register("listeners", listenerview.Execute)
 	run.Register("manual", manualview.Execute)
+	run.Register("processes", processview.Execute)
 }
 
 const apiKey = "key-from-the-syncthing-settings"
@@ -406,7 +408,7 @@ func TestEveryBuiltInExampleDescribesItself(t *testing.T) {
 			t.Errorf("%s: name %+v, description %+v; want a name and a description in en and zh-CN", e.ID, e.Name, e.Description)
 		}
 	}
-	if want := []string{"disk", "disk-history", "docker", "grafana", "jobs", "listeners", "manual", "ollama", "scheduled-tasks", "syncthing"}; !slices.Equal(ids, want) {
+	if want := []string{"disk", "disk-history", "docker", "grafana", "jobs", "listeners", "manual", "ollama", "processes", "scheduled-tasks", "syncthing"}; !slices.Equal(ids, want) {
 		t.Errorf("built in: %v, want %v", ids, want)
 	}
 	fs.WalkDir(Files, ".", func(path string, d fs.DirEntry, err error) error {

@@ -1627,15 +1627,27 @@ card:
 // The plugins page orders plugins by the name it shows, not by the folder.
 func TestThePluginsPageListsPluginsByName(t *testing.T) {
 	dir := t.TempDir()
-	// Installing built-in IDs keeps the total at the built-in count.
-	// SEARCH_AFTER matches that count, so this page stays a plain list.
+	// The catalog response below bounds this fixture at SEARCH_AFTER entries,
+	// independently of how many built-in plugins ship.
 	writePlugin(t, dir, "docker", "schema: 1\nname: {en: Beta, zh-CN: 乙}\npage: {link: 'https://b.example/'}\n")
 	writePlugin(t, dir, "jobs", "schema: 1\nname: {en: Alpha, zh-CN: 甲}\npage: {link: 'https://a.example/'}\n")
 	url := startConsole(t, dir)
 	ctx := openBrowser(t, "zh-CN,zh;q=0.9")
 
+	do(t, ctx, chromedp.Navigate(url))
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[any](`(() => {
+          const realFetch = window.fetch;
+          window.fetch = async (url, opts) => {
+            const response = await realFetch(url, opts);
+            if (String(url) !== '/api/catalog') return response;
+            const catalog = await response.json();
+            catalog.available = catalog.available.slice(0, 10 - catalog.installed.length);
+            return new Response(JSON.stringify(catalog), {status: response.status, headers: response.headers});
+          };
+        })()`)); err != nil {
+		t.Fatal(err)
+	}
 	do(t, ctx,
-		chromedp.Navigate(url),
 		chromedp.Click(chromedp.CSS(`.nav-item[href="#/.plugins"]`)),
 		chromedp.WaitVisible(chromedp.CSS(`#catalog-installed .catalog-item`)),
 	)
