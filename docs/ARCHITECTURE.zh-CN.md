@@ -68,7 +68,7 @@ flowchart LR
 | `internal/local` | 只放行发往 `127.0.0.1` 的请求；发往 `localhost` 的重定向过去。 |
 | `internal/onetime` | 清除服务缓存用的一次性令牌。 |
 | `internal/catalog` | 供插件页使用：列出 hostdeck 自带的插件，并把其中一个复制到插件文件夹；列出已安装的插件，并通过给文件夹改名来停用或启用。 |
-| `examples` | 自带的插件：disk、Grafana、Syncthing、Ollama 和后台任务，编进程序里。 |
+| `examples` | 自带的插件，编进程序里，每个一个文件夹：`disk`、`disk-history`、`docker`、`grafana`、`jobs`、`listeners`、`manual`、`ollama`、`processes`、`scheduled-tasks` 和 `syncthing`。 |
 | `web` | 控制台页面：`index.html`、无构建步骤的纯 ES 模块、`style.css` 和 `i18n/*.json`。编进程序里。 |
 
 ## 页面代码
@@ -242,7 +242,7 @@ Windows 程序路径先展开环境变量，规范化 SystemRoot 和原生前缀
 
 ## 还没有的
 
-M2 剩下的部分：控制台显示检查是否在正常运行、在卡片上选择关注、Webhook 和系统通知；只读监听端口插件之后的端口视图后续工作（M1），桌面窗口（M3），以及声明权限的 Starlark 插件（M4）。见 README 里的路线图。
+M2 剩下的部分：控制台显示检查是否在正常运行、在卡片上选择关注、Webhook 和系统通知；桌面窗口（M3）；以及声明权限的 Starlark 插件（M4）。见 README 里的路线图。
 
 详情程序可声明具名分类和可选的紧凑展示方式。控制台在浏览器内按名称/ID 和分类筛选返回条目；会话选择只存在页面状态中，不新增 API 或存储文件。无效分类声明拒绝本次读数，不静默丢弃条目。旧插件无需修改；新增的可选详情字段需要能够识别它们的 hostdeck 版本。
 

@@ -70,7 +70,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/local` | Lets through only requests addressed to `127.0.0.1`; `localhost` is redirected there. |
 | `internal/onetime` | One-time tokens for clearing a service's cache. |
 | `internal/catalog` | For the plugins page: lists the plugins built into hostdeck and copies one into the plugins folder; lists the installed plugins and disables or enables one by renaming its folder. |
-| `examples` | The built-in plugins: disk, Grafana, Syncthing, Ollama and background jobs, embedded in the program. |
+| `examples` | The built-in plugins, embedded in the program, one folder each: `disk`, `disk-history`, `docker`, `grafana`, `jobs`, `listeners`, `manual`, `ollama`, `processes`, `scheduled-tasks` and `syncthing`. |
 | `web` | The console page: `index.html`, plain ES modules with no build step, `style.css`, and `i18n/*.json`. Embedded in the program. |
 
 ## The page's code
@@ -244,7 +244,7 @@ Drawer keyboard tests wait for the initial workspace and the open animation, the
 
 ## Not there yet
 
-The rest of M2: the console saying whether the checks run, choosing a watched card on the card, a webhook and the system's notifications; further port-view work beyond the read-only listeners plugin (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
+The rest of M2: the console saying whether the checks run, choosing a watched card on the card, a webhook and the system's notifications; a desktop window (M3); and Starlark plugins with declared permissions (M4). See the roadmap in the README.
 
 Detail programs may declare named groups and an optional compact presentation. The console filters the returned items locally by name/ID and group; session-only choices live in page state, with no new API or stored file. Invalid group declarations refuse the reading instead of silently dropping items. Older plugins need no changes; new optional detail fields require a hostdeck version that accepts them.
 

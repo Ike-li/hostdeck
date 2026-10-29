@@ -21,7 +21,7 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 - **Linux** before v1, a Docker image, multiple users.
 - **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page adds only the plugins built into hostdeck, plugins that embed a web page on this machine or the local network from its address, and links.
 - **Hundreds of built-in integrations.** Common services are covered by example plugins.
-- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, moving one to the trash and purging it from there, and arranging, hiding or resetting the sidebar and the cards.
+- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, moving one to the trash and purging it from there, arranging, hiding or resetting the sidebar and the cards, and, until the review under *Paused until review*, the scheduled script tasks page writing its `tasks.json` and scripts.
 - **Electron.**
 
 ## Roadmap
@@ -54,6 +54,7 @@ Each milestone is released on its own. After M0, M2 comes next, before any furth
 - launchd jobs on macOS and Windows services, with restart
 - Which process listens on which port
 - Docker containers, with restart
+- Every process on this machine, read-only
 
 ### M2 Notifications
 
@@ -78,6 +79,7 @@ Each milestone is released on its own. After M0, M2 comes next, before any furth
 
 These are built and sit outside the milestones above. They stay and receive fixes, but gain no new abilities, and until the review nothing new is added that runs, schedules or supervises programs on this machine or captures their output:
 
+- Disk history: scanning folders now or every hour, and keeping what the scans found
 - Scheduled script tasks ([docs/TASKS.md](docs/TASKS.md))
 - Restarting a service started from a shell
 - Service observations: following a service's logs, and capturing a restarted service's output
@@ -302,7 +304,7 @@ Add **Services started by hand** under Pages & plugins → Add content. It lists
 
 ## Listening ports
 
-Add **Listening ports** under Pages & plugins → Add content. It lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID, process name, working directory and command line (truncated past 512 characters). The detail page is searchable and grouped by bind address. hostdeck itself, its ancestors, and the ports it forwards are marked and still listed. Confirmed Stop ends a listening process and its children; hostdeck itself, its ancestors, forwarded ports and PID 1 are protected and cannot be stopped here. UDP remains later M1 work.
+Add **Listening ports** under Pages & plugins → Add content. It lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID, process name, working directory and command line (truncated past 512 characters). The detail page is searchable and grouped by bind address. hostdeck itself, its ancestors, and the ports it forwards are marked and still listed. Confirmed Stop ends a listening process and its children; hostdeck itself, its ancestors, forwarded ports and PID 1 are protected and cannot be stopped here. UDP is not listed.
 
 ## Scheduled script tasks
 
