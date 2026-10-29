@@ -22,6 +22,7 @@ import (
 
 	"github.com/Ike-li/hostdeck/examples"
 	"github.com/Ike-li/hostdeck/internal/atomicfile"
+	"github.com/Ike-li/hostdeck/internal/card"
 	"github.com/Ike-li/hostdeck/internal/cli"
 	"github.com/Ike-li/hostdeck/internal/console"
 	"github.com/Ike-li/hostdeck/internal/diskhistory"
@@ -29,6 +30,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/layout"
 	"github.com/Ike-li/hostdeck/internal/listenerview"
 	"github.com/Ike-li/hostdeck/internal/manualview"
+	"github.com/Ike-li/hostdeck/internal/notify"
 	"github.com/Ike-li/hostdeck/internal/observation"
 	"github.com/Ike-li/hostdeck/internal/onetime"
 	"github.com/Ike-li/hostdeck/internal/plugin"
@@ -111,6 +113,10 @@ func run(args []string) error {
 	defer f.close()
 	var lifecycle sync.Mutex
 	stopping := false
+	var cards *console.Console
+	watcher := notify.New(dir, func(ctx context.Context, id string) (card.View, time.Duration, bool) {
+		return cards.ReadCard(ctx, id)
+	}, time.Now)
 	// The console calls reload one change at a time.
 	reload := func() (console.Loaded, error) {
 		lifecycle.Lock()
@@ -118,7 +124,13 @@ func run(args []string) error {
 		if stopping {
 			return console.Loaded{}, errors.New("hostdeck is shutting down")
 		}
-		return f.reload(pluginDir)
+		loaded, err := f.reload(pluginDir)
+		if err == nil {
+			if err := watcher.Load(); err != nil {
+				log.Printf("notifications: not loaded: %v", err)
+			}
+		}
+		return loaded, err
 	}
 	loaded, err := reload()
 	if err != nil {
@@ -129,7 +141,7 @@ func run(args []string) error {
 		return err
 	}
 	log.Printf("hostdeck: http://%s/", ln.Addr())
-	server := &http.Server{Handler: console.Handler(console.Config{
+	cards = console.Handler(console.Config{
 		Origin:    fmt.Sprintf("http://127.0.0.1:%d", consolePort),
 		Plugins:   loaded.Plugins,
 		Broken:    loaded.Broken,
@@ -139,9 +151,15 @@ func run(args []string) error {
 		Tokens:    tokens,
 		Layout:    arranged,
 		Reload:    reload,
-	})}
+	})
+	server := &http.Server{Handler: cards}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	watching := make(chan struct{})
+	go func() {
+		defer close(watching)
+		watcher.Run(ctx)
+	}()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -153,6 +171,7 @@ func run(args []string) error {
 	err = server.Serve(ln)
 	stop()
 	<-done
+	<-watching
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

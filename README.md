@@ -160,6 +160,41 @@ On Windows, the jobs count includes warnings and errors. Restart is offered only
 
 The manifest format may still change before the first release. [docs/PLUGINS.md](docs/PLUGINS.md) gives all of it: every field of `plugin.yaml`, how hostdeck runs a plugin's programs, and what they print.
 
+## Notifications
+
+hostdeck can run a command of yours when a card you watch changes, also while no console page is open. Put `notifications.json` in hostdeck's folder:
+
+```json
+{
+  "watch": ["grafana", "jobs"],
+  "command": ["sh", "notify.sh"]
+}
+```
+
+```sh
+# notify.sh, next to notifications.json: a macOS notification
+osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDECK_TO\" with title \"hostdeck\""
+```
+
+- `watch` lists plugin IDs, the names of their folders. Only those cards are read in the background, each at its own `interval`. A plugin that is not loaded, or has no card, is skipped.
+- A card is `ok`, `warn`, `error`, or `unreadable` when its reading failed. A card without thresholds is `ok` whenever it can be read.
+- A change counts once two readings in a row have seen it, recovery included, so a card that flips between readings tells nothing. Nor does a card that is `ok` the first time it is seen.
+- The command runs in hostdeck's folder, without a shell, for at most 30 seconds, after which it and every process it started are ended. `windows` replaces `command` on Windows, as in `plugin.yaml`. It gets hostdeck's environment and these variables:
+
+| Variable | Value |
+| --- | --- |
+| `HOSTDECK_ID` | the plugin's ID |
+| `HOSTDECK_NAME` | the card's name in English, or its only name |
+| `HOSTDECK_NAME_ZH_CN` | the card's name in Simplified Chinese, else as above |
+| `HOSTDECK_FROM` | what the command was last told of this card: `ok` for a card that was fine when first seen, empty before either |
+| `HOSTDECK_TO` | the status two readings in a row have seen |
+| `HOSTDECK_VALUE` | the card's value; empty when it is `unreadable` |
+| `HOSTDECK_TIME` | when the reading that runs the command was made, in UTC, such as `2026-10-29T13:01:00Z` |
+
+- What the command was told is kept in `data/notifications/sent.json`, so a restart does not tell it again. A command that cannot start or exits with an error has not told anything: it runs again at the card's next reading, and hostdeck's log says why it failed.
+- `notifications.json` is read when hostdeck starts and by `hostdeck plugin reload`. A file with a mistake, such as an unknown key or a `watch` without a `command`, is refused with a line in hostdeck's log, and what was loaded before stays in use. Neither the console page nor the API writes it.
+- Not yet there: the console saying whether the checks run, choosing a card to watch from the card itself, a webhook, and the system's notifications.
+
 ## Processes
 
 Add **Processes** under Pages & plugins → Add content to see the processes visible to hostdeck, including programs without listening ports. The overview counts processes; the detail page shows names, PID, parent PID, user, CPU and resident memory in MiB, plus the executable path, parent process name, start time, uptime, thread count and accumulated CPU time. Start times explicitly use UTC; durations use hours:minutes:seconds with total hours, including values above 24. Search matches names or PIDs, and the filters separate the console from other processes. Refresh reads a new snapshot and preserves the search and filter. The card caches its count for one minute; detail reads are on demand.

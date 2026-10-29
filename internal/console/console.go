@@ -98,7 +98,27 @@ type Served struct {
 	Err error
 }
 
-func Handler(cfg Config) http.Handler {
+// Console serves the console page and its API. It also reads cards for the
+// notifications, through the readings the overview keeps.
+type Console struct {
+	http.Handler
+	s *server
+}
+
+// ReadCard reads the card of the loaded plugin id as the overview does, and
+// says how long a reading is kept. ok is false when no loaded plugin of that
+// id has a card.
+func (c *Console) ReadCard(ctx context.Context, id string) (v card.View, interval time.Duration, ok bool) {
+	l := c.s.loaded()
+	for _, p := range l.Plugins {
+		if p.ID == id && p.Card != nil {
+			return l.cards.Get(ctx, p), time.Duration(p.Card.Interval), true
+		}
+	}
+	return card.View{}, 0, false
+}
+
+func Handler(cfg Config) *Console {
 	s := &server{cfg: cfg, observations: observation.New(filepath.Join(filepath.Dir(cfg.PluginDir), "data", "service-observations"))}
 	s.use(Loaded{cfg.Plugins, cfg.Broken, cfg.Served})
 	mux := http.NewServeMux()
@@ -138,7 +158,7 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/plugins/{id}/tasks/{task}/delete", s.serveTaskDelete)
 	mux.HandleFunc("GET /api/layout", s.serveLayoutGet)
 	mux.HandleFunc("POST /api/layout", s.serveLayout)
-	return local.Only(sameOriginAPI(noFraming(mux)))
+	return &Console{local.Only(sameOriginAPI(noFraming(mux))), s}
 }
 
 // entry is a sidebar entry as the page receives it.

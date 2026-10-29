@@ -2,7 +2,7 @@
 
 [简体中文](ARCHITECTURE.zh-CN.md)
 
-hostdeck is one Go program. It serves a web console on 127.0.0.1, reads plugins from a folder when it starts and after each change on its plugins page, and re-serves each embedded web UI on a port of its own. There is no database server. Reads happen when the page asks, except for the disk-history plugin's explicitly enabled hourly scans.
+hostdeck is one Go program. It serves a web console on 127.0.0.1, reads plugins from a folder when it starts and after each change on its plugins page, and re-serves each embedded web UI on a port of its own. There is no database server. Reads happen when the page asks, except for the disk-history plugin's explicitly enabled hourly scans and the cards `notifications.json` watches, which are read in the background at their interval.
 
 ## The pieces
 
@@ -40,9 +40,10 @@ Startup, in `main.go`:
 2. Load every `plugins/<id>/plugin.yaml`. A plugin that does not load is set aside with its error and shown later as an error card; the others load. The card uses the name written in the manifest when that name can be read. A variable that is not set is named on its own, and the file path is kept apart from the sentence.
 3. Listen on `--addr` (127.0.0.1 only, 4678 by default).
 4. Give each plugin with `page.proxy` a forwarding port, from the console's port + 1 up, remembered in `ports.json` so that it never moves and the browser keeps that service's cookies and storage.
-5. Serve.
+5. Read `notifications.json` and start reading, once a second, the cards it watches that are due.
+6. Serve.
 
-After the plugins page adds, disables or enables a plugin, the same request reads the plugins folder again, steps 2 and 4 included: a service that is no longer there, or whose `page.proxy` changed, stops serving its port, and a new one gets a port as above, or its own back. Cards are then asked anew. If reading fails, what was in use stays and the page says so. A folder changed by hand is read with `plugin reload`, at the next start or with the next change on the plugins page.
+After the plugins page adds, disables or enables a plugin, the same request reads the plugins folder again, steps 2 and 4 included: a service that is no longer there, or whose `page.proxy` changed, stops serving its port, and a new one gets a port as above, or its own back. Cards are then asked anew. If reading fails, what was in use stays and the page says so. A folder changed by hand is read with `plugin reload`, at the next start or with the next change on the plugins page. `notifications.json` is read again with it; a mistake there is logged and leaves the notifications that were loaded in use, without failing the reload.
 
 ## Packages
 
@@ -53,6 +54,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/plugin` | Reads and checks `plugin.yaml`: unknown fields are errors with their line. Holds the types every other package uses: `Text` (one string, or one per language), `Scalar`, thresholds, `${env:NAME}` expansion. |
 | `internal/card` | Turns a plugin's card into what the overview shows. `http` cards: GET, pick values with gjson paths, colour them with thresholds, hide secrets in errors. `exec` cards: run the program and read the card it prints. `Cache` keeps each card for its interval and answers "pending" when a card takes longer than the overview waits. |
 | `internal/detail` | Runs a plugin's detail program and its actions. Before an action runs, the detail is read again, and the action must still be offered for that item. |
+| `internal/notify` | Reads the cards `notifications.json` watches through the overview's card cache, and runs its command for a change two readings in a row have seen. Remembers what it told in `data/notifications/sent.json`. |
 | `internal/run` | Runs a plugin program in its folder with a deadline, caps its output, and kills everything it started: on Unix a process group (`Setpgid`, then `kill` of that group), which a child that calls `setsid` or otherwise daemonizes can leave; on Windows a Job Object, which keeps the whole tree. Decodes the JSON it prints strictly. |
 | `internal/dockerview` | Native Docker monitoring through a bounded CLI runner, local endpoint pinning and selected inspect fields. |
 | `internal/diskhistory` | Native disk-history operations, bounded rooted filesystem traversal, atomic JSON history, process-held writer locks, cancellable scans and opt-in hourly tracking. |
@@ -115,6 +117,8 @@ A plugin is a folder; its folder name is its ID. A folder whose name starts with
 
 **An action runs.** The first click arms the button, and a double click counts as one click. `POST /api/action/<id>` must come from the console's own Origin. Actions run one at a time per plugin: the detail program is run again, and the action runs only if it is still offered for that item. Once started, the action runs to its end or its 30 s limit even if the page is closed or reloaded, so that a restart is not stopped halfway.
 
+**A watched card changes.** Once a second, a loop started in `main` reads every watched card whose interval has passed since its last reading, through the same cache the overview reads, so an open overview and the loop share readings; a reading counts once. A card is `ok`, `warn`, `error`, or `unreadable` when its reading failed. When two readings in a row agree on a status other than the one the command was last told, the command runs in hostdeck's folder with `HOSTDECK_*` variables added to hostdeck's environment, for at most 30 s, its process tree ended after. When it succeeds, that status is written to `data/notifications/sent.json`, whole or not at all, so a restart does not tell it again. A failure is logged and the next reading tries again. A card that is `ok` when first seen is recorded without running the command. Stopping hostdeck ends a command under way. The README's Notifications section is the command's contract.
+
 ## Console layout
 
 The sidebar is one navigation landmark - the overview entry, the plugin list and Pages & plugins all sit inside it - inside a named complementary one, and the entry that is open carries `aria-current="page"`. Each of the three pages is a named region, labelled by the heading it carries. Headings step down one level at a time: the service view names itself with a real `h1`, a management row sits one level under its group's heading, and a built-in plugin one level under the built-in heading.
@@ -154,7 +158,8 @@ Some of what hostdeck reads and writes is depended on from outside its own code:
 | A plugin folder and its `plugin.yaml` | [PLUGINS.md](PLUGINS.md) |
 | What a plugin's programs are given and print | [PLUGINS.md](PLUGINS.md#programs) |
 | The CLI: its commands, flags, JSON result, `error.code` values and exit codes | [README](../README.md#cli-for-agents) |
-| The files in hostdeck's folder: `layout.json`, `ports.json`, `data/service-observations/`, the plugin folders with their dot and `.trash` names, and what a built-in plugin keeps in its own folder, such as disk history's `config.json` and `data/history.json` | This document |
+| What a notification command is given | [README](../README.md#notifications) |
+| The files in hostdeck's folder: `layout.json`, `ports.json`, `notifications.json`, `data/notifications/sent.json`, `data/service-observations/`, the plugin folders with their dot and `.trash` names, and what a built-in plugin keeps in its own folder, such as disk history's `config.json` and `data/history.json` | This document |
 
 Everything else is hostdeck's own and may change in any commit: `/api/*` and its JSON, the addresses under `/.well-known/hostdeck/` that the proxy answers, the page's markup, classes and dictionary keys, and the Go packages. The CLI and the agent prompts use `/api/*`, but always from the same hostdeck: the CLI is to be the same version as the console it talks to, and the console writes the prompts itself.
 
@@ -164,7 +169,7 @@ From the first release, the first `v*` tag:
 
 - **Plugins.** Within `schema: 1`, the manifest and what programs print only gain optional fields and values; nothing is removed, renamed or given another meaning. Since a field hostdeck does not know is an error, an older hostdeck refuses a plugin that uses a newer field, naming its line, rather than running half of it. A change that cannot be made this way takes `schema: 2`, and the release that brings it says how to move a plugin. A manifest of a schema hostdeck does not read is refused with the schema it does read (`TestInvalidManifestsAreRejectedNamingTheProblem`).
 - **The CLI.** The commands, flags, exit codes, and the keys and codes the README names are kept; new ones may be added. `error.message` and `data.plugin` are not part of it. `TestTheReadmeNamesEveryErrorCodeTheCLIAnswersWith` and `TestTheReadmeNamesEveryKeyTheCLIPutsInData` keep the README's lists complete.
-- **Files.** A release reads what earlier releases wrote in hostdeck's folder, and may write a file back in its own format when it saves it; running an earlier release on that folder afterwards is not supported. `layout.json` and `ports.json` are read leniently, so a key a release does not know is ignored. Disk history's `data/history.json` carries `version: 1` and refuses any other, so a new version there has to read the old one first. A forwarding port stays with its plugin's ID.
+- **Files.** A release reads what earlier releases wrote in hostdeck's folder, and may write a file back in its own format when it saves it; running an earlier release on that folder afterwards is not supported. `layout.json` and `ports.json` are read leniently, so a key a release does not know is ignored. Disk history's `data/history.json` and the notifications' `data/notifications/sent.json` carry `version: 1` and refuse any other, so a new version there has to read the old one first. `notifications.json` is read strictly, as a manifest is, so it only gains optional keys. A forwarding port stays with its plugin's ID.
 
 ## Security model
 
@@ -183,6 +188,7 @@ Everything rests on hostdeck being reachable from this machine only.
 - Creating, editing or deleting a scheduled task requires the console Origin and that same owner lock. It rewrites only the enabled, loaded native tasks plugin's `tasks.json`, then refreshes that process's schedule without catching up missed runs and without restarting. The form writes the name, enabled flag, one schedule, the timeout and the current platform's argv. It keeps `exec.env`, `exec.dir` and the other platform's argv. A failed validation does not change the file. Deleting a task leaves its run history and cancels a running one. A second console, corrupt state or unconfirmed cleanup refuses the write. Reading a task does not take the lock. A hand-edited file still loads through plugin reload.
 - `${env:NAME}` values are sent to the service but replaced by `***` in errors, also when quoted or URL-escaped. A token is never written into `plugin.yaml`.
 - A plugin program cannot outlive its deadline: its whole process tree is ended.
+- `notifications.json` and its command are written on this machine only, by hand or by an agent; no API call writes either. Reading a watched card in the background is the read the overview makes. The command runs with your rights, as a plugin's program does, for at most 30 s with its process tree ended; it cannot be `@hostdeck`.
 - The jobs plugin's restart and run actions are that plugin's own programs, as the disk plugin's open action is. They do not give a web page a new way to write a command. An action runs only when the detail, read again at that moment, still offers it, and only for a label or service name made of letters, digits, dots, underscores and hyphens. The whole name must match, including any trailing newline. Windows restart is offered only for a running or paused service that accepts Stop and can be started; disabled services and transition states offer no action. The deadline ends `launchctl` or `sc.exe`. The service itself is not in that process tree, so it is not ended with them.
 - `GET /api/detail/{id}?item={id}` reads one detail item. It is a console read with the same loopback and `Sec-Fetch-Site` rules as other GETs, checks no Origin, and writes nothing. The item id is passed only as the environment variable `HOSTDECK_DETAIL_ITEM` into that plugin's own detail program. It cannot name a file path; the jobs program resolves paths from the jobs it has already listed. A newline or an id longer than 256 bytes is refused before the program runs.
 
@@ -238,7 +244,7 @@ Drawer keyboard tests wait for the initial workspace and the open animation, the
 
 ## Not there yet
 
-Background checks and notifications (M2), further port-view work beyond the read-only listeners plugin (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
+The rest of M2: the console saying whether the checks run, choosing a watched card on the card, a webhook and the system's notifications; further port-view work beyond the read-only listeners plugin (M1), a desktop window (M3), and Starlark plugins with declared permissions (M4). See the roadmap in the README.
 
 Detail programs may declare named groups and an optional compact presentation. The console filters the returned items locally by name/ID and group; session-only choices live in page state, with no new API or stored file. Invalid group declarations refuse the reading instead of silently dropping items. Older plugins need no changes; new optional detail fields require a hostdeck version that accepts them.
 

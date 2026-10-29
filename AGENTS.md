@@ -75,17 +75,18 @@ Built:
 
 - M0 apart from the release work below: the console, embedding with clear cache and notifications, cards, details and actions, the saved layout, the plugins page with editing, links and the trash, and the CLI with its agent prompts. The layout and CRUD pass and the UI/UX pass are finished, and DESIGN.md writes the design system down.
 - M1: background jobs (launchd, Windows services) with run, restart and their logs; every TCP listener, with a confirmed Stop; services started from a shell, with stop and restart; Docker containers, with start and restart.
+- M2's first slice: the cards `notifications.json` names are read in the background, and a change two readings in a row have seen runs the user's command with `HOSTDECK_*` variables (README, Notifications).
 - Outside the roadmap: disk history, a read-only process list, scheduled script tasks, and service observations, which follow a service's logs and capture a restarted service's output.
 
 Left:
 
 - M0: a release workflow run by a `v*` tag; README notes on Gatekeeper (macOS) and SmartScreen (Windows) for the unsigned program; the size and memory report in CI.
-- M2 comes next, as the README's roadmap now has it: watched cards, checked in the background, notifying first through a command. UDP listeners (M1) and any other new view of this machine wait behind it.
+- The rest of M2, in this order: the console saying whether the checks run and when each watched card was last checked; a Watch toggle in a card's More actions that writes only the watch list, with that exception added to the README's Not planned in the same slice (the owner agreed on 2026-10-29); then a webhook and the system's notifications. UDP listeners (M1) and any other new view of this machine wait behind it.
 - M3 and M4, as the README's roadmap has them.
-- Paused until review, as the README's roadmap says: scheduled script tasks, restarting a service started from a shell, and service observations receive fixes but no new abilities.
+- Paused until review, as the README's roadmap says: scheduled script tasks, restarting a service started from a shell, and service observations receive fixes but no new abilities. The review falls on 2026-11-12, two weeks after M2's first slice reached main.
 
 Known problems:
 
-- Never tried by hand: Windows at all, `examples/disk/card.ps1`, dragging a real address from the browser, LAN host names such as `nas.local`, a real push delivery, Firefox and Safari, a real Docker start or restart, and capturing a real service's output after a restart.
+- Never tried by hand: Windows at all, `examples/disk/card.ps1`, dragging a real address from the browser, LAN host names such as `nas.local`, a notification command on Windows, a real push delivery, Firefox and Safari, a real Docker start or restart, and capturing a real service's output after a restart.
 - CI failures with no established cause, where a second occurrence is worth a look: `TestOneClickCopiesTheCompletePromptIntoTheBrowserClipboard` read an empty clipboard in Edge on macOS (run 40235433558); the held-layout timer-discovery fixture advanced 10 ms instead of less than 1 ms (run 40761683272); an overview-add navigation timed out in Chrome on Windows (run 40760679303); `TestTheServiceToolbarKeepsThePageWhenItsMorePanelCloses` waited 10 s for a console that had started but neither logged nor exited, in Edge on macOS, after passing in Chrome in the same shard, and passed when rerun (run 40875533692).
 - A built-in plugin already installed keeps the files it was copied with until its folder is replaced, so an installed jobs or disk plugin does not receive later script changes by itself.

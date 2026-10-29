@@ -97,6 +97,12 @@ func output(ctx context.Context, dir string, command, env []string) ([]byte, err
 	return external(ctx, Command{Dir: dir, Args: command, Env: env})
 }
 
+// External runs c as a plugin's program runs, without @hostdeck: ended with
+// its process tree when ctx ends, its output capped.
+func External(ctx context.Context, c Command) ([]byte, error) {
+	return external(ctx, c)
+}
+
 func external(ctx context.Context, c Command) ([]byte, error) {
 	if len(c.Args) == 0 {
 		return nil, errors.New("empty plugin command")

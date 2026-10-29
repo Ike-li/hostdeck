@@ -160,6 +160,41 @@ card:
 
 发布第一个版本之前，清单格式还可能变。[docs/PLUGINS.zh-CN.md](docs/PLUGINS.zh-CN.md) 写全了：`plugin.yaml` 的每个字段，hostdeck 怎么运行插件的程序，程序又该打印什么。
 
+## 推送
+
+你关注的卡片有变化时，hostdeck 可以运行你指定的一条命令，没有打开控制台页面时也一样。在 hostdeck 的文件夹里放一个 `notifications.json`：
+
+```json
+{
+  "watch": ["grafana", "jobs"],
+  "command": ["sh", "notify.sh"]
+}
+```
+
+```sh
+# notify.sh，和 notifications.json 放在一起：发一条 macOS 通知
+osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDECK_TO\" with title \"hostdeck\""
+```
+
+- `watch` 列出插件 ID，也就是插件文件夹的名字。只有这些卡片会在后台读取，各按自己的 `interval`。没有加载的插件、没有卡片的插件会被跳过。
+- 卡片的状态是 `ok`、`warn`、`error`，读取失败时是 `unreadable`。没设阈值的卡片只要读得到就是 `ok`。
+- 连续两次读数都看到的变化才算数，恢复也一样，所以读数之间来回跳的卡片什么都不会推。第一次读到就是 `ok` 的卡片也不推。
+- 命令在 hostdeck 的文件夹里运行，不经过 shell，最多 30 秒，到时连同它启动的所有进程一起结束。Windows 上用 `windows` 代替 `command`，和 `plugin.yaml` 一样。它拿到 hostdeck 的环境变量，再加上这些：
+
+| 变量 | 值 |
+| --- | --- |
+| `HOSTDECK_ID` | 插件的 ID |
+| `HOSTDECK_NAME` | 卡片的英文名称，只有一个名称时就是它 |
+| `HOSTDECK_NAME_ZH_CN` | 卡片的简体中文名称，没有时同上 |
+| `HOSTDECK_FROM` | 上次告诉命令的这张卡片的状态：第一次读到就正常的卡片是 `ok`，两者都没有时为空 |
+| `HOSTDECK_TO` | 连续两次读数都看到的状态 |
+| `HOSTDECK_VALUE` | 卡片的值；`unreadable` 时为空 |
+| `HOSTDECK_TIME` | 让命令运行的那次读数的读取时间，UTC，例如 `2026-10-29T13:01:00Z` |
+
+- 告诉过命令什么，记在 `data/notifications/sent.json` 里，重启后不会再推一次。命令启动不了或以错误退出，就算没推出去：卡片下次读取时会再运行，失败原因写在 hostdeck 的日志里。
+- `notifications.json` 在 hostdeck 启动时和 `hostdeck plugin reload` 时读取。文件有错，比如有不认识的键，或者写了 `watch` 却没写 `command`，就拒绝并在日志里写一行，之前加载的继续生效。控制台页面和 API 都不写这个文件。
+- 还没有的：控制台上显示检查是否在正常运行、在卡片上直接选择关注、Webhook 和系统通知。
+
 ## 进程
 
 在“页面与插件 → 添加内容”中添加“进程”，查看 hostdeck 可见的进程，包括没有监听端口的程序。概览显示进程数量；详情显示进程名、PID、父进程 PID、用户、CPU 和以 MiB 表示的驻留内存，并补充可执行文件路径、父进程名称、启动时间、运行时长、线程数和累计 CPU 时间。启动时间明确使用 UTC；时长按“时:分:秒”显示，小时可超过 24。可按名称或 PID 搜索，筛选本控制台或其他进程；刷新读取新的快照并保留搜索与筛选。概览数量缓存一分钟，详情按需读取。
