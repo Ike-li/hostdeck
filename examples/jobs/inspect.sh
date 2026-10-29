@@ -40,7 +40,7 @@ jobs_config() {
   while [ "$index" -lt "$count" ]; do
    if argument=$(jobs_plist "ProgramArguments.$index" string && printf _); then
     argument=${argument%_}
-    quoted=$(printf '%s' "$argument" | sed "s/'/'\\\\''/g")
+    quoted=${argument//\'/\'\\\'\'}
     jobs_command="${jobs_command}${jobs_command:+ }'$quoted'"
    else
     add_text_field Configuration "配置读取" 'Could not read the configured arguments.' '读不到配置的命令参数。'

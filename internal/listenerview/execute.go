@@ -28,7 +28,7 @@ func Execute(ctx context.Context, dir string, args []string, r run.Runner) ([]by
 		return nil, errors.New("unknown listeners command")
 	}
 	switch args[1] {
-	case "card", "detail":
+	case "card", "detail", "sources":
 		if len(args) != 2 {
 			return nil, errors.New("unknown listeners command")
 		}
@@ -55,7 +55,9 @@ func Execute(ctx context.Context, dir string, args []string, r run.Runner) ([]by
 	if args[1] == "card" {
 		return Card(sockets, marks), nil
 	}
-	sockets = enrichSockets(sockets, defaultInspector)
+	if args[1] != "sources" {
+		sockets = enrichSockets(sockets, defaultInspector)
+	}
 	return Detail(sockets, marks), nil
 }
 

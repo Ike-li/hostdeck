@@ -50,7 +50,7 @@ jobs_error() {
 	exit 0
 }
 
-jobs_escape() {
+jobs_escape_awk() {
 	# The sentinel preserves trailing newlines through awk's record splitting.
 	printf '%s_' "$1" | LC_ALL=C awk '
 		BEGIN { for (i = 1; i < 32; i++) escaped[sprintf("%c", i)] = sprintf("\\u%04x", i) }
@@ -67,19 +67,73 @@ jobs_escape() {
 	'
 }
 
+# macOS /bin/sh is Bash 3.2. Keep short JSON strings in the shell instead of
+# starting awk for every field. Large log bodies still use the streaming encoder.
+jobs_escape() {
+ if [ -z "${BASH_VERSION-}" ] || [ "${#1}" -gt 8192 ]; then
+  jobs_escape_awk "$1"
+  return
+ fi
+ local text=$1
+ text=${text//\\/\\\\}
+ text=${text//\"/\\\"}
+ text=${text//$'\001'/\\u0001}
+ text=${text//$'\002'/\\u0002}
+ text=${text//$'\003'/\\u0003}
+ text=${text//$'\004'/\\u0004}
+ text=${text//$'\005'/\\u0005}
+ text=${text//$'\006'/\\u0006}
+ text=${text//$'\007'/\\u0007}
+ text=${text//$'\010'/\\u0008}
+ text=${text//$'\011'/\\u0009}
+ text=${text//$'\012'/\\u000a}
+ text=${text//$'\013'/\\u000b}
+ text=${text//$'\014'/\\u000c}
+ text=${text//$'\015'/\\u000d}
+ text=${text//$'\016'/\\u000e}
+ text=${text//$'\017'/\\u000f}
+ text=${text//$'\020'/\\u0010}
+ text=${text//$'\021'/\\u0011}
+ text=${text//$'\022'/\\u0012}
+ text=${text//$'\023'/\\u0013}
+ text=${text//$'\024'/\\u0014}
+ text=${text//$'\025'/\\u0015}
+ text=${text//$'\026'/\\u0016}
+ text=${text//$'\027'/\\u0017}
+ text=${text//$'\030'/\\u0018}
+ text=${text//$'\031'/\\u0019}
+ text=${text//$'\032'/\\u001a}
+ text=${text//$'\033'/\\u001b}
+ text=${text//$'\034'/\\u001c}
+ text=${text//$'\035'/\\u001d}
+ text=${text//$'\036'/\\u001e}
+ text=${text//$'\037'/\\u001f}
+ printf '%s' "$text"
+}
+
 # jobs_apply reads one launchctl job listing already in $1.
 # It sets jobs_state, jobs_code, jobs_signal, jobs_program, jobs_runs,
 # jobs_path, jobs_pid, jobs_stdout and jobs_stderr.
 jobs_apply() {
-	jobs_path=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*path = //p' | head -n 1)
-	jobs_pid=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*pid = //p' | head -n 1)
-	jobs_stderr=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*stderr path = //p' | head -n 1)
-	jobs_state=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*state = //p' | head -n 1)
-	jobs_code=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*last exit code = //p' | head -n 1)
-	jobs_signal=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*last terminating signal = //p' | head -n 1)
-	jobs_program=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*program = //p' | head -n 1)
-	jobs_runs=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*runs = //p' | head -n 1)
-	jobs_stdout=$(printf '%s\n' "$1" | sed -n 's/^[[:space:]]*stdout path = //p' | head -n 1)
+ jobs_path= jobs_pid= jobs_stderr= jobs_state= jobs_code= jobs_signal=
+ jobs_program= jobs_runs= jobs_stdout=
+ local line
+ while IFS= read -r line; do
+  line=${line#"${line%%[![:space:]]*}"}
+  case "$line" in
+   'path = '*) [ -n "$jobs_path" ] || jobs_path=${line#'path = '} ;;
+   'pid = '*) [ -n "$jobs_pid" ] || jobs_pid=${line#'pid = '} ;;
+   'stderr path = '*) [ -n "$jobs_stderr" ] || jobs_stderr=${line#'stderr path = '} ;;
+   'state = '*) [ -n "$jobs_state" ] || jobs_state=${line#'state = '} ;;
+   'last exit code = '*) [ -n "$jobs_code" ] || jobs_code=${line#'last exit code = '} ;;
+   'last terminating signal = '*) [ -n "$jobs_signal" ] || jobs_signal=${line#'last terminating signal = '} ;;
+   'program = '*) [ -n "$jobs_program" ] || jobs_program=${line#'program = '} ;;
+   'runs = '*) [ -n "$jobs_runs" ] || jobs_runs=${line#'runs = '} ;;
+   'stdout path = '*) [ -n "$jobs_stdout" ] || jobs_stdout=${line#'stdout path = '} ;;
+  esac
+ done <<EOF
+$1
+EOF
 }
 
 # jobs_read sets the same variables as jobs_apply, or stops with an error.

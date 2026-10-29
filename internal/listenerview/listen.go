@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Ike-li/hostdeck/internal/process"
 )
 
 // Socket is one TCP listen endpoint.
@@ -40,14 +42,13 @@ func enrichSockets(sockets []Socket, inspect inspector) []Socket {
 	if inspect == nil {
 		return sockets
 	}
-	cache := make(map[int]inspection)
+	pids := make([]int, 0, len(sockets))
+	for _, socket := range sockets {
+		pids = append(pids, socket.PID)
+	}
+	readings := process.ReadPIDs(pids, inspect)
 	for i := range sockets {
-		pid := sockets[i].PID
-		in, ok := cache[pid]
-		if !ok {
-			in = inspect(pid)
-			cache[pid] = in
-		}
+		in := readings[sockets[i].PID]
 		if in.KnowsDir {
 			sockets[i].Dir = in.Dir
 			sockets[i].KnowsDir = true

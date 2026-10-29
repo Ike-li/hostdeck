@@ -18,6 +18,7 @@ import (
 	"github.com/Ike-li/hostdeck/internal/detail"
 	"github.com/Ike-li/hostdeck/internal/observation"
 	"github.com/Ike-li/hostdeck/internal/plugin"
+	"github.com/Ike-li/hostdeck/internal/run"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -102,6 +103,21 @@ func (s *server) serveObservationCreate(w http.ResponseWriter, r *http.Request) 
 		s.observationError(w, 409, err)
 		return
 	}
+	// Read-only openings already resolved and verified the source. Return the
+	// first bounded reading now instead of resolving the same source again in
+	// a second request. Action sessions still establish their positions at Begin.
+	if req.Action == "" {
+		snapshot, err := s.observations.Read(r.Context(), id, "", target)
+		if err != nil {
+			s.observationError(w, 500, err)
+			return
+		}
+		writeJSON(w, struct {
+			ID       string               `json:"id"`
+			Snapshot observation.Snapshot `json:"snapshot"`
+		}{id, snapshot})
+		return
+	}
 	writeJSON(w, map[string]string{"id": id})
 }
 func (s *server) serveObservationRead(w http.ResponseWriter, r *http.Request) {
@@ -158,11 +174,11 @@ func (s *server) serveOperations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, recent)
 }
 func (s *server) resolveObservation(ctx context.Context, p plugin.Plugin, kind, item string, bound observation.Identity) (observation.Target, error) {
-	view := detail.ReadItem(ctx, p, item)
-	if view.Error != nil {
-		return observation.Target{}, fmt.Errorf("%s: %s", view.Error.Code, view.Error.Detail)
+	listing := readObservationSources(ctx, p, kind, item, 0)
+	if listing.Error != nil {
+		return observation.Target{}, fmt.Errorf("%s: %s", listing.Error.Code, listing.Error.Detail)
 	}
-	for _, it := range view.Items {
+	for _, it := range listing.Items {
 		if it.ID != item {
 			continue
 		}
@@ -240,7 +256,7 @@ func (s *server) resolveObservation(ctx context.Context, p plugin.Plugin, kind, 
 			if observationKind(jobPlugin) != "jobs" {
 				continue
 			}
-			jobs := detail.Read(ctx, jobPlugin)
+			jobs := readObservationSources(ctx, jobPlugin, "jobs", "", target.Identity.PID)
 			if jobs.Error != nil {
 				continue
 			}
@@ -270,4 +286,42 @@ func textEnglish(t plugin.Text) string {
 		return t.All
 	}
 	return t.ByLang["en"]
+}
+
+// readObservationSources is private to verified built-ins. It omits unrelated
+// presentation fields and log bodies. Windows jobs retain their event reader.
+func readObservationSources(ctx context.Context, p plugin.Plugin, kind, item string, pid int) detail.View {
+	if kind == "jobs" && runtime.GOOS != "darwin" {
+		if item != "" {
+			return detail.ReadItem(ctx, p, item)
+		}
+		return detail.Read(ctx, p)
+	}
+	if len(item) > 256 || strings.ContainsAny(item, "\r\n") {
+		return detail.View{Error: &card.Error{Code: "bad_request", Detail: "item"}}
+	}
+	ctx, cancel := context.WithTimeout(ctx, detail.ReadTimeout)
+	defer cancel()
+	filter := ""
+	if pid > 1 {
+		filter = strconv.Itoa(pid)
+	}
+	var printed struct {
+		Items        []detail.Item  `json:"items"`
+		Presentation string         `json:"presentation"`
+		Groups       []detail.Group `json:"groups"`
+		Note         plugin.Text    `json:"note"`
+		Error        plugin.Text    `json:"error"`
+	}
+	argv := []string{"@hostdeck", kind, "sources"}
+	if kind == "jobs" {
+		argv = []string{"sh", "observation.sh", item, filter}
+	}
+	if err := run.JSON(ctx, p.Dir, argv, &printed); err != nil {
+		return detail.View{Error: card.CommandError(ctx, err)}
+	}
+	if !printed.Error.IsZero() {
+		return detail.View{Error: &card.Error{Code: "reported", Text: printed.Error}}
+	}
+	return detail.View{Items: printed.Items}
 }

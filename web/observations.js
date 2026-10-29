@@ -76,6 +76,14 @@ export function observationPanel(p, item, view, saved = null) {
       if (!model.id) {
         const session = await postJSON(`/api/observations/${encodeURIComponent(p.id)}`, { item: item.id,expected:model.initialIdentity });
         model.id = session.id;
+        if (session.snapshot) {
+          if (!visible()) return;
+          model.cursor = session.snapshot.cursor;
+          model.paint(session.snapshot);
+          model.failures = 0;
+          warning.textContent = '';
+          return;
+        }
       }
       if (!visible()) return;
       const resp = await fetch(`/api/observations/session/${encodeURIComponent(model.id)}/read`, { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cursor:model.cursor}),cache: 'no-store', signal: model.abort.signal });

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Ike-li/hostdeck/internal/catalog"
+	"github.com/Ike-li/hostdeck/internal/detail"
 	"github.com/Ike-li/hostdeck/internal/listenerview"
 	"github.com/Ike-li/hostdeck/internal/observation"
 	"github.com/Ike-li/hostdeck/internal/run"
@@ -90,8 +91,16 @@ esac
 		}
 		return w
 	}
-	w := request("POST", "/api/observations/jobs", `{"item":"com.example.test","action":"start"}`)
-	var created struct{ ID string }
+	w := request("POST", "/api/observations/jobs", `{"item":"com.example.test"}`)
+	var created struct {
+		ID       string
+		Snapshot observation.Snapshot
+	}
+	json.Unmarshal(w.Body.Bytes(), &created)
+	if created.Snapshot.ID != created.ID || !strings.Contains(created.Snapshot.Log, "old") || created.Snapshot.State != "idle" {
+		t.Fatalf("creating an observation must return its first reading: %s", w.Body.String())
+	}
+	w = request("POST", "/api/observations/jobs", `{"item":"com.example.test","action":"start"}`)
 	json.Unmarshal(w.Body.Bytes(), &created)
 	request("POST", "/api/action/jobs", fmt.Sprintf(`{"item":"com.example.test","action":"start","observation":%q}`, created.ID))
 	f, _ := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
@@ -203,5 +212,82 @@ func TestANativeObservationRejectsAListingIdentityThatHasAlreadyChanged(t *testi
 	h.ServeHTTP(response, req)
 	if response.Code != http.StatusConflict {
 		t.Fatalf("changed listing: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestOpeningAJobObservationDoesNotReadItsCommandArgumentsOrLogThroughTheDetailScript(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd source resolver")
+	}
+	root := t.TempDir()
+	plugins := filepath.Join(root, "plugins")
+	os.Mkdir(plugins, 0700)
+	installed, err := catalog.Add(examples.Files, plugins, "jobs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := plugin.ReadFolder(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "job.log")
+	os.WriteFile(logPath, []byte("one line\n"), 0600)
+	config := filepath.Join(root, "job.plist")
+	os.WriteFile(config, []byte(`<?xml version="1.0"?><plist version="1.0"><dict><key>ProgramArguments</key><array><string>/bin/echo</string></array></dict></plist>`), 0600)
+	bin := filepath.Join(root, "bin")
+	os.Mkdir(bin, 0700)
+	os.WriteFile(filepath.Join(bin, "launchctl"), []byte(fmt.Sprintf(`#!/bin/sh
+case "$2" in */com.example.test) printf '\tstate = running\n\tpid = %%s\n\tpath = %%s\n\tstdout path = %%s\n\tstderr path = %%s\n' %d %q %q %q;;*) printf 'services = {\n%d 0 com.example.test\n}\n';;esac
+`, os.Getpid(), config, logPath, logPath, os.Getpid())), 0700)
+	// Source discovery needs no plist when launchd already supplies both paths.
+	probed := filepath.Join(root, "config-probed")
+	os.WriteFile(filepath.Join(bin, "plutil"), []byte(fmt.Sprintf("#!/bin/sh\ntouch %q\nprintf 'configuration was re-read' >&2\nexit 71\n", probed)), 0700)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s := &server{cfg: Config{PluginDir: plugins}}
+	s.use(Loaded{Plugins: []plugin.Plugin{p}})
+	target, err := s.resolveObservation(context.Background(), p, "jobs", "com.example.test", observation.Identity{})
+	if err != nil || len(target.Files) != 2 || target.Reason != "" || target.State != "running" {
+		t.Fatalf("target %+v err %v", target, err)
+	}
+	if _, err := os.Stat(probed); !os.IsNotExist(err) {
+		t.Fatal("opening a log re-read the full task configuration")
+	}
+	// A normal detail read still uses the full configuration and reports failure.
+	full := detail.Read(context.Background(), p)
+	data, _ := json.Marshal(full)
+	if !strings.Contains(string(data), "Could not read the task configuration") {
+		t.Fatalf("fixture did not reject full configuration reads: %s", data)
+	}
+}
+
+func TestAProcessLogLookupInspectsOnlyTheJobListedForThatPID(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd source resolver")
+	}
+	root := t.TempDir()
+	plugins := filepath.Join(root, "plugins")
+	os.Mkdir(plugins, 0700)
+	installed, err := catalog.Add(examples.Files, plugins, "jobs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := plugin.ReadFolder(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(root, "bin")
+	os.Mkdir(bin, 0700)
+	fake := fmt.Sprintf(`#!/bin/sh
+case "$2" in
+ */com.example.target) printf '\tstate = running\n\tpid = %d\n\tstdout path = /tmp/target.log\n\tstderr path = /tmp/target.log\n';;
+ */com.example.unrelated) printf 'unrelated job was inspected' >&2;exit 73;;
+ *) printf 'services = {\n%d 0 com.example.target\n%d 0 com.example.unrelated\n}\n';;
+esac
+`, os.Getpid(), os.Getpid(), os.Getpid()+1)
+	os.WriteFile(filepath.Join(bin, "launchctl"), []byte(fake), 0700)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	view := readObservationSources(context.Background(), p, "jobs", "", os.Getpid())
+	if view.Error != nil || len(view.Items) != 1 || view.Items[0].ID != "com.example.target" {
+		t.Fatalf("source list %+v", view)
 	}
 }

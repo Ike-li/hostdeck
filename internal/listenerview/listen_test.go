@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -316,9 +317,9 @@ func TestCommandTruncationAt512RunesWithBilingualEllipsis(t *testing.T) {
 }
 
 func TestEnrichSocketsCachesInspectionByPID(t *testing.T) {
-	called := 0
+	var called atomic.Int32
 	fakeInspect := func(pid int) inspection {
-		called++
+		called.Add(1)
 		return inspection{
 			Dir:         "/var/run",
 			KnowsDir:    true,
@@ -336,8 +337,8 @@ func TestEnrichSocketsCachesInspectionByPID(t *testing.T) {
 		t.Fatalf("sockets %d", len(enriched))
 	}
 	// PID 100 called once, PID 200 called once -> called == 2
-	if called != 2 {
-		t.Fatalf("inspect called %d times, want 2 (cached per PID)", called)
+	if called.Load() != 2 {
+		t.Fatalf("inspect called %d times, want 2 (cached per PID)", called.Load())
 	}
 	if !enriched[0].KnowsDir || enriched[0].Dir != "/var/run" || enriched[0].CommandLine != "proxy" {
 		t.Fatalf("enriched[0] %+v", enriched[0])

@@ -31,7 +31,7 @@ func Execute(ctx context.Context, dir string, args []string, r run.Runner) ([]by
 		return nil, errors.New("unknown manual command")
 	}
 	switch args[1] {
-	case "card", "detail":
+	case "card", "detail", "sources":
 		if len(args) != 2 {
 			return nil, errors.New("unknown manual command")
 		}
@@ -50,7 +50,9 @@ func Execute(ctx context.Context, dir string, args []string, r run.Runner) ([]by
 		}
 		return readingError(err)
 	}
-	enrichListed(listeners, procs)
+	if args[1] != "sources" {
+		enrichListed(listeners, procs)
+	}
 	if args[1] == "card" {
 		return Card(listeners, procs), nil
 	}

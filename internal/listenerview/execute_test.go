@@ -188,3 +188,32 @@ func TestARealMachineCardIsACountOrBilingualErrorNeverBoth(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceDiscoveryListsTheCurrentProcessWithoutReadingUnrelatedDirectories(t *testing.T) {
+	if !unixReader {
+		t.Skip("Unix command boundary")
+	}
+	old := defaultInspector
+	defaultInspector = func(int) inspection {
+		t.Error("source discovery inspected command/directory details")
+		return inspection{}
+	}
+	defer func() { defaultInspector = old }()
+	runner := func(ctx context.Context, c run.Command) ([]byte, error) {
+		if strings.Contains(c.Args[0], "lsof") {
+			return []byte("p55\ncnode\nn127.0.0.1:3000\n"), nil
+		}
+		return []byte("55 1 00:01:00 node\n"), nil
+	}
+	data, err := Execute(context.Background(), t.TempDir(), []string{"listeners", "sources"}, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc detailDoc
+	if err = json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Items) != 1 || field(doc.Items[0], "PID") != "55" {
+		t.Fatalf("source list %s", data)
+	}
+}

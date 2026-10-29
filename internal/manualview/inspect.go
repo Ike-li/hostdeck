@@ -1,6 +1,10 @@
 package manualview
 
-import "time"
+import (
+	"time"
+
+	"github.com/Ike-li/hostdeck/internal/process"
+)
 
 // inspection is what could be read about one listener. A false Knows field
 // means that part was not read, not that it is empty.
@@ -17,12 +21,18 @@ type inspection struct {
 }
 
 func enrichListed(listeners map[int]Listener, procs map[int]Proc) {
-	for _, h := range selectHits(listeners, procs) {
+	hits := selectHits(listeners, procs)
+	pids := make([]int, 0, len(hits))
+	for _, h := range hits {
+		pids = append(pids, h.pid)
+	}
+	readings := process.ReadPIDs(pids, inspect)
+	for _, h := range hits {
 		proc, ok := procs[h.pid]
 		if !ok {
 			continue
 		}
-		in := inspect(h.pid)
+		in := readings[h.pid]
 		if in.KnowsDir {
 			proc.Dir, proc.KnowsDir = in.Dir, true
 		}

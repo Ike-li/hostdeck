@@ -77,3 +77,53 @@ window.fixtureReady=true;
 	evaluate(`responses.at(-1)(true);responses=[];box.open=false`)
 	poll(`pending===0&&!box.open`)
 }
+
+func TestOpeningAnObservationShowsTheInitialReadingWithoutReadingItsSourceAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser test")
+	}
+	mux := http.NewServeMux()
+	mux.Handle("GET /", http.FileServerFS(web.Files))
+	mux.HandleFunc("GET /fixture", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<!doctype html><html><body><script type="module">
+import {observationPanel} from '/observations.js';
+import {state} from '/state.js';
+state.dict=await (await fetch('/i18n/en.json')).json();state.lang='en';state.current={id:'jobs'};
+window.creates=0;window.reads=0;window.timers=[];
+const nativeFetch=window.fetch;
+window.fetch=(url,init)=>{
+ if(String(url).startsWith('/api/observations/session/')){
+  reads++;window.sentCursor=JSON.parse(init.body).cursor;
+  return Promise.resolve(new Response(JSON.stringify({cursor:'second',state:'running',log:'next line',reset:false})));
+ }
+ if(String(url).startsWith('/api/observations/')){
+  creates++;
+  return Promise.resolve(new Response(JSON.stringify({id:'session',snapshot:{cursor:'first',state:'running',log:'first line\n',reset:true,collectedAt:'2026-10-29T00:00:00Z'}})));
+ }
+ return nativeFetch(url,init);
+};
+const nativeTimeout=window.setTimeout;
+window.setTimeout=(fn,delay,...args)=>{if(delay===1000){timers.push(fn);return -timers.length;}return nativeTimeout(fn,delay,...args)};
+const view=document.createElement('div');document.body.append(view);window.box=observationPanel({id:'jobs'},{id:'one'},view);view.append(box);box.open=true;
+</script></body></html>`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	ctx := openBrowser(t, "en")
+	do(t, ctx, chromedp.Navigate(srv.URL+"/fixture"))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`window.box&&box.querySelector('.observation-log').textContent==='first line\n'&&timers.length===1`)); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`creates===1&&reads===0&&box.querySelector('.observation-time').textContent.includes('2026')`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !initial {
+		t.Fatal("opening a log repeated the source lookup before showing its first reading")
+	}
+	do(t, ctx, chromedp.Evaluate[chromedp.Void](`timers.shift()()`))
+	if _, err := chromedp.Run(ctx, chromedp.Poll[bool](`reads===1&&sentCursor==='first'&&box.querySelector('.observation-log').textContent==='first line\nnext line'`)); err != nil {
+		t.Fatal(err)
+	}
+}

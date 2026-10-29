@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Ike-li/hostdeck/internal/detail"
 )
@@ -226,5 +227,38 @@ func TestUnreadableOptionalFilesDoNotChangeJobHealth(t *testing.T) {
 	opened, _ := json.Marshal(one.Items[0].Fields)
 	if !strings.Contains(string(opened), "Could not read log") || !strings.Contains(string(opened), "读不到日志") {
 		t.Fatalf("opened log hid the unreadable file: %s", opened)
+	}
+}
+
+func TestAJobListDoesNotStartATextUtilityForEachField(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS shell reader")
+	}
+	bin := t.TempDir()
+	record := filepath.Join(bin, "text-calls")
+	for _, name := range []string{"awk", "sed"} {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := fmt.Sprintf("#!/bin/sh\nprintf 'call\\n' >> %q\nexec %q \"$@\"\n", record, path)
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	withJobInfo(t, "\tstate = running\n\tpid = 4242\n\tprogram = /bin/echo\n\tlast exit code = 0\n\truns = 3")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	v := detail.Read(ctx, load(t, "jobs"))
+	if v.Error != nil || len(v.Items) != 1 {
+		t.Fatalf("detail %+v", v)
+	}
+	calls, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(calls), "call\n"); n > 1 {
+		t.Fatalf("started %d awk/sed processes for one job; want only the domain parser", n)
 	}
 }
