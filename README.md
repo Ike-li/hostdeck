@@ -211,6 +211,15 @@ A webhook is posted the same change as JSON, instead of the command or beside it
 | `value` | as `HOSTDECK_VALUE` |
 | `time` | as `HOSTDECK_TIME` |
 
+- `body`, when there is one, is posted instead: any JSON value, whose strings may hold `{id}`, `{name}`, `{nameZhCN}`, `{from}`, `{to}`, `{value}` and `{time}`, filled in with the values above. What is posted is valid JSON whatever the values hold. Object keys are kept as written, though not their order, and are not filled in. A placeholder hostdeck does not know, such as `{nmae}`, refuses the file. So a chat bot that takes JSON, such as a Feishu or Slack one, can be posted to directly; one that wants each message signed needs the command.
+
+```json
+"webhook": {
+  "url": "https://open.feishu.cn/open-apis/bot/v2/hook/${env:LARK_HOOK}",
+  "body": {"msg_type": "text", "content": {"text": "{name}: {from} → {to} ({value})"}}
+}
+```
+
 - The webhook has told the change when it answers 2xx within 30 seconds. Any other answer, a redirect included, is a failure, and a redirect is not followed. A receiver that answers 2xx with an error in its body counts as told.
 
 For both:

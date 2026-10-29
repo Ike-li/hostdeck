@@ -11,10 +11,13 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net/http"
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -47,10 +50,13 @@ type Config struct {
 }
 
 // Webhook is where a change is posted. The URL and the header values may hold
-// ${env:NAME}, filled in at each post, as in plugin.yaml.
+// ${env:NAME}, filled in at each post, as in plugin.yaml. Body, when there is
+// one, is posted instead of the change itself, with the change's placeholders
+// in its strings filled in.
 type Webhook struct {
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
 func (c Config) check() error {
@@ -77,6 +83,37 @@ func (c Config) check() error {
 		if u, err := neturl.Parse(url); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return errors.New("webhook.url must be an http or https address")
 		}
+		if err := checkBody(h.Body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var placeholder = regexp.MustCompile(`\{[A-Za-z]+\}`)
+
+// checkBody refuses a placeholder in the body's strings that names no key of
+// the change, as a misspelt one would be.
+func checkBody(body json.RawMessage) error {
+	if body == nil {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return err
+	}
+	known := change{}.placeholders()
+	var unknown string
+	eachString(v, func(s string) string {
+		for _, p := range placeholder.FindAllString(s, -1) {
+			if _, ok := known[p]; !ok && unknown == "" {
+				unknown = p
+			}
+		}
+		return s
+	})
+	if unknown != "" {
+		return fmt.Errorf("webhook.body: %s is not a placeholder; there are %s", unknown, strings.Join(slices.Sorted(maps.Keys(known)), " "))
 	}
 	return nil
 }
@@ -376,6 +413,55 @@ type change struct {
 	Time     string `json:"time"`
 }
 
+// placeholders are what a webhook body's strings may name: each key of the
+// change in braces, with its value.
+func (ch change) placeholders() map[string]string {
+	v := reflect.ValueOf(ch)
+	ps := map[string]string{}
+	for i, f := range reflect.VisibleFields(v.Type()) {
+		ps["{"+f.Tag.Get("json")+"}"] = v.Field(i).String()
+	}
+	return ps
+}
+
+// body is what is posted for ch: the webhook's body with the placeholders in
+// its strings filled in, or else ch itself.
+func (h *Webhook) body(ch change) ([]byte, error) {
+	if h.Body == nil {
+		return json.Marshal(ch)
+	}
+	dec := json.NewDecoder(bytes.NewReader(h.Body))
+	dec.UseNumber() // a number is posted as written
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	var pairs []string
+	for p, value := range ch.placeholders() {
+		pairs = append(pairs, p, value)
+	}
+	fill := strings.NewReplacer(pairs...)
+	return json.Marshal(eachString(v, fill.Replace))
+}
+
+// eachString replaces every string in v, a decoded JSON value, by f of it.
+// Object keys stay as written.
+func eachString(v any, f func(string) string) any {
+	switch v := v.(type) {
+	case string:
+		return f(v)
+	case []any:
+		for i := range v {
+			v[i] = eachString(v[i], f)
+		}
+	case map[string]any:
+		for k := range v {
+			v[k] = eachString(v[k], f)
+		}
+	}
+	return v
+}
+
 func changeOf(id string, v card.View, from, to string) change {
 	return change{
 		ID:       id,
@@ -427,7 +513,7 @@ func post(ctx context.Context, hook *Webhook, ch change) (err error) {
 			err = errors.New(card.Redact(fmt.Sprintf("POST %s: %v", hook.URL, err), secrets))
 		}
 	}()
-	body, err := json.Marshal(ch)
+	body, err := hook.body(ch)
 	if err != nil {
 		return err
 	}

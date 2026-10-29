@@ -211,6 +211,15 @@ Webhook 收到的是同一个变化，以 JSON 发送，可以代替命令，也
 | `value` | 同 `HOSTDECK_VALUE` |
 | `time` | 同 `HOSTDECK_TIME` |
 
+- 写了 `body` 时，发的就是它：任意 JSON 值，其中的字符串可以写 `{id}`、`{name}`、`{nameZhCN}`、`{from}`、`{to}`、`{value}` 和 `{time}`，填进上表里的值。不管这些值里有什么，发出去的都是合法 JSON。对象的键按原样保留，但不保留顺序，也不填占位符。hostdeck 不认识的占位符，比如 `{nmae}`，会让整个文件被拒绝。所以接受 JSON 的聊天机器人，比如飞书或 Slack 的，可以直接发；要求每条消息签名的，还是用命令。
+
+```json
+"webhook": {
+  "url": "https://open.feishu.cn/open-apis/bot/v2/hook/${env:LARK_HOOK}",
+  "body": {"msg_type": "text", "content": {"text": "{name}: {from} → {to} ({value})"}}
+}
+```
+
 - Webhook 在 30 秒内回 2xx，就算推出去了。其他回应都算失败，重定向也算，而且不会跟随。回了 2xx 但响应体里写着错误的接收端，也算已推送。
 
 两者共同的：

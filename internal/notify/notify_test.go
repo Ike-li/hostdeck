@@ -1,6 +1,7 @@
 package notify_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -291,6 +292,40 @@ func TestAWatchedCardSeenRedTwiceInARowIsPostedToTheWebhookWithWhatChanged(t *te
 	}
 }
 
+func TestAWebhookBodyIsPostedWithEveryPlaceholderInItsStringsFilledIn(t *testing.T) {
+	m := newMachine(t)
+	m.write("plugins/svc/plugin.yaml", fmt.Sprintf("schema: 1\nname: {en: Service, zh-CN: 服务}\ncard:\n  http:\n    url: %s\n  value: state\n  error: {not: up}\n", m.url))
+	h := m.hook()
+	body := `{"msg_type": "text", "content": {"text": "{name} ({nameZhCN}): {from} → {to}, {value}, at {time}"}, "tags": ["{id}", 1.50, true, null], "{name}": "a key stays"}`
+	m.write("notifications.json", fmt.Sprintf(`{"watch": ["svc"], "webhook": {"url": %q, "body": %s}}`, h.URL, body))
+	m.set("down \"hard\"\nagain")
+	w := m.watcher()
+	for range 2 {
+		w.Check(context.Background())
+		m.wait(time.Minute)
+	}
+
+	got := h.sent()
+	if len(got) != 1 {
+		t.Fatalf("posted %q, want one change", got)
+	}
+	dec := json.NewDecoder(strings.NewReader(got[0]))
+	dec.UseNumber()
+	var posted any
+	if err := dec.Decode(&posted); err != nil {
+		t.Fatalf("the body %s is not JSON: %v", got[0], err)
+	}
+	want := map[string]any{
+		"msg_type": "text",
+		"content":  map[string]any{"text": "Service (服务):  → error, down \"hard\"\nagain, at 2026-10-29T13:01:00Z"},
+		"tags":     []any{"svc", json.Number("1.50"), true, nil},
+		"{name}":   "a key stays",
+	}
+	if !reflect.DeepEqual(posted, want) {
+		t.Fatalf("posted %s, want %v", got[0], want)
+	}
+}
+
 func TestOnlyTheWayOfTellingThatFailedIsToldAgainAtTheNextReading(t *testing.T) {
 	m := newMachine(t)
 	h := m.hook()
@@ -503,6 +538,7 @@ func TestABrokenNotificationsFileIsRefusedNamingTheProblemAndWhatWasLoadedKeepsW
 		{`{"watch": ["svc"], "webhook": {"url": "ftp://example.com/"}}`, "http or https"},
 		{`{"watch": ["svc"], "webhook": {"url": "https://example.com/${env:HOOK_NOT_SET}"}}`, "HOOK_NOT_SET"},
 		{`{"watch": ["svc"], "webhook": {"url": "https://example.com/", "headers": {"Authorization": "${HOME}"}}}`, "${env:NAME}"},
+		{`{"watch": ["svc"], "webhook": {"url": "https://example.com/", "body": {"text": ["{name} is {to}, {nmae}"]}}}`, "{nmae}"},
 	} {
 		m.write("notifications.json", c.file)
 		if err := w.Load(); err == nil || !strings.Contains(err.Error(), "notifications.json") || !strings.Contains(err.Error(), c.problem) {
@@ -565,7 +601,7 @@ func TestTheReadmesNameEveryVariableTheCommandGetsEveryKeyTheWebhookIsSentAndEve
 		t.Fatal(err)
 	}
 	for key := range body {
-		names = append(names, key)
+		names = append(names, key, "{"+key+"}")
 	}
 	for _, typ := range []reflect.Type{reflect.TypeFor[notify.Config](), reflect.TypeFor[notify.Webhook]()} {
 		for f := range typ.Fields() {
@@ -766,7 +802,7 @@ func TestWatchingACardWithOnlyAWebhookKeepsTheWebhookAsWritten(t *testing.T) {
 	m := newMachine(t)
 	t.Setenv("HOOK_TOKEN", "s3cret")
 	h := m.hook()
-	written := fmt.Sprintf(`{"watch": [], "webhook": {"url": %q, "headers": {"Authorization": "Bearer ${env:HOOK_TOKEN}"}}}`, h.URL+"/hook")
+	written := fmt.Sprintf(`{"watch": [], "webhook": {"url": %q, "headers": {"Authorization": "Bearer ${env:HOOK_TOKEN}"}, "body": {"text": "{name} → {to}", "n": 1.50}}}`, h.URL+"/hook")
 	m.write("notifications.json", written)
 	m.set("down")
 	w := m.watcher()
@@ -779,7 +815,11 @@ func TestWatchingACardWithOnlyAWebhookKeepsTheWebhookAsWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := m.notificationsFile()
-	if !slices.Equal(got.Watch, []string{"svc"}) || got.Webhook == nil || got.Webhook.URL != h.URL+"/hook" || got.Webhook.Headers["Authorization"] != "Bearer ${env:HOOK_TOKEN}" || strings.Contains(string(data), `"command"`) {
+	var body bytes.Buffer
+	if got.Webhook != nil {
+		json.Compact(&body, got.Webhook.Body)
+	}
+	if !slices.Equal(got.Watch, []string{"svc"}) || got.Webhook == nil || got.Webhook.URL != h.URL+"/hook" || got.Webhook.Headers["Authorization"] != "Bearer ${env:HOOK_TOKEN}" || body.String() != `{"text":"{name} → {to}","n":1.50}` || strings.Contains(string(data), `"command"`) {
 		t.Fatalf("notifications.json became %s, want svc watched and the webhook kept as written", data)
 	}
 	for range 2 {
