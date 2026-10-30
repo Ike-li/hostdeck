@@ -696,15 +696,32 @@ func TestTheReadmesWindowsNotificationIsASCIIPowerShell(t *testing.T) {
 		if runtime.GOOS != "windows" {
 			continue
 		}
-		file := filepath.Join(t.TempDir(), "notify.ps1")
-		if err := os.WriteFile(file, []byte(script), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		parse := `$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$null, [ref]$e); $e | ForEach-Object { $_.Message }; exit $e.Count`
-		if out, err := exec.Command("powershell", "-NoProfile", "-Command", parse, file).CombinedOutput(); err != nil {
+		if out, err := parsePowerShell(t, script); err != nil {
 			t.Fatalf("%s: the Windows example does not parse: %v\n%s", readme, err, out)
 		}
 	}
+	if runtime.GOOS == "windows" {
+		// The check above would say nothing if parsing never failed.
+		if _, err := parsePowerShell(t, "$text = (\n"); err == nil {
+			t.Fatal("a script that does not parse passed the check")
+		}
+	}
+}
+
+// parsePowerShell parses script with Windows PowerShell's own parser, and
+// fails with what it said when script has errors.
+func parsePowerShell(t *testing.T, script string) ([]byte, error) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "notify.ps1")
+	if err := os.WriteFile(file, []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// -Command joins the arguments after it into its script, so the file is
+	// named in the environment.
+	parse := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
+		`$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($env:NOTIFY_PS1, [ref]$null, [ref]$e); $e | ForEach-Object { $_.Message }; exit $e.Count`)
+	parse.Env = append(os.Environ(), "NOTIFY_PS1="+file)
+	return parse.CombinedOutput()
 }
 
 func TestTheStatusSaysWhenEachWatchedCardWasCheckedAndWhatItWasLastToldAlsoAfterARestart(t *testing.T) {
