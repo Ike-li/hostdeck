@@ -4,7 +4,7 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 
 [简体中文](README.zh-CN.md)
 
-> **Status: early, not released.** Most of M0 works and runs from source (see [Run from source](#run-from-source)); there is no release to install yet. This README records what we are building, and what we are deliberately not building.
+> **Status: early, not released.** M0 apart from its release work, M1 and M2 run from source (see [Run from source](#run-from-source)); there is no release to install yet. This README records what we are building, and what we are deliberately not building.
 
 ## What it will be
 
@@ -92,13 +92,19 @@ go run .
 
 Then open http://127.0.0.1:4678/.
 
-Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1. The overview's **+ Add a page or plugin** card opens the add area for web pages, links and built-in plugins. The **Pages & plugins** page in the sidebar shows Enabled first, followed by disabled connections, problems and Add content, and adds the ones that come with hostdeck, and disables or enables installed ones, each change taking effect at once: a disabled plugin's folder is renamed to start with a dot, which hostdeck skips, and nothing in it changes. Hiding only removes a connection from the overview and sidebar; **Restore to workspace** brings it back. Enabling or disabling does not start or stop its external service. A plugin folder added or changed by hand is read with `hostdeck plugin reload`, when hostdeck restarts, or with the next change on that page. A web page on this machine or the local network is embedded from the same page by its address, or by dragging the address onto hostdeck; that writes a plugin folder whose `plugin.yaml` holds only `page.proxy`. Dragging a link from within the console, or dropping the console's own address, does not add a page.
+Plugins are folders under `plugins/` in hostdeck's own folder: `~/.config/hostdeck` on macOS, `%LOCALAPPDATA%\hostdeck` on Windows. `--dir` or `HOSTDECK_DIR` picks another folder, and `--addr` another port on 127.0.0.1.
+
+## The console
+
+The overview's **+ Add a page or plugin** card opens the add area for web pages, links and built-in plugins. The **Pages & plugins** page in the sidebar shows Enabled first, followed by disabled connections, problems and Add content, and adds the ones that come with hostdeck, and disables or enables installed ones, each change taking effect at once: a disabled plugin's folder is renamed to start with a dot, which hostdeck skips, and nothing in it changes. Hiding only removes a connection from the overview and sidebar; **Restore to workspace** brings it back. Enabling or disabling does not start or stop its external service. A plugin folder added or changed by hand is read with `hostdeck plugin reload`, when hostdeck restarts, or with the next change on that page. A web page on this machine or the local network is embedded from the same page by its address, or by dragging the address onto hostdeck; that writes a plugin folder whose `plugin.yaml` holds only `page.proxy`. Dragging a link from within the console, or dropping the console's own address, does not add a page.
 
 The overview offers **Reset layout** only when a saved order, card width or hidden connection exists. Reset clears those preferences, and Undo restores them.
 
 **Add content** starts with the web-page form and built-in plugins, followed by the secondary **Connection help** disclosure. It explains web page, built-in plugin and custom plugin setup. Separate one-click buttons copy web page and plugin prompts for a local agent, including this console’s actual origin, absolute plugin directory and running executable, native CLI examples for macOS shell and Windows PowerShell, and verification steps. Copying changes no data. If clipboard access fails, the prompt opens and is selected for manual copying. API and CLI additions take effect immediately; use `plugin reload` after manual file changes.
 
 Every enabled, visible connection appears in both the sidebar and the overview. A plugin with only a monitoring card, such as Ollama, opens a generated monitor view from the sidebar. A page, link or detail plugin without monitoring gets an overview shortcut showing its destination rather than an invented service status. Plugins with invalid manifests remain visible as errors. Explicit hiding and disabling still remove connections from the workspace.
+
+## Writing a plugin
 
 A plugin is a folder holding a `plugin.yaml`. Two small ones:
 
@@ -150,9 +156,7 @@ card:
 - `${env:NAME}` works in `url` and `headers`. The value is sent to the service, and shows as `***` in any error on the card. hostdeck must be started with the variable set.
 - A plugin whose `plugin.yaml` has a mistake shows up as an error card that says what is wrong; the other plugins still load.
 
-Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`examples/`](examples) has complete plugins to copy, including one whose card and detail page come from a script. `examples/jobs` lists this user's loaded launchd jobs, leaving out Apple's and ordinary applications, or on Windows the services whose program is outside the Windows directory, and can restart a running one or run one that is not.
-
-On Windows, the jobs count includes warnings and errors. Restart is offered only for a startable running or paused service that accepts Stop. Paths are expanded and normalized before Windows system services are filtered out.
+Paths follow [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md). [`examples/`](examples) has complete plugins to copy, including one whose card and detail page come from a script.
 
 The manifest format may still change before the first release. [docs/PLUGINS.md](docs/PLUGINS.md) gives all of it: every field of `plugin.yaml`, how hostdeck runs a plugin's programs, and what they print.
 
@@ -249,15 +253,47 @@ For both:
 - The console writes only the `watch` list: a card's More actions offer **Watch** and **Stop watching**, which take effect at once and write the file back with two-space indentation. They are refused, and write nothing, while `notifications.json` has neither a `command` nor a `webhook`, or cannot be read; the console never writes a command or a webhook, or creates the file. Cards that only open a page or a link, and plugins whose manifest has a mistake, have nothing to watch.
 - The overview says, on each watched card, when it was last checked, what was last told and when, and why the command or the webhook last failed; while the two have told different things, it says what each told. Above the cards it says when `notifications.json` was refused or watches a card that is not there. It reads this every 15 seconds.
 
-## Processes
+## Built-in plugins
 
-Add **Processes** under Pages & plugins → Add content to see the processes visible to hostdeck, including programs without listening ports. The overview counts processes; the detail page shows names, PID, parent PID, user, CPU and resident memory in MiB, plus the executable path, parent process name, start time, uptime, thread count and accumulated CPU time. Start times explicitly use UTC; durations use hours:minutes:seconds with total hours, including values above 24. Search matches names or PIDs, and the filters separate the console from other processes. Refresh reads a new snapshot and preserves the search and filter. The card caches its count for one minute; detail reads are on demand.
+Of the plugins that come with hostdeck, these are about this machine itself. Each is added under Pages & plugins → Add content.
+
+### Background jobs
+
+**Background jobs** lists this user's loaded launchd jobs, leaving out Apple's and ordinary applications, or on Windows the services whose program is outside the Windows directory, and can restart a running one or run one that is not.
+
+On Windows, the jobs count includes warnings and errors. Restart is offered only for a startable running or paused service that accepts Stop. Paths are expanded and normalized before Windows system services are filtered out.
+
+Background jobs can be searched by part of their name or ID and filtered by running, not running or needs attention, with a disabled group on Windows. Counts follow the search. Filters last through refreshes and language changes in the current page session.
+
+Job details use expanded compact fields with the runtime state and action beside the name. macOS adds PID, configured command, launch rules, configuration and both log paths. Windows adds service identity, PID, start mode, account and command. The list has no log text. Opening a job shows a scrolling tail of at most 256 KiB, or up to 100 matching service events on Windows. Run and Restart say what the job is doing afterwards. Unreadable optional information is explained on the job.
+
+Background jobs offers **Logs and status** with continuous bounded readings and a separate **Recent operations** area. Operation completion and service health are shown separately. Existing logs are read in place; Windows shows service management events, not application logs. No job/service configuration is changed. Installed plugins are never overwritten: locally changed or older jobs helpers continue to use the compatible one-shot log view until their files are explicitly updated by the owner.
+
+### Listening ports
+
+**Listening ports** lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID, process name, working directory and command line (truncated past 512 characters). The detail page is searchable and grouped by bind address. hostdeck itself, its ancestors, and the ports it forwards are marked and still listed. Confirmed Stop ends a listening process and its children; hostdeck itself, its ancestors, forwarded ports and PID 1 are protected and cannot be stopped here. UDP is not listed.
+
+Listening ports and Services started by hand have the same **Logs and status** view as Background jobs. A confirmed PID plus start time can associate an existing job source; on macOS only actual stdout/stderr regular files are inspected. Terminal output is left in its terminal. Windows explains when external application logs cannot be identified reliably.
+
+### Docker containers
+
+The built-in **Docker containers** plugin provides a compact searchable container list, counted state filters and overview counts. It shows selected metadata and bounded recent stdout/stderr logs using the installed Docker CLI. The engine must already be running on this computer; remote endpoints are refused, and installation does not start Docker or a container. Local Unix sockets, named pipes and literal loopback TCP endpoints are supported. Confirmed actions start stopped or newly created containers and restart running ones. Paused and transition states offer no action; all actions recheck the full container ID and current connection.
+
+### Processes
+
+**Processes** shows the processes visible to hostdeck, including programs without listening ports. The overview counts processes; the detail page shows names, PID, parent PID, user, CPU and resident memory in MiB, plus the executable path, parent process name, start time, uptime, thread count and accumulated CPU time. Start times explicitly use UTC; durations use hours:minutes:seconds with total hours, including values above 24. Search matches names or PIDs, and the filters separate the console from other processes. Refresh reads a new snapshot and preserves the search and filter. The card caches its count for one minute; detail reads are on demand.
 
 This plugin is read-only. It never ends processes, requests administrator privileges, reads command arguments or environments, or saves process history. A denied optional read is labelled unavailable without losing the process; a failed process-table read reports an error instead of zero. macOS uses the CPU percentage reported by `ps` and RSS, and one optional `top` snapshot for thread counts (at most two seconds and 1 MiB of output); Windows samples process CPU time over at least 250 ms and uses the working set. 100% CPU represents one fully used core and can be exceeded. These platform readings are estimates and need not match Activity Monitor or Task Manager. Windows shows owner SIDs without a network account lookup, and excludes the PID 0 idle-time pseudo process. A refresh is a live snapshot, so a process may exit while its fields are read.
 
-## Disk history
+### Services started by hand
 
-Add **Disk history** under Pages & plugins → Add content. This is separate from **Disk space**, which shows free capacity. It runs inside hostdeck on macOS and Windows; no Python, database server, extra port or disk-history installation is needed. Installing or opening it does not scan anything.
+**Services started by hand** lists TCP listeners started from a terminal or a session, such as a program left running in Terminal, iTerm, Windows Terminal, VS Code or a Claude session. The page shows the working directory and the command. A confirmed action stops that process, or restarts it from this console; the console itself cannot be stopped here. A restarted process keeps running after the original terminal closes. After hostdeck exits it keeps running and leaves this list. launchd jobs, Windows services and ports an app opens for itself are not listed. The card names each process and the ports it holds; the page groups them by where they were started. For every TCP listener on this machine, see **Listening ports**.
+
+A confirmed restart captures subsequent stdout/stderr through an independent process of the same executable. Preparation and a 128 MiB directory budget check finish before the original service is stopped. A failed preparation leaves it running; a failed new startup is reported without retry. Services and collection continue after normal or abrupt console exit, and their verified PID, exit result and bounded output remain accessible through Recent operations even after they leave the current list. Each run rotates two 2 MiB files; completed captures retain up to three runs per service for seven days. External logs are not archived in full. All of this is kept under the selected `--dir`/`HOSTDECK_DIR` directory's `data/service-observations/`.
+
+### Disk history
+
+**Disk history** is separate from **Disk space**, which shows free capacity. It runs inside hostdeck on macOS and Windows; no Python, database server, extra port or disk-history installation is needed. Installing or opening it does not scan anything.
 
 Open its detail page and confirm **Scan now**, or **Start hourly tracking** to scan now and then roughly hourly while hostdeck runs. **Pause hourly tracking** retains history; **Cancel scan** also pauses tracking and retains the previous snapshot. Closing the page does not stop a scan. While this page is open, a running scan is checked every two seconds and its saved results appear automatically; idle pages check once a minute. Refresh also reads the latest results. After a single reading the card says how to see changes. A reading more than two hours old is a warning only while hourly tracking is on. Stopping hostdeck interrupts the current scan; enabled tracking resumes on the next start. Disabling or trashing the plugin cancels its scan and timer; enabling it resumes saved tracking. Hiding it only changes the workspace layout.
 
@@ -277,7 +313,15 @@ Measurements are the disk space regular files occupy, using decimal units. A spa
 
 History lives in this plugin's `data/history.json`, independently of homedeck's old SQLite data. It retains up to 30 days and 744 snapshots per target, at most 256 directory summaries per snapshot, and at most 64 MiB in total. The root total remains when the directory-summary limit is reached; shallower summaries take priority and the detail page reports that limit. Corrupt history is reported and never silently replaced. A process-held OS lock refuses a second writer; process exit releases it. Back up the plugin folder to keep its history; purging it from the trash deletes that history too.
 
-The compiled plugin uses `exec.command: ['@hostdeck', disk-history, card]` (or `detail` / `action`). `@hostdeck` is a reserved in-process dispatcher for these operations, not a PATH executable or a shell. Other plugins keep their existing command protocol.
+The compiled plugin uses `exec.command: ['@hostdeck', disk-history, card]` (or `detail` / `action`). `@hostdeck` is a reserved in-process dispatcher for these operations, not a PATH executable or a shell.
+
+### Scheduled script tasks
+
+The built-in `scheduled-tasks` plugin installs an empty `tasks.json`. The detail page can create, edit and delete a task, which rewrites `tasks.json` and refreshes scheduling immediately, and can save a script file under that plugin's `scripts/` directory. Saving a script does not add a task or run it. A script row can run one allowed command without writing `tasks.json`, or open the task form with the default command filled in. A hand edit of `tasks.json` followed by `plugin reload` still loads. Confirmed manual Run and Stop, timeouts, results, the last ten run summaries and bounded logs are available; Cron and fixed-rate scheduling run while hostdeck is running. Pause/Resume controls future starts; Stop selects one run. Schedules never catch up downtime or automatically retry. Configuration is loaded at startup or explicit `plugin reload`. A refused configuration retains the last valid definition and current runs while reporting the problem. Reads start no script; script output need not be JSON. Nonzero exits and timeouts are distinct results. Execution writes only the plugin's own `data/`, and known referenced secrets are redacted from logs. See [TASKS.md](docs/TASKS.md) for fields and rules.
+
+Unfinished runs are interrupted and paused; Resume probes cleanup without killing old PIDs, and unresolved tasks do not restart. The owner lock excludes a second writer; corrupt state refuses replacement. Retention commits reference changes before deleting logs, preserving prior logs on a refused write. Undurable results show interruption and storage failure. Scheduling persists anchors, cursors and missed counts; it permits one run per task and four runs per installed plugin.
+
+Installation also includes a disabled `tasks.example.json`; the empty detail explains its absolute path and that the page can create a task or a script, while a hand edit and reload still work. The connection-help plugin prompt includes the complete task schema and commands for this console.
 
 ## CLI for agents
 
@@ -343,32 +387,3 @@ macOS and Windows. Windows is **experimental** until it has been tried by hand; 
 ## License
 
 [MIT](LICENSE)
-
-Background jobs can be searched by part of their name or ID and filtered by running, not running or needs attention, with a disabled group on Windows. Counts follow the search. Filters last through refreshes and language changes in the current page session.
-
-Job details use expanded compact fields with the runtime state and action beside the name. macOS adds PID, configured command, launch rules, configuration and both log paths. Windows adds service identity, PID, start mode, account and command. The list has no log text. Opening a job shows a scrolling tail of at most 256 KiB, or up to 100 matching service events on Windows. Run and Restart say what the job is doing afterwards. Unreadable optional information is explained on the task. Docker monitoring is a separate M1 plugin.
-
-The built-in **Docker containers** plugin provides a compact searchable container list, counted state filters and overview counts. It shows selected metadata and bounded recent stdout/stderr logs using the installed Docker CLI. The engine must already be running on this computer; remote endpoints are refused, and installation does not start Docker or a container. Local Unix sockets, named pipes and literal loopback TCP endpoints are supported. Confirmed actions start stopped or newly created containers and restart running ones. Paused and transition states offer no action; all actions recheck the full container ID and current connection.
-
-## Services started by hand
-
-Add **Services started by hand** under Pages & plugins → Add content. It lists TCP listeners started from a terminal or a session, such as a program left running in Terminal, iTerm, Windows Terminal, VS Code or a Claude session. The page shows the working directory and the command. A confirmed action stops that process, or restarts it from this console; the console itself cannot be stopped here. A restarted process keeps running after the original terminal closes. After hostdeck exits it keeps running and leaves this list. launchd jobs, Windows services and ports an app opens for itself are not listed. The card names each process and the ports it holds; the page groups them by where they were started. For every TCP listener on this machine, see **Listening ports**.
-
-## Listening ports
-
-Add **Listening ports** under Pages & plugins → Add content. It lists every TCP port that is listening on this machine, with the bind address (127.0.0.1 vs 0.0.0.0), PID, process name, working directory and command line (truncated past 512 characters). The detail page is searchable and grouped by bind address. hostdeck itself, its ancestors, and the ports it forwards are marked and still listed. Confirmed Stop ends a listening process and its children; hostdeck itself, its ancestors, forwarded ports and PID 1 are protected and cannot be stopped here. UDP is not listed.
-
-## Scheduled script tasks
-
-The built-in `scheduled-tasks` plugin installs an empty `tasks.json`. The detail page can create, edit and delete a task, which rewrites `tasks.json` and refreshes scheduling immediately, and can save a script file under that plugin's `scripts/` directory. Saving a script does not add a task or run it. A script row can run one allowed command without writing `tasks.json`, or open the task form with the default command filled in. A hand edit of `tasks.json` followed by `plugin reload` still loads. Confirmed manual Run and Stop, timeouts, results, the last ten run summaries and bounded logs are available; Cron and fixed-rate scheduling run while hostdeck is running. Pause/Resume controls future starts; Stop selects one run. Schedules never catch up downtime or automatically retry. Configuration is loaded at startup or explicit `plugin reload`. A refused configuration retains the last valid definition and current runs while reporting the problem. Reads start no script; script output need not be JSON. Nonzero exits and timeouts are distinct results. Execution writes only the plugin's own `data/`, and known referenced secrets are redacted from logs. See [TASKS.md](docs/TASKS.md) for fields and rules.
-
-
-Scheduled-task recovery and storage boundaries are implemented: unfinished runs are interrupted and paused; Resume probes cleanup without killing old PIDs, and unresolved tasks do not restart. The owner lock excludes a second writer; corrupt state refuses replacement. Retention commits reference changes before deleting logs, preserving prior logs on a refused write. Undurable results show interruption and storage failure. Scheduling persists anchors, cursors and missed counts; it permits one run per task and four runs per installed plugin.
-
-Installation also includes a disabled `tasks.example.json`; the empty detail explains its absolute path and that the page can create a task or a script, while a hand edit and reload still work. The connection-help plugin prompt includes the complete task schema and commands for this console.
-
-Built-in Background jobs now offers **Logs and status** with continuous bounded readings and a separate **Recent operations** area. Operation completion and service health are shown separately. Existing logs are read in place; Windows shows service management events, not application logs. No job/service configuration is changed. Upgrade the executable to use the observation interface. Existing installed plugins are never overwritten: locally changed or older jobs helpers continue to use the compatible one-shot log view until their files are explicitly updated by the owner.
-
-Listening ports and Services started by hand now share this observation view. A confirmed PID plus start time can associate an existing job source; on macOS only actual stdout/stderr regular files are inspected. Terminal output is left in its terminal. Windows explains when external application logs cannot be identified reliably. No installed manifest needs editing for the native plugins.
-
-Confirmed manual-service restarts now capture subsequent stdout/stderr through an independent process of the same executable. Preparation and a 128 MiB directory budget check finish before the original service is stopped. A failed preparation leaves it running; a failed new startup is reported without retry. Services and collection continue after normal or abrupt console exit, and their verified PID, exit result and bounded output remain accessible through Recent operations even after they leave the current list. Each run rotates two 2 MiB files; completed captures retain up to three runs per service for seven days. External logs are not archived in full. All new data is under the selected `--dir`/`HOSTDECK_DIR` directory's `data/service-observations/`. Update the executable and refresh the console; no installed plugin file is changed automatically. Deployment and real-service verification are separate owner actions.

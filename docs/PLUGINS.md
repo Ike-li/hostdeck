@@ -4,7 +4,7 @@
 
 This is the plugin contract: what a plugin folder holds, every field of `plugin.yaml`, how hostdeck runs a plugin's programs and what they print. It is `schema: 1`, which may still change before the first release; [Compatibility](#compatibility) says what is kept after it. `internal/plugin` reads the manifest; tests check that every field it accepts is named here, in both languages.
 
-The [README](../README.md#run-from-source) has three short manifests to start from, and [`examples/`](../examples) holds complete plugins, among them disk space and background jobs, whose cards and detail pages come from scripts for macOS and Windows.
+The [README](../README.md#writing-a-plugin) has three short manifests to start from, and [`examples/`](../examples) holds complete plugins, among them disk space and background jobs, whose cards and detail pages come from scripts for macOS and Windows.
 
 ## The folder
 

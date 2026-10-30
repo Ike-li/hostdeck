@@ -4,7 +4,7 @@
 
 这份文档是插件的约定：插件文件夹里放什么，`plugin.yaml` 的每个字段，hostdeck 怎么运行插件的程序，程序又该打印什么。它对应 `schema: 1`，首次发布前仍可能变更；发布之后保留什么，见[兼容](#兼容)。清单由 `internal/plugin` 读取；测试会检查它接受的每个字段在这里都写到了，两种语言都查。
 
-[README](../README.zh-CN.md#从源码运行) 里有三个短清单可以照着写；[`examples/`](../examples) 里是完整的插件，其中磁盘空间和后台任务两个的卡片和详情页由脚本生成，macOS 和 Windows 各有一份。
+[README](../README.zh-CN.md#编写插件) 里有三个短清单可以照着写；[`examples/`](../examples) 里是完整的插件，其中磁盘空间和后台任务两个的卡片和详情页由脚本生成，macOS 和 Windows 各有一份。
 
 ## 文件夹
 
