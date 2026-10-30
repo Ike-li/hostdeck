@@ -64,13 +64,14 @@
 
 - 由你选定关注哪些卡片；只有这些卡片在后台检查，没有打开控制台页面时也检查
 - 连续两次检查都看到变化才算数，恢复也一样
-- 通过你指定的一条命令或一个 Webhook 推送；系统通知随后加上
+- 通过你指定的一条命令或一个 Webhook 推送；示例演示用命令发系统通知
 - 记住上次推过什么，重启后不重复推
 - 控制台显示后台检查是否在正常运行，以及每张关注卡片上次检查的时间
 
 ### M3 桌面版
 
 - 桌面窗口，显示的页面和浏览器里一样
+- 由 hostdeck 自己发的系统通知
 - 托盘图标
 - 在 macOS 和 Windows 上开机自启
 
@@ -162,15 +163,34 @@ card:
 ```json
 {
   "watch": ["grafana", "jobs"],
-  "command": ["sh", "notify.sh"]
+  "command": ["sh", "notify.sh"],
+  "windows": ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "notify.ps1"]
 }
 ```
 
 ```sh
-# notify.sh，和 notifications.json 放在一起：发一条 macOS 通知
-osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDECK_TO\" with title \"hostdeck\""
+# notify.sh，和 notifications.json 放在一起：发一条 macOS 通知。文字作为参数交给
+# osascript，所以名称或值里写了什么都改变不了脚本。
+osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "hostdeck"' -e 'end run' \
+  "$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDECK_TO"
 ```
 
+Windows 上由 `windows` 运行 `notify.ps1`，发一条 Windows 通知。脚本只用 ASCII 字符，注释也是英文：Windows PowerShell 读没有 BOM 的脚本时按系统代码页解码。
+
+```powershell
+# notify.ps1, next to notifications.json: a Windows notification, shown as
+# Windows PowerShell's. Keep it ASCII: Windows PowerShell reads a script
+# without a BOM in the system's code page.
+$null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+$null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+$text = "${env:HOSTDECK_NAME}: ${env:HOSTDECK_FROM} $([char]0x2192) ${env:HOSTDECK_TO}"
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml("<toast><visual><binding template=""ToastGeneric""><text>hostdeck</text><text>$([Security.SecurityElement]::Escape($text))</text></binding></visual></toast>")
+$app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app).Show([Windows.UI.Notifications.ToastNotification]::new($xml))
+```
+
+- 这些通知在 macOS 上记在「脚本编辑器」名下，在 Windows 上记在 Windows PowerShell 名下。macOS 只在脚本编辑器里询问是否允许：在脚本编辑器里运行一次 `display notification "hostdeck"`，再到「系统设置 › 通知」里允许脚本编辑器的通知；开着专注模式时不会显示。以 hostdeck 自己名义发的通知随桌面版（M3）一起来。
 - `watch` 列出插件 ID，也就是插件文件夹的名字。只有这些卡片会在后台读取，各按自己的 `interval`。没有加载的插件、没有卡片的插件会被跳过。
 - 卡片的状态是 `ok`、`warn`、`error`，读取失败时是 `unreadable`。没设阈值的卡片只要读得到就是 `ok`。
 - 连续两次读数都看到的变化才算数，恢复也一样，所以读数之间来回跳的卡片什么都不会推。第一次读到就是 `ok` 的卡片也不推。
@@ -228,7 +248,6 @@ Webhook 收到的是同一个变化，以 JSON 发送，可以代替命令，也
 - `notifications.json` 在 hostdeck 启动时和 `hostdeck plugin reload` 时读取。文件有错，比如有不认识的键、写了 `watch` 却既没有 `command` 也没有 `webhook`，或者 `${env:NAME}` 的变量没有设置，就拒绝并在日志里写一行，之前加载的继续生效。
 - 控制台只写 `watch` 列表：卡片的更多操作里有**关注**和**取消关注**，立即生效，文件会按两个空格缩进写回。`notifications.json` 既没有 `command` 也没有 `webhook`，或者读不了时，这两个操作会被拒绝，什么都不写；控制台从不写命令或 Webhook，也不会创建这个文件。只打开页面或链接的卡片，以及清单有错的插件，没有可关注的东西。
 - 概览在每张关注的卡片上写明上次检查的时间、上次推送了什么以及什么时候，还有命令或 Webhook 上次失败的原因；两者推送的内容不一样时，分别写明各自推送了什么。`notifications.json` 被拒绝，或者关注了不在这里的卡片时，卡片上方会说出来。这些每 15 秒读一次。
-- 还没有的：系统通知。
 
 ## 进程
 

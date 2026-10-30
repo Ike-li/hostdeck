@@ -64,13 +64,14 @@ Each milestone is released on its own. After M0, M2 comes next, before anything 
 
 - You choose which cards to watch; only those are checked in the background, also while no console page is open
 - A change counts once two checks in a row have seen it, recovery included
-- Delivered through a command you name or a webhook; the system's notifications follow
+- Delivered through a command you name or a webhook; examples show the system's notifications from the command
 - What was last sent is remembered, so a restart does not send it again
 - The console shows whether the checks are running and when each watched card was last checked
 
 ### M3 Desktop
 
 - A desktop window showing the same pages as the browser
+- The system's notifications, from hostdeck itself
 - A tray icon
 - Start at login on macOS and Windows
 
@@ -162,15 +163,34 @@ hostdeck can run a command of yours, or post to a webhook, when a card you watch
 ```json
 {
   "watch": ["grafana", "jobs"],
-  "command": ["sh", "notify.sh"]
+  "command": ["sh", "notify.sh"],
+  "windows": ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "notify.ps1"]
 }
 ```
 
 ```sh
-# notify.sh, next to notifications.json: a macOS notification
-osascript -e "display notification \"$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDECK_TO\" with title \"hostdeck\""
+# notify.sh, next to notifications.json: a macOS notification. The text is
+# given to osascript as an argument, so no name or value can change the script.
+osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "hostdeck"' -e 'end run' \
+  "$HOSTDECK_NAME: $HOSTDECK_FROM → $HOSTDECK_TO"
 ```
 
+On Windows, `windows` runs `notify.ps1` instead, which shows a Windows notification. The script keeps to ASCII, its comments included: Windows PowerShell reads a script without a BOM in the system's code page.
+
+```powershell
+# notify.ps1, next to notifications.json: a Windows notification, shown as
+# Windows PowerShell's. Keep it ASCII: Windows PowerShell reads a script
+# without a BOM in the system's code page.
+$null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+$null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+$text = "${env:HOSTDECK_NAME}: ${env:HOSTDECK_FROM} $([char]0x2192) ${env:HOSTDECK_TO}"
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml("<toast><visual><binding template=""ToastGeneric""><text>hostdeck</text><text>$([Security.SecurityElement]::Escape($text))</text></binding></visual></toast>")
+$app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app).Show([Windows.UI.Notifications.ToastNotification]::new($xml))
+```
+
+- These show as Script Editor's notifications on macOS and Windows PowerShell's on Windows. macOS asks about them only from Script Editor: run `display notification "hostdeck"` there once, then allow Script Editor's notifications in System Settings › Notifications; a Focus that is on hides them. Notifications under hostdeck's own name come with the desktop window (M3).
 - `watch` lists plugin IDs, the names of their folders. Only those cards are read in the background, each at its own `interval`. A plugin that is not loaded, or has no card, is skipped.
 - A card is `ok`, `warn`, `error`, or `unreadable` when its reading failed. A card without thresholds is `ok` whenever it can be read.
 - A change counts once two readings in a row have seen it, recovery included, so a card that flips between readings tells nothing. Nor does a card that is `ok` the first time it is seen.
@@ -228,7 +248,6 @@ For both:
 - `notifications.json` is read when hostdeck starts and by `hostdeck plugin reload`. A file with a mistake, such as an unknown key, a `watch` with neither a `command` nor a `webhook`, or a `${env:NAME}` whose variable is not set, is refused with a line in hostdeck's log, and what was loaded before stays in use.
 - The console writes only the `watch` list: a card's More actions offer **Watch** and **Stop watching**, which take effect at once and write the file back with two-space indentation. They are refused, and write nothing, while `notifications.json` has neither a `command` nor a `webhook`, or cannot be read; the console never writes a command or a webhook, or creates the file. Cards that only open a page or a link, and plugins whose manifest has a mistake, have nothing to watch.
 - The overview says, on each watched card, when it was last checked, what was last told and when, and why the command or the webhook last failed; while the two have told different things, it says what each told. Above the cards it says when `notifications.json` was refused or watches a card that is not there. It reads this every 15 seconds.
-- Not yet there: the system's notifications.
 
 ## Processes
 

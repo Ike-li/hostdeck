@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -618,6 +620,89 @@ func TestTheReadmesNameEveryVariableTheCommandGetsEveryKeyTheWebhookIsSentAndEve
 			if !strings.Contains(string(text), "`"+name+"`") {
 				t.Errorf("%s does not name `%s`", readme, name)
 			}
+		}
+	}
+}
+
+// readmeBlock returns the fenced block of readme whose first line starts with
+// first.
+func readmeBlock(t *testing.T, readme, first string) string {
+	t.Helper()
+	text, err := os.ReadFile(filepath.Join("..", "..", readme))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, block := range strings.Split(string(text), "```")[1:] {
+		_, code, _ := strings.Cut(block, "\n")
+		if strings.HasPrefix(code, first) {
+			return code
+		}
+	}
+	t.Fatalf("%s has no block starting %q", readme, first)
+	return ""
+}
+
+func TestTheReadmesMacOSNotificationGetsTheCardsNameAsTextAndNotAsScript(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the macOS example runs under sh")
+	}
+	for _, readme := range []string{"README.md", "README.zh-CN.md"} {
+		t.Run(readme, func(t *testing.T) {
+			m := newMachine(t)
+			// osascript stands in at the boundary: it records what it was given.
+			bin, record := t.TempDir(), filepath.Join(t.TempDir(), "osascript.txt")
+			fake := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n--\\n' \"$a\"; done > \"$OSASCRIPT_RECORD\"\n"
+			if err := os.WriteFile(filepath.Join(bin, "osascript"), []byte(fake), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("OSASCRIPT_RECORD", record)
+			m.write("plugins/svc/plugin.yaml", fmt.Sprintf("schema: 1\nname: 'Say \"hi\" & do shell script \"false\"'\ncard:\n  http:\n    url: %s\n  value: state\n  error: {equals: down}\n", m.url))
+			m.write("notify.sh", readmeBlock(t, readme, "# notify.sh"))
+			m.notifications([]string{"svc"}, []string{"sh", "notify.sh"})
+			m.set("down")
+			w := m.watcher()
+			for range 2 {
+				w.Check(context.Background())
+				m.wait(time.Minute)
+			}
+
+			got, err := os.ReadFile(record)
+			if err != nil {
+				t.Fatalf("osascript did not run: %v", err)
+			}
+			args := strings.Split(strings.TrimSuffix(string(got), "\n--\n"), "\n--\n")
+			// The name, then from, empty before anything was told, then to.
+			if text := args[len(args)-1]; text != `Say "hi" & do shell script "false": `+""+` → error` {
+				t.Fatalf("osascript was given %q, want the name, from and to as its last argument, as they are", args)
+			}
+			if script := strings.Join(args[:len(args)-1], " "); strings.Contains(script, "Say") {
+				t.Fatalf("the name is in the script osascript runs: %q", script)
+			}
+		})
+	}
+}
+
+// Windows PowerShell 5.1 reads a script without a BOM in the system's code
+// page, so the example stays ASCII to be saved as it is.
+func TestTheReadmesWindowsNotificationIsASCIIPowerShell(t *testing.T) {
+	for _, readme := range []string{"README.md", "README.zh-CN.md"} {
+		script := readmeBlock(t, readme, "# notify.ps1")
+		for i, r := range script {
+			if r > 0x7f {
+				t.Fatalf("%s: the Windows example has %q at byte %d", readme, r, i)
+			}
+		}
+		if runtime.GOOS != "windows" {
+			continue
+		}
+		file := filepath.Join(t.TempDir(), "notify.ps1")
+		if err := os.WriteFile(file, []byte(script), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		parse := `$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$null, [ref]$e); $e | ForEach-Object { $_.Message }; exit $e.Count`
+		if out, err := exec.Command("powershell", "-NoProfile", "-Command", parse, file).CombinedOutput(); err != nil {
+			t.Fatalf("%s: the Windows example does not parse: %v\n%s", readme, err, out)
 		}
 	}
 }
