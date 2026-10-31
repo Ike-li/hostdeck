@@ -29,7 +29,7 @@ func TestTheDrawerSlidesAndStopsWhenMotionIsAllowed(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	do(t, ctx, chromedp.EmulateViewport(520, 700), chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#menu`)))
+	do(t, ctx, chromedp.EmulateViewport(520, 700), chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#menu`)), chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="a"]`)))
 
 	check := func(js string) {
 		t.Helper()
@@ -68,7 +68,10 @@ func TestTheDrawerArrivesAtOnceWhenTheBrowserAsksForLessMotion(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	do(t, ctx, chromedp.EmulateViewport(520, 700), chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#menu`)))
+	// The initial route closes the drawer after asynchronous startup reads.
+	// A visible menu alone can precede that route; wait for its first reading
+	// before clicking, keeping the no-wait assertion after the click intact.
+	do(t, ctx, chromedp.EmulateViewport(520, 700), chromedp.Navigate(url), chromedp.WaitVisible(chromedp.CSS(`#menu`)), chromedp.WaitVisible(chromedp.CSS(`#cards .card[data-id="a"]`)))
 
 	check := func(js string) {
 		t.Helper()
