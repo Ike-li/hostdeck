@@ -21,7 +21,7 @@ A small console for your own computer, on macOS and Windows. See and manage the 
 - **Linux** before v1, a Docker image, multiple users.
 - **Installing plugins from the network**, or a marketplace of third-party plugins. The plugins page adds only the plugins built into hostdeck, plugins that embed a web page on this machine or the local network from its address, and links.
 - **Hundreds of built-in integrations.** Common services are covered by example plugins.
-- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, moving one to the trash and purging it from there, arranging, hiding or resetting the sidebar and the cards, the scheduled script tasks page writing its `tasks.json` and scripts, and watching a card or no longer watching it, which writes only the `watch` list of `notifications.json`.
+- **Editing configuration in the web UI** before v1, apart from adding a built-in plugin, embedding a web page on this machine or the local network from its address, adding a link, changing the name, icon or address of a page, disabling or enabling a plugin, moving one to the trash and purging it from there, arranging, hiding or resetting the sidebar and the cards, the scheduled script tasks page writing its `tasks.json` and scripts, and watching a card or no longer watching it, which writes only the `watch` list of `notifications.json`. Saving appearance, which writes only `appearance.json`, is also an exception.
 - **Electron.**
 
 ## Roadmap
@@ -103,6 +103,25 @@ The overview offers **Reset layout** only when a saved order, card width or hidd
 **Add content** starts with the web-page form and built-in plugins, followed by the secondary **Connection help** disclosure. It explains web page, built-in plugin and custom plugin setup. Separate one-click buttons copy web page and plugin prompts for a local agent, including this console’s actual origin, absolute plugin directory and running executable, native CLI examples for macOS shell and Windows PowerShell, and verification steps. Copying changes no data. If clipboard access fails, the prompt opens and is selected for manual copying. API and CLI additions take effect immediately; use `plugin reload` after manual file changes.
 
 Every enabled, visible connection appears in both the sidebar and the overview. A plugin with only a monitoring card, such as Ollama, opens a generated monitor view from the sidebar. A page, link or detail plugin without monitoring gets an overview shortcut showing its destination rather than an invented service status. Plugins with invalid manifests remain visible as errors. Explicit hiding and disabling still remove connections from the workspace.
+
+### Appearance
+
+Appearance at the bottom of the sidebar offers Default blue, Forest, Dusk and Warm sand, each in light and dark, with a separate Follow system / Light / Dark choice. Choose an accent with the colour picker or a `#RRGGBB` value. Each mode adjusts its lightness for readable text, focus and button states; the dialog shows the applied colour. The theme covers hostdeck; embedded services keep their own appearance.
+
+Changes preview immediately. Save shares them with every browser using this hostdeck directory. Visible windows synchronize every 15 seconds and on regaining focus. An editing window keeps its draft; Cancel or Escape restores the latest saved appearance. Restore defaults also previews until saved. The last successful save wins concurrent edits.
+
+Preferences live in `appearance.json` in hostdeck's folder; separate `--dir` instances are independent. A missing file uses Default blue and Follow system without creating a file. An unreadable or unsupported file is kept and reported, and replaced only by an explicit save. Failed writes keep the previous settings and current draft. Restart hostdeck after editing the file by hand. For example (omit `accent` to use the preset's accent):
+
+```json
+{
+  "version": 1,
+  "preset": "forest",
+  "mode": "system",
+  "accent": "#246b4b"
+}
+```
+
+`preset` is `default`, `forest`, `dusk` or `sand`; `mode` is `system`, `light` or `dark`; optional `accent` is a six-digit hex colour. Unknown fields, versions and values are refused. This first version customizes colours and accepts no arbitrary CSS, images or theme imports.
 
 ## Writing a plugin
 

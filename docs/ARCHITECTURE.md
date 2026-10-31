@@ -67,6 +67,7 @@ After the plugins page adds, disables or enables a plugin, the same request read
 | `internal/console` | The console's HTTP handler: the page from `web/`, the API, and the checks every request passes. |
 | `internal/proxy` | Re-serves one local web UI on its own port, so that the console may frame it. Answers the clear-cache and notifications addresses itself. |
 | `internal/ports` | Gives each embedded service its forwarding port and remembers it in `ports.json`. |
+| `internal/appearance` | Keeps shared `appearance.json` preferences; atomic saves and defaults with a warning when reading fails. |
 | `internal/layout` | Remembers in `layout.json` the order of the sidebar and of the cards, which cards are wide, and which plugins are hidden. |
 | `internal/atomicfile` | Writes `layout.json` and `ports.json` whole or not at all: a temporary file renamed over the old one. On Windows, a rename refused because another program has the file open is tried again for up to 2 s. |
 | `internal/local` | Lets through only requests addressed to `127.0.0.1`; `localhost` is redirected there. |
@@ -155,6 +156,14 @@ Local custom installation runs in the CLI process: `plugin.ReadFolder` uses the 
 
 `POST /api/plugins/reload` checks Origin and uses the same change lock and loader as existing mutations, then returns the catalog. Fatal load failures retain previous loaded state. The CLI checks actual loading and forwarding errors rather than reporting file publication as full success; a failed post-install reload returns nonzero with `saved: true` and the published path. `plugin reload` reports broken enabled plugins as failure. Validation uses CLI environment variables, while loading uses the server’s environment. Card/detail programs run on later reads according to the existing protocol, not as part of validation/copying.
 
+### Console appearance
+
+`internal/appearance` reads `appearance.json` at startup. Its format is `{version: 1, preset, mode, accent?}`; README, Appearance, lists every value and an example. Reading is strict: unknown keys, versions and values are refused. Absence uses defaults without writing; a read failure keeps the bytes and returns defaults with an `appearance_invalid` warning without preventing startup. Explicit saves validate and serialize through `internal/atomicfile`, publishing memory only after a successful write. Failures return `appearance_failed` and keep the previous configuration. Existing installations need no migration. Appearance is not a plugin-manifest field.
+
+`GET /api/appearance` returns `{appearance, warning?}`; `POST /api/appearance` saves the complete settings and returns the same shape. Both `/` and `/index.html` render the current reading into an HTML-escaped `<html data-appearance>` attribute without caching. External `theme.js`, after the stylesheet and before the body, sets `data-theme` and the resolved `data-mode` before the first content paint. It accepts previews through the `hostdeck:theme` event and watches system mode with `matchMedia`. `appearance.js` owns the dialog and synchronization, sharing the existing `page-editor` dialog. Theme updates change tokens and notices without rebuilding cards or iframes. The iframe element explicitly follows the browser media preference, so a fixed console mode cannot change an embedded service’s preferred scheme.
+
+Visible pages read every 15 seconds and on regaining focus, with at most one read in flight. A save invalidates older reads so their responses cannot undo it; background pages do no reading. During editing a new reading updates the saved settings without replacing the draft; closing restores that latest reading. The last successful save determines the shared appearance. Restart to load hand-edited files.
+
 ## Contracts and compatibility
 
 Some of what hostdeck reads and writes is depended on from outside its own code: by plugins, by scripts, and by the files one release leaves for the next. These are its contracts:
@@ -165,7 +174,7 @@ Some of what hostdeck reads and writes is depended on from outside its own code:
 | What a plugin's programs are given and print | [PLUGINS.md](PLUGINS.md#programs) |
 | The CLI: its commands, flags, JSON result, `error.code` values and exit codes | [README](../README.md#cli-for-agents) |
 | What a notification command is given and a webhook is sent | [README](../README.md#notifications) |
-| The files in hostdeck's folder: `layout.json`, `ports.json`, `notifications.json`, `data/notifications/sent.json`, `data/service-observations/`, the plugin folders with their dot and `.trash` names, and what a built-in plugin keeps in its own folder, such as disk history's `config.json` and `data/history.json` | This document |
+| The files in hostdeck's folder: `layout.json`, `ports.json`, `appearance.json`, `notifications.json`, `data/notifications/sent.json`, `data/service-observations/`, the plugin folders with their dot and `.trash` names, and what a built-in plugin keeps in its own folder, such as disk history's `config.json` and `data/history.json` | This document |
 
 Everything else is hostdeck's own and may change in any commit: `/api/*` and its JSON, the addresses under `/.well-known/hostdeck/` that the proxy answers, the page's markup, classes and dictionary keys, and the Go packages. The CLI and the agent prompts use `/api/*`, but always from the same hostdeck: the CLI is to be the same version as the console it talks to, and the console writes the prompts itself.
 
@@ -175,12 +184,13 @@ From the first release, the first `v*` tag:
 
 - **Plugins.** Within `schema: 1`, the manifest and what programs print only gain optional fields and values; nothing is removed, renamed or given another meaning. Since a field hostdeck does not know is an error, an older hostdeck refuses a plugin that uses a newer field, naming its line, rather than running half of it. A change that cannot be made this way takes `schema: 2`, and the release that brings it says how to move a plugin. A manifest of a schema hostdeck does not read is refused with the schema it does read (`TestInvalidManifestsAreRejectedNamingTheProblem`).
 - **The CLI.** The commands, flags, exit codes, and the keys and codes the README names are kept; new ones may be added. `error.message` and `data.plugin` are not part of it. `TestTheReadmeNamesEveryErrorCodeTheCLIAnswersWith` and `TestTheReadmeNamesEveryKeyTheCLIPutsInData` keep the README's lists complete.
-- **Files.** A release reads what earlier releases wrote in hostdeck's folder, and may write a file back in its own format when it saves it; running an earlier release on that folder afterwards is not supported. `layout.json` and `ports.json` are read leniently, so a key a release does not know is ignored. Disk history's `data/history.json` and the notifications' `data/notifications/sent.json` carry `version: 1` and refuse any other, so a new version there has to read the old one first. `notifications.json` is read strictly, as a manifest is, so it only gains optional keys. A forwarding port stays with its plugin's ID.
+- **Files.** A release reads what earlier releases wrote in hostdeck's folder, and may write a file back in its own format when it saves it; running an earlier release on that folder afterwards is not supported. `appearance.json` carries `version: 1` and is read strictly; unsupported versions keep their file and use default colours, and future formats must read the old one. `layout.json` and `ports.json` are read leniently, so a key a release does not know is ignored. Disk history's `data/history.json` and the notifications' `data/notifications/sent.json` carry `version: 1` and refuse any other, so a new version there has to read the old one first. `notifications.json` is read strictly, as a manifest is, so it only gains optional keys. A forwarding port stays with its plugin's ID.
 
 ## Security model
 
 Everything rests on hostdeck being reachable from this machine only.
 
+- `POST /api/appearance` requires the console Origin and writes only `appearance.json` in the current configuration directory. It accepts fixed presets, modes and a six-digit hex accent, never CSS, URLs, paths or scripts. Initial settings are HTML-attribute escaped; dynamic colours set only existing accent tokens through CSSOM, with no CSP relaxation.
 - It listens on `127.0.0.1` only; any other `--addr` is refused.
 - Every server answers only requests whose Host is `127.0.0.1`. This stops a web page that rebinds its own domain to 127.0.0.1 from reading the console or a service through hostdeck.
 - `/api/` refuses requests from other sites by their `Sec-Fetch-Site` header; a request typed into the address bar may only read. Actions also require the console's Origin. Other ports on 127.0.0.1 count as the same site, which is why the Origin check is needed too.

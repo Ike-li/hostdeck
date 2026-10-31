@@ -67,13 +67,13 @@ Agreed in the M0 plan, 2026-10-22:
 - Chrome and Edge are tested; Firefox and Safari are best effort.
 - Size and memory: CI is to report them, and a budget is set after five runs on main.
 
-## Where the work stands (2026-10-29)
+## Where the work stands (2026-10-31)
 
 This section says where things are now: what is built, what is left, what is known to be wrong. A slice that changes one of these replaces the lines that no longer hold instead of adding a paragraph. What a finished slice did lives in its commit and in README, ARCHITECTURE, DESIGN, PLUGINS and TASKS; `git log -p AGENTS.md` keeps the longer account this section held until 2026-10-29.
 
 Built:
 
-- M0 apart from the release work below: the console, embedding with clear cache and notifications, cards, details and actions, the saved layout, the plugins page with editing, links and the trash, and the CLI with its agent prompts. The layout and CRUD pass and the UI/UX pass are finished, and DESIGN.md writes the design system down.
+- M0 apart from the release work below: the console, embedding with clear cache and notifications, cards, details and actions, the saved layout, the plugins page with editing, links and the trash, and the CLI with its agent prompts. The layout and CRUD pass and the UI/UX pass are finished, and DESIGN.md writes the design system down. Sidebar Appearance previews four light/dark colour schemes and an adapted custom accent; Save shares version-1 appearance.json across browsers using the same console directory, while Cancel restores the latest saved appearance.
 - M1: background jobs (launchd, Windows services) with run, restart and their logs; every TCP listener, with a confirmed Stop; services started from a shell, with stop and restart; Docker containers, with start and restart; every process, read-only; disk history; scheduled script tasks; and service observations, which follow a service's logs and capture a restarted service's output.
 - M2, as the roadmap has it since 2026-10-29: the cards `notifications.json` names are read in the background, and a change two readings in a row have seen runs the user's command with `HOSTDECK_*` variables (README, Notifications); the overview says on each watched card when it was last checked, what was told and why the command or the webhook last failed, and above the cards when `notifications.json` was refused or watches a card that is not there; a card's More actions watch it or stop, writing only the `watch` list; a `webhook` there is posted each change as JSON, or a `body` of its own whose strings take placeholders such as `{name}`, and the command and the webhook each keep what they told, so one that failed is told again alone; the README shows the system's notifications from the command, macOS's through `osascript` with the text as an argument and Windows's as a PowerShell toast.
 

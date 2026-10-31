@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Ike-li/hostdeck/examples"
+	"github.com/Ike-li/hostdeck/internal/appearance"
 	"github.com/Ike-li/hostdeck/internal/atomicfile"
 	"github.com/Ike-li/hostdeck/internal/card"
 	"github.com/Ike-li/hostdeck/internal/cli"
@@ -142,15 +143,16 @@ func run(args []string) error {
 	}
 	log.Printf("hostdeck: http://%s/", ln.Addr())
 	cards = console.Handler(console.Config{
-		Origin:    fmt.Sprintf("http://127.0.0.1:%d", consolePort),
-		Plugins:   loaded.Plugins,
-		Broken:    loaded.Broken,
-		PluginDir: pluginDir,
-		BuiltIn:   examples.Files,
-		Served:    loaded.Served,
-		Tokens:    tokens,
-		Layout:    arranged,
-		Reload:    reload,
+		Origin:     fmt.Sprintf("http://127.0.0.1:%d", consolePort),
+		Plugins:    loaded.Plugins,
+		Broken:     loaded.Broken,
+		PluginDir:  pluginDir,
+		BuiltIn:    examples.Files,
+		Served:     loaded.Served,
+		Tokens:     tokens,
+		Layout:     arranged,
+		Appearance: appearance.Open(filepath.Join(dir, "appearance.json")),
+		Reload:     reload,
 
 		Notifications: watcher.Status,
 		Watch:         watcher.Watch,

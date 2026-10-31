@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Ike-li/hostdeck/internal/appearance"
 	"github.com/Ike-li/hostdeck/internal/card"
 	"github.com/Ike-li/hostdeck/internal/catalog"
 	"github.com/Ike-li/hostdeck/internal/detail"
@@ -52,6 +53,8 @@ type Config struct {
 	// Layout is how the user arranged the sidebar and the cards; nil is the
 	// order the plugins load in.
 	Layout *layout.Store
+	// Appearance is shared by every browser using this console directory.
+	Appearance *appearance.Store
 	// Reload reads the plugins folder again after the plugins page changed
 	// it. Nil leaves Plugins, Broken and Served as they are.
 	Reload func() (Loaded, error)
@@ -130,6 +133,10 @@ func Handler(cfg Config) *Console {
 	s.use(Loaded{cfg.Plugins, cfg.Broken, cfg.Served})
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServerFS(web.Files))
+	mux.HandleFunc("GET /{$}", s.serveIndex)
+	mux.HandleFunc("GET /index.html", s.serveIndex)
+	mux.HandleFunc("GET /api/appearance", s.serveAppearance)
+	mux.HandleFunc("POST /api/appearance", s.serveAppearanceSave)
 	mux.HandleFunc("GET /api/plugins", s.servePlugins)
 	mux.HandleFunc("GET /api/status", s.serveStatus)
 	mux.HandleFunc("GET /api/cards", s.serveCards)

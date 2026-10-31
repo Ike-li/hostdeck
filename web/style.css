@@ -119,25 +119,131 @@
   --disk-content-w: 960px;
 }
 
-/* Dark mode overrides the color tokens only; the tints above follow them. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15171b;
-    --panel: #1e2126;
-    --text: #e7e9ec;
-    --muted: #9aa1ab;
-    --line: #2d3138;
-    --accent: #6c9cf0;
-    --accent-strong: #8ab0f5;
-    --accent-pressed: #a3c3f8;
-    --line-strong: #3d434d;
-    --line-control: #686e78;
-    --ok: #4cc27f;
-    --warn: #e0a83a;
-    --error: #ef6b6b;
-    --on-accent: #15171b;
-    color-scheme: dark;
-  }
+/* Resolved before content is displayed; system mode listens in theme.js. */
+:root[data-mode="dark"] {
+  --bg: #15171b;
+  --panel: #1e2126;
+  --text: #e7e9ec;
+  --muted: #9aa1ab;
+  --line: #2d3138;
+  --accent: #6c9cf0;
+  --accent-strong: #8ab0f5;
+  --accent-pressed: #a3c3f8;
+  --line-strong: #3d434d;
+  --line-control: #686e78;
+  --ok: #4cc27f;
+  --warn: #e0a83a;
+  --error: #ef6b6b;
+  --on-accent: #15171b;
+  color-scheme: dark;
+}
+
+:root[data-theme="forest"] {
+  --bg: #f1f6f3;
+  --panel: #fbfdfb;
+  --text: #1c241f;
+  --muted: #56665d;
+  --line: #dce7e0;
+  --line-strong: #bbcfc3;
+  --line-control: #7d8e83;
+  --accent: #246b4b;
+  --accent-strong: #1e593f;
+  --accent-pressed: #174631;
+  --on-accent: #ffffff;
+  --ok: #206e40;
+  --warn: #885b11;
+  --error: #b52f36;
+  color-scheme: light;
+}
+
+:root[data-theme="forest"][data-mode="dark"] {
+  --bg: #141c18;
+  --panel: #1c2820;
+  --text: #e5ece7;
+  --muted: #a2b3a8;
+  --line: #2f4034;
+  --line-strong: #435b4b;
+  --line-control: #74877a;
+  --accent: #70c79b;
+  --accent-strong: #91d4b2;
+  --accent-pressed: #aaddc6;
+  --on-accent: #141c18;
+  --ok: #62d097;
+  --warn: #efbb58;
+  --error: #f57d85;
+  color-scheme: dark;
+}
+
+:root[data-theme="dusk"] {
+  --bg: #f6f3fa;
+  --panel: #fefcff;
+  --text: #241e2c;
+  --muted: #685d73;
+  --line: #e6dfed;
+  --line-strong: #d0c3dc;
+  --line-control: #897b96;
+  --accent: #7044ac;
+  --accent-strong: #5e3891;
+  --accent-pressed: #4c2d75;
+  --on-accent: #ffffff;
+  --ok: #206e40;
+  --warn: #885b11;
+  --error: #b52f36;
+  color-scheme: light;
+}
+
+:root[data-theme="dusk"][data-mode="dark"] {
+  --bg: #19151f;
+  --panel: #251f2e;
+  --text: #eee8f4;
+  --muted: #b0a2bc;
+  --line: #3a3046;
+  --line-strong: #51435f;
+  --line-control: #80718e;
+  --accent: #b39bea;
+  --accent-strong: #c5b1ef;
+  --accent-pressed: #d5c6f5;
+  --on-accent: #19151f;
+  --ok: #62d097;
+  --warn: #efbb58;
+  --error: #f57d85;
+  color-scheme: dark;
+}
+
+:root[data-theme="sand"] {
+  --bg: #f7f3ec;
+  --panel: #fffdf8;
+  --text: #2c241b;
+  --muted: #6d6050;
+  --line: #e9e1d4;
+  --line-strong: #d6c7af;
+  --line-control: #96846e;
+  --accent: #80552c;
+  --accent-strong: #6c4725;
+  --accent-pressed: #573a1e;
+  --on-accent: #ffffff;
+  --ok: #206e40;
+  --warn: #885b11;
+  --error: #b52f36;
+  color-scheme: light;
+}
+
+:root[data-theme="sand"][data-mode="dark"] {
+  --bg: #1e1914;
+  --panel: #2b231b;
+  --text: #f0e9df;
+  --muted: #b8aa97;
+  --line: #42372a;
+  --line-strong: #5c4c39;
+  --line-control: #8b7961;
+  --accent: #d3ad77;
+  --accent-strong: #dec39c;
+  --accent-pressed: #e8d4b7;
+  --on-accent: #1e1914;
+  --ok: #62d097;
+  --warn: #efbb58;
+  --error: #f57d85;
+  color-scheme: dark;
 }
 
 /* ---- Reset and base -------------------------------------------------- */
@@ -258,7 +364,7 @@ main {
   padding: 0 var(--space-2);
 }
 
-.brand .brand-mark { background: var(--accent); color: var(--panel); font-size: var(--text-base); font-weight: var(--weight-bold); }
+.brand .brand-mark { background: var(--accent); color: var(--on-accent); font-size: var(--text-base); font-weight: var(--weight-bold); }
 
 /* The plugin list is the part that scrolls; the menu around it is a nav
    element now, so this names the list rather than the tag. */
@@ -299,6 +405,8 @@ main {
 .nav-item:hover { background: var(--bg); }
 .nav-item:active { background: var(--tint-pressed); }
 .nav-item.active { background: var(--tint-active); }
+.appearance-open { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+#appearance-warning { color: var(--error); }
 .nav-row:hover { background: var(--bg); }
 .nav-row:has(.nav-item.active) { background: var(--tint-active); }
 .nav-row .nav-item:hover, .nav-row .nav-item.active { background: transparent; }
@@ -809,6 +917,14 @@ h1 {
 
 .frames { position: relative; flex: 1; min-height: 0; }
 
+/* Embedded services choose against the browser's preference, independently
+   of a fixed console mode. Native detail views still inherit console colours. */
+iframe.frame { color-scheme: light; }
+
+@media (prefers-color-scheme: dark) {
+  iframe.frame { color-scheme: dark; }
+}
+
 .frame {
   position: absolute;
   inset: 0;
@@ -1205,6 +1321,12 @@ h1 {
 .editor-fields .page-hint { margin: calc(var(--space-2) * -1) 0 0; }
 .editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-4) var(--space-5); border-top: 1px solid var(--line); flex: none; }
 .page-editor .catalog-note { margin-bottom: 0; }
+.appearance-colours { display: flex; align-items: end; gap: var(--space-3); }
+.appearance-colours .edit-field { flex: 1; min-width: 0; }
+.appearance-colours input[type="color"] { width: var(--icon-2xl); min-height: var(--control-h); padding: var(--space-1); border: 1px solid var(--line-control); border-radius: var(--radius-sm); background: var(--panel); cursor: pointer; }
+.appearance-preview { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); }
+.appearance-preview .page-hint { flex-basis: 100%; margin: 0; }
+.appearance-sample { display: inline-flex; align-items: center; min-height: var(--control-h); padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); font-size: var(--text-sm); }
 /* The notifications dialog shares the editor's surface: one step per address. */
 .notify-step { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-4) 0; border-top: 1px solid var(--line); }
 .notify-step:last-child { padding-bottom: 0; }

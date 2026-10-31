@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-appearance="{{.Appearance}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>hostdeck</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/theme.js"></script>
 <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -21,6 +22,7 @@
       <div id="nav" role="group" data-i18n-label="nav.plugins"></div>
       <p id="nav-empty" class="empty" hidden data-i18n="nav.empty"></p>
       <div class="side-footer">
+        <button type="button" class="nav-item appearance-open" id="appearance-open" aria-haspopup="dialog"><span class="icon nav-slot" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16V4z" fill="currentColor"/></svg></span><span class="nav-name" data-i18n="appearance.title"></span><span id="appearance-warning" aria-hidden="true" hidden>!</span></button>
         <a class="nav-item" id="nav-catalog" href="#/.plugins"><span class="icon nav-slot" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4m6-4v4M7 7h10v5a5 5 0 0 1-10 0V7zM12 17v4"/></svg></span><span class="nav-name"></span></a>
         <div class="lang" role="group" data-i18n-label="lang.label">
           <button type="button" data-lang="en" lang="en">English</button>

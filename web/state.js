@@ -14,6 +14,11 @@ export const SEARCH_AFTER = 10; // at most this many plugins stay a plain list, 
 export const state = {
   lang: 'en',
   dict: {},
+  appearance: null,
+  appearanceDraft: null,
+  appearanceSaving: false,
+  appearanceReading: false,
+  appearanceEpoch: 0,
   plugins: [], // the sidebar entries
   status: {}, // plugin id -> up | down
   current: null, // the open sidebar entry, or null on the overview

@@ -134,9 +134,8 @@ func scopeName(media string) string {
 
 // The sheet is one layer: a selector is written once at the top level, so no
 // later pass quietly overrides an earlier one, and once per media condition,
-// so each breakpoint lives in a single block. Dark mode overrides the light
-// tokens only; a token that exists just for the dark theme would have no
-// light value.
+// so each breakpoint lives in a single block. Palette overrides only use
+// tokens already declared in the base theme.
 func TestTheStyleSheetKeepsOneLayerWithNoDuplicatedSelectors(t *testing.T) {
 	data, err := Files.ReadFile("style.css")
 	if err != nil {
@@ -174,20 +173,40 @@ func TestTheStyleSheetKeepsOneLayerWithNoDuplicatedSelectors(t *testing.T) {
 		}
 	}
 	for _, r := range rules {
-		if r.media != darkMedia {
+		if r.media != darkMedia && !strings.HasPrefix(r.selector, ":root[") {
 			continue
 		}
 		for _, p := range r.props {
 			if !light[p] {
-				t.Errorf("line %d: %s is only defined for dark mode", r.line, p)
+				t.Errorf("line %d: %s does not exist in the base theme", r.line, p)
 			}
 		}
 	}
 }
 
-// themeTokens returns the custom properties a :root block declares under one
-// media condition: "" for the light theme, darkMedia for the dark one, and
-// reduceMedia for a browser that asked for less motion.
+func TestAppearancePresetsOverrideOnlyExistingThemeColours(t *testing.T) {
+	colours := strings.Fields("--bg --panel --text --muted --line --line-strong --line-control --accent --accent-strong --accent-pressed --on-accent --ok --warn --error")
+	allowed := map[string]bool{}
+	for _, name := range colours {
+		allowed[name] = true
+	}
+	rules := styleRules(t)
+	appearanceThemes(t, rules)
+	for _, r := range rules {
+		if !strings.HasPrefix(r.selector, ":root[") {
+			continue
+		}
+		for _, d := range r.decls {
+			if !allowed[d.prop] && d.prop != "color-scheme" {
+				t.Errorf("%s overrides non-theme property %s", r.selector, d.prop)
+			}
+		}
+	}
+}
+
+// themeTokens reads a plain :root under one media condition. The top level
+// holds base tokens; reduceMedia overrides durations. appearanceThemes
+// resolves the attribute-selected palette overrides.
 func themeTokens(rules []cssRule, media string) map[string]string {
 	tokens := map[string]string{}
 	for _, r := range rules {
@@ -201,6 +220,54 @@ func themeTokens(rules []cssRule, media string) map[string]string {
 		}
 	}
 	return tokens
+}
+
+// appearanceThemes resolves each shipped palette over the common tokens.
+func appearanceThemes(t *testing.T, rules []cssRule) []struct {
+	name   string
+	tokens map[string]string
+} {
+	t.Helper()
+	var themes []struct {
+		name   string
+		tokens map[string]string
+	}
+	for _, preset := range []string{"default", "forest", "dusk", "sand"} {
+		for _, mode := range []string{"light", "dark"} {
+			tokens := rootTokens(rules)
+			selectors := []string{}
+			if mode == "dark" {
+				selectors = append(selectors, `:root[data-mode="dark"]`)
+			}
+			if preset != "default" {
+				selectors = append(selectors, `:root[data-theme="`+preset+`"]`)
+				if mode == "dark" {
+					selectors = append(selectors, `:root[data-theme="`+preset+`"][data-mode="dark"]`)
+				}
+			}
+			for _, selector := range selectors {
+				found := false
+				for _, r := range rules {
+					if r.selector == selector && r.media == "" {
+						found = true
+						for _, d := range r.decls {
+							if strings.HasPrefix(d.prop, "--") {
+								tokens[d.prop] = d.value
+							}
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("missing palette %s", selector)
+				}
+			}
+			themes = append(themes, struct {
+				name   string
+				tokens map[string]string
+			}{preset + "/" + mode, tokens})
+		}
+	}
+	return themes
 }
 
 // rootTokens returns the custom properties the light :root block declares.
@@ -320,7 +387,7 @@ func TestTheConsolesTypeStaysOnItsScale(t *testing.T) {
 func TestColoursAreWrittenOnlyInTheThemeBlocks(t *testing.T) {
 	literal := regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(`)
 	for _, r := range styleRules(t) {
-		if r.selector == ":root" {
+		if r.selector == ":root" || strings.HasPrefix(r.selector, ":root[") {
 			continue
 		}
 		for _, d := range r.decls {
@@ -495,11 +562,7 @@ func TestTheConsolesColoursStayReadableOnTheirOwnBackgrounds(t *testing.T) {
 
 	rules := styleRules(t)
 	light := themeTokens(rules, "")
-	dark := themeTokens(rules, darkMedia)
-	for _, theme := range []struct {
-		name   string
-		tokens map[string]string
-	}{{"light", light}, {"dark", dark}} {
+	for _, theme := range appearanceThemes(t, rules) {
 		// A token the dark theme leaves alone keeps its light value.
 		value := func(token string) string {
 			if v, ok := theme.tokens[token]; ok {
@@ -574,11 +637,7 @@ func TestWordsStayReadableOnTheTintsTheyAreWrittenOn(t *testing.T) {
 	pillTint := v(".pill", "--tint-status")
 
 	light := themeTokens(rules, "")
-	dark := themeTokens(rules, darkMedia)
-	for _, theme := range []struct {
-		name   string
-		tokens map[string]string
-	}{{"light", light}, {"dark", dark}} {
+	for _, theme := range appearanceThemes(t, rules) {
 		for _, p := range pairs {
 			tokens := func(name string) string {
 				switch name {
@@ -641,11 +700,7 @@ func TestFieldEdgesTheFocusRingAndStatusDotsStandOutFromTheirSurfaces(t *testing
 	}
 
 	light := themeTokens(rules, "")
-	dark := themeTokens(rules, darkMedia)
-	for _, theme := range []struct {
-		name   string
-		tokens map[string]string
-	}{{"light", light}, {"dark", dark}} {
+	for _, theme := range appearanceThemes(t, rules) {
 		tokens := func(name string) string {
 			if value, ok := theme.tokens[name]; ok {
 				return value

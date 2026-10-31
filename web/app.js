@@ -2,6 +2,7 @@
 // modules, fills the hooks that would otherwise make import cycles, and owns
 // the two things that reach across every view: the hash route and render().
 import { $ } from './dom.js';
+import { wireAppearance, renderAppearanceStatus } from './appearance.js';
 import { applyI18n, initialLang, setLang, t } from './i18n.js';
 import {
   closePanel, closePanelOnOutsideClick, moreActions, positionPanel, positionPanelOnScroll,
@@ -56,6 +57,7 @@ function route() {
 
 function render() {
   applyI18n();
+  renderAppearanceStatus();
   renderLayoutControls();
 
   $('banner').hidden = !state.failure;
@@ -96,6 +98,7 @@ async function init() {
   $('service-notify').addEventListener('click', () => state.current && openNotifications(state.current));
   $('service-clear').addEventListener('click', onClearClick);
   wireCatalog();
+  wireAppearance();
   wireDragAndDrop();
   for (const id of ['empty-add', 'overview-add']) {
     $(id).addEventListener('click', (e) => {

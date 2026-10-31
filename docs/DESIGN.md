@@ -25,7 +25,7 @@ Every section carries a mark:
 | Devices | Desktop browsers: Chrome and Edge are tested, Firefox and Safari best effort. Windows can be narrow, but phones are not a target | README, "Not planned", rules out other devices; the M0 decisions in AGENTS.md |
 | Stack | One Go program embedding the page; `web/` is plain ES modules with no build step and no npm; one `style.css`; Go tests and real-browser tests are the gate | AGENTS.md, "How work is done" |
 | Languages | English and 简体中文, switchable, with the same keys in both dictionaries | `web/i18n/*.json`, `web/i18n_test.go` |
-| Themes | Light and dark, following the system, with no switch of their own | There is no settings page yet |
+| Themes | Four colour schemes in light and dark, manual or following the system, with a custom accent | Sidebar Appearance dialog; shared `appearance.json` preferences |
 | Typefaces | No brand typeface; the system's | One binary that works offline downloads no fonts |
 
 ### 0.2 Principles
@@ -42,7 +42,7 @@ Every section carries a mark:
 
 #### 1.1.1 Theme colours [Shipped]
 
-A theme is these 14 colours and nothing else. Changing the theme changes these 14 values; every other colour is derived from them.
+A theme is 14 colours. The table shows Default blue; Forest, Dusk and Warm sand override the same roles at the top of the stylesheet. Every palette shares the remaining scales and derived colours.
 
 | Token | Role | Light | Dark | Contrast on `--panel` (light / dark) |
 | --- | --- | --- | --- | --- |
@@ -75,7 +75,7 @@ Two rules for the dark theme:
 
 #### 1.1.2 Neutral ramp (raw values) [Shipped]
 
-The two themes share 14 neutrals, from lightest to darkest:
+The default light and dark palettes share 14 neutrals, from lightest to darkest:
 
 | Value | Relative luminance | Role in the light theme | Role in the dark theme |
 | --- | --- | --- | --- |
@@ -94,7 +94,7 @@ The two themes share 14 neutrals, from lightest to darkest:
 | `#1c1f24` | 0.014 | `--text` | — |
 | `#15171b` | 0.009 | — | `--bg`, `--on-accent` |
 
-This layer lives in this document only, not as `--gray-*` variables in the CSS. Why: the contrast tests measure hex literals, and a `var()` in between would need another resolver; with two themes and 14 colours the indirection buys nothing.
+This layer lives in this document only, not as `--gray-*` variables in the CSS. Why: the contrast tests measure hex literals, and a `var()` in between would need another resolver; with these small palettes the indirection buys nothing.
 
 #### 1.1.3 Derived colours [Shipped]
 
@@ -304,7 +304,7 @@ Controls are at least 44px. Why: easy to hit with a trackpad or on a touch scree
 ### 2.1 Where they are and what they are [Shipped]
 
 - The tokens are the CSS custom properties in the first `:root` block of `web/style.css`: the light theme and every scale.
-- The dark theme is the one `:root` block under `@media (prefers-color-scheme: dark)`, and overrides theme colours only.
+- Default dark is `:root[data-mode="dark"]`; other palettes use `:root[data-theme="name"]` and its `[data-mode="dark"]` block, overriding only the 14 existing theme colours and `color-scheme`.
 - Reduced motion is the one `:root` block under `@media (prefers-reduced-motion: reduce)`, and overrides durations only.
 - Tools read them with the parser already in `web/assets_test.go` (`collectCSSRules`, `themeTokens`). A new tool reuses it rather than writing another.
 
@@ -320,7 +320,7 @@ Controls are at least 44px. Why: easy to hit with a trackpad or on a touch scree
 | L4 component sizes | `--control-h`, `--icon-*`, `--sidebar-w`, `--card-min`, `--cards-per-row` and others | 20 | Their component changes |
 | Runtime | `--status` (set by `[data-status]`), `--tint-status` inside `.pill` | 2 | Never written by hand |
 
-Components read L1 to L4 and write no literal colour, size, leading, weight, spacing, radius, duration or easing. Colour literals appear in the two `:root` blocks and nowhere else in the sheet (`TestColoursAreWrittenOnlyInTheThemeBlocks`).
+Components read L1 to L4 and write no literal colour, size, leading, weight, spacing, radius, duration or easing. Colour literals appear in the theme `:root` blocks and nowhere else in the sheet (`TestColoursAreWrittenOnlyInTheThemeBlocks`).
 
 ### 2.3 Names [Shipped]
 
@@ -332,16 +332,13 @@ Components read L1 to L4 and write no literal colour, size, leading, weight, spa
 - Component sizes end in `-w`, `-h`, `-min` or `-max`: `--sidebar-w`, `--topbar-h`, `--card-min`, `--detail-log-max`.
 - A token set at runtime by an attribute is read with a fallback: `var(--status, var(--muted))`.
 
-### 2.4 Changing the theme
+### 2.4 Changing the theme [Shipped]
 
-A theme is a light and a dark value for each of the 14 L1 colours. L2 to L4 stay, and the derived colours follow. "Replacing the theme in one go" means replacing the two `:root` colour blocks in `style.css`:
+Sidebar Appearance opens the shared native dialog. Mode, four presets, the colour picker and six-digit hex field have text labels; the whole console and the dialog's preview update immediately. Use preset accent removes only the accent override. Restore defaults resets preset, mode and accent, shared only after Save. Cancel and Escape restore the latest saved settings. A failed save keeps the draft and reports an alert. An invalid file is reported at the entry and in the dialog, explaining that saving replaces it. Desktop closure restores focus to Appearance; narrow windows close the drawer first and restore focus to Menu. The dialog reuses the bounded body and fixed actions, keeping actions visible at 520px wide and 640px high.
 
-1. Change the 14 colours in the light `:root` and the same 14 in the dark block.
-2. Run `go test -short ./web`; the three contrast tests have to pass (see 5.1).
-3. Run `HOSTDECK_E2E=1 go test -count=1 ./e2e/` and look at both languages at 520px and 1280px.
-4. Update the table in 1.1.1 and the measurements in 5.1 here.
+`theme.js` applies server settings before body parsing and selects the eight palettes by attributes; system mode listens for OS changes. Custom accents preserve HSL hue and saturation, keeping lightness within 12%–88% to leave room for distinct states, then moving it in one-thousandth steps away from the background. Hover and pressed mix 14% and 28% toward black in light mode or white in dark mode. The engine measures quantized sRGB values for accent text, button labels, the 14% selected tint and 22% pressed tint, targeting 4.6:1 to leave room above the 4.5:1 gate. A palette that cannot fit keeps its preset accent; the dialog always shows the applied colour. Components accept no arbitrary CSS. Embedded iframes declare their colour scheme from the browser’s media preference, independently of console mode; native detail views inherit the console palette.
 
-[Reserved] A theme the user picks needs a settings page, which does not exist, so there is none yet. When there is: `data-theme="name"` on `<html>`, one `:root[data-theme="name"]` block per theme holding those 14 colours only, and the choice kept in `localStorage` as `hostdeck.lang` is. `TestTheStyleSheetKeepsOneLayerWithNoDuplicatedSelectors` refuses a token only the dark theme defines, and a theme block keeps to the same rule: a theme overrides tokens that exist.
+Run `go test -short ./web` after changing palettes: all three contrast gates traverse all eight. New palettes override existing theme colours only. Browser `TestAppearanceColoursRemainReadableAcrossPresetsModesAndCustomHues` independently measures runtime accents and button states, including very light, very dark, grey and saturated inputs. `TestAppearancePreviewsCanBeCancelledAndSavedForAnotherBrowser` covers preview, cancellation, saving, reload, another browser and bilingual narrow-window focus. Changing Default blue also updates 1.1.1 and the measurements in 5.1.
 
 ### 2.5 Adding and removing tokens
 
@@ -727,7 +724,7 @@ Why: a console for one machine has no "page not found"; what matters is which se
 
 How it is measured: WCAG relative luminance; a tint is mixed as `color-mix(in srgb)` mixes it before measuring; a translucent tint is laid over the surface it sits on first.
 
-**Gates**: three tests in `web/assets_test.go`, each run for both themes.
+**Gates**: three tests in `web/assets_test.go`, each run for all eight palettes.
 
 - `TestTheConsolesColoursStayReadableOnTheirOwnBackgrounds`: 10 pairs of plain text and background colours, 4.5:1.
 - `TestWordsStayReadableOnTheTintsTheyAreWrittenOn`: 16 kinds of words written on a tint. It reads each recipe from the rule that paints it, resolves `var()` fallbacks and `color-mix(in srgb)`, lays it over the component's surface, and wants 4.5:1. A rule that moves fails the test instead of escaping it.
@@ -854,7 +851,7 @@ docs/DESIGN.zh-CN.md
 
 ### 6.2 Organising the stylesheet [Shipped]
 
-`style.css` from top to bottom: tokens (light) → dark tokens → reset and base → layout → components in the order the page meets them → entrances → viewport breakpoints → reduced motion.
+`style.css` from top to bottom: shared tokens and Default light → palette overrides → reset and base → layout → components in the order the page meets them → entrances → viewport breakpoints → reduced motion.
 
 Rules:
 

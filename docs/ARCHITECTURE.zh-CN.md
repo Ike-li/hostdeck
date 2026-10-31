@@ -67,6 +67,7 @@ flowchart LR
 | `internal/console` | 控制台的 HTTP 处理：`web/` 里的页面、API，以及每个请求都要过的检查。 |
 | `internal/proxy` | 在单独的端口上重新提供一个本机网页界面，让控制台可以把它嵌进来。清除缓存和通知的地址由它自己应答。 |
 | `internal/ports` | 给每个内嵌服务分配转发端口，并记在 `ports.json` 里。 |
+| `internal/appearance` | 保存当前控制台共享的 `appearance.json` 外观偏好；原子写入，读取失败保留文件并回退默认值。 |
 | `internal/layout` | 把侧栏和卡片的顺序、哪些卡片加宽、哪些插件隐藏，记在 `layout.json` 里。 |
 | `internal/atomicfile` | 写 `layout.json` 和 `ports.json` 时要么整份写成，要么不动：先写临时文件，再改名覆盖旧文件。Windows 上别的程序开着这个文件时改名会被拒绝，这时最多重试 2 秒。 |
 | `internal/local` | 只放行发往 `127.0.0.1` 的请求；发往 `localhost` 的重定向过去。 |
@@ -155,6 +156,14 @@ Tab 顺序上的第一项是一个跳到主要内容的链接：它是页面的�
 
 `POST /api/plugins/reload` 校验 Origin，与现有修改共用同一把锁和加载器，然后返回目录信息。致命加载失败保留之前的加载状态。CLI 会检查实际加载和转发错误，不把文件发布当作完全成功；安装后的重载失败返回非零退出码，并给出 `saved: true` 和已发布位置。`plugin reload` 将损坏的启用插件报告为失败。校验使用 CLI 的环境变量，加载使用服务端环境。卡片与详情程序仍在之后的读取请求中按原协议执行，校验和复制不运行它们。
 
+### 控制台外观
+
+`internal/appearance` 在启动时读取 `appearance.json`。格式为 `{version: 1, preset, mode, accent?}`，字段和示例见 README“外观”；严格读取，拒绝未知键、版本和取值。缺失只使用默认值，不写文件；读取失败保留字节并返回默认值及 `appearance_invalid` 提示，不阻止控制台启动。显式保存校验后在同一进程内串行使用 `internal/atomicfile` 写入，落盘成功才替换内存；失败返回 `appearance_failed` 并保留原配置。已有安装无需迁移。外观不是插件清单字段。
+
+`GET /api/appearance` 返回 `{appearance, warning?}`，`POST /api/appearance` 完整保存并返回同一形状。首页 `/` 和 `/index.html` 通过 HTML 模板转义当前读数至 `<html data-appearance>`，响应不缓存。样式表之后、正文之前的外部 `theme.js` 解析它，设置 `data-theme` 和解析后的 `data-mode`，在内容首次显示前应用主题。它通过 `hostdeck:theme` 事件接收预览，并通过 `matchMedia` 监听系统明暗；`appearance.js` 管弹窗和同步，沿用共享 `page-editor` 对话框。主题和同步只改令牌与提示，不重建卡片或 iframe。 iframe 元素显式跟随浏览器的媒体偏好，控制台固定明暗模式不会改变嵌入服务收到的颜色偏好。
+
+可见页面每 15 秒和重新获得焦点时读取；同一时刻最多一个读取。保存令旧读取失效，避免旧响应覆盖新保存；后台页面不读取。编辑期间只更新已保存读数、不覆盖草稿，关闭时恢复最新读数。最后一次成功保存决定共享外观，手改文件后重启加载。
+
 ## 约定与兼容
 
 hostdeck 读写的东西里，有一部分是它自己的代码之外的东西在依赖：插件、脚本，以及上一个版本留给下一个版本的文件。这些是它的约定：
@@ -165,7 +174,7 @@ hostdeck 读写的东西里，有一部分是它自己的代码之外的东西�
 | 插件的程序收到什么、打印什么 | [PLUGINS.zh-CN.md](PLUGINS.zh-CN.md#程序) |
 | CLI：命令、参数、JSON 结果、`error.code` 的取值和退出码 | [README](../README.zh-CN.md#给-agent-使用的-cli) |
 | 推送命令收到什么、Webhook 收到什么 | [README](../README.zh-CN.md#推送) |
-| hostdeck 文件夹里的文件：`layout.json`、`ports.json`、`notifications.json`、`data/notifications/sent.json`、`data/service-observations/`，插件文件夹以及以点开头和 `.trash` 里的名字，还有自带插件存在自己文件夹里的东西，比如磁盘变化的 `config.json` 和 `data/history.json` | 本文档 |
+| hostdeck 文件夹里的文件：`layout.json`、`ports.json`、`appearance.json`、`notifications.json`、`data/notifications/sent.json`、`data/service-observations/`，插件文件夹以及以点开头和 `.trash` 里的名字，还有自带插件存在自己文件夹里的东西，比如磁盘变化的 `config.json` 和 `data/history.json` | 本文档 |
 
 其余都是 hostdeck 自己的，任何一次提交都可能改：`/api/*` 和它的 JSON、代理自己应答的 `/.well-known/hostdeck/` 下的地址、页面的结构、类名和词典键，以及 Go 包。CLI 和给 agent 的提示词都用 `/api/*`，但总是来自同一个 hostdeck：CLI 要和它连接的控制台同一版本，提示词由控制台自己生成。
 
@@ -175,12 +184,13 @@ hostdeck 读写的东西里，有一部分是它自己的代码之外的东西�
 
 - **插件。** 在 `schema: 1` 之内，清单和程序的输出只增加可选的字段和取值；不删除、不改名、不改含义。因为 hostdeck 不认识的字段算错误，旧版 hostdeck 遇到用了新字段的插件会拒绝它并指出所在的行，而不是只运行一半。不能这样加进去的改动用 `schema: 2`，引入它的版本要说明插件怎么迁移。hostdeck 不读的 schema 会被拒绝，并说明它读的是哪个（`TestInvalidManifestsAreRejectedNamingTheProblem`）。
 - **CLI。** 命令、参数、退出码，以及 README 列出的键和错误码都会保留；可能新增。`error.message` 和 `data.plugin` 不在其内。`TestTheReadmeNamesEveryErrorCodeTheCLIAnswersWith` 和 `TestTheReadmeNamesEveryKeyTheCLIPutsInData` 保证 README 的列表是全的。
-- **文件。** 新版本能读旧版本在 hostdeck 文件夹里写下的东西，保存时可以按自己的格式写回；之后再在这个文件夹上运行旧版本，不在支持范围内。`layout.json` 和 `ports.json` 按宽松方式读取，版本不认识的键会被忽略。磁盘变化的 `data/history.json` 和推送的 `data/notifications/sent.json` 带着 `version: 1`，遇到别的版本就拒绝，所以那里要出新版本，得先能读旧的。`notifications.json` 和清单一样严格读取，所以只会增加可选的键。转发端口始终跟着插件的 ID。
+- **文件。** 新版本能读旧版本在 hostdeck 文件夹里写下的东西，保存时可以按自己的格式写回；之后再在这个文件夹上运行旧版本，不在支持范围内。`appearance.json` 带 `version: 1`，严格读取，未知版本保留文件并回退默认外观；后续版本须能读取旧格式。`layout.json` 和 `ports.json` 按宽松方式读取，版本不认识的键会被忽略。磁盘变化的 `data/history.json` 和推送的 `data/notifications/sent.json` 带着 `version: 1`，遇到别的版本就拒绝，所以那里要出新版本，得先能读旧的。`notifications.json` 和清单一样严格读取，所以只会增加可选的键。转发端口始终跟着插件的 ID。
 
 ## 安全模型
 
 一切都建立在「只有这台机器能访问 hostdeck」这一点上。
 
+- 保存外观的 `POST /api/appearance` 要求控制台 Origin，只能写当前配置目录的 `appearance.json`，只接受固定预设、明暗模式和六位十六进制主色；不接受 CSS、URL、路径或脚本。首屏配置经 HTML 属性转义，动态颜色只通过 CSSOM 设置已有主色令牌，不放宽 CSP。
 - 只监听 `127.0.0.1`；其他 `--addr` 一律拒绝。
 - 每个服务端都只应答 Host 为 `127.0.0.1` 的请求。这样，一个把自己域名重新解析到 127.0.0.1 的网页，就没法借 hostdeck 读到控制台或任何服务。
 - `/api/` 根据 `Sec-Fetch-Site` 请求头拒绝其他站点发来的请求；在地址栏里直接输入的请求只能读取。操作还要求 Origin 是控制台。127.0.0.1 上的其他端口在浏览器看来属于同一站点，所以 Origin 检查也是必需的。
